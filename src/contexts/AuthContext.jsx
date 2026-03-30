@@ -17,7 +17,6 @@ export function AuthProvider({ children }) {
 
   async function init() {
     try {
-      // DEV mode: skip LIFF in localhost
       const isDev = window.location.hostname === 'localhost'
 
       let profile
@@ -29,42 +28,51 @@ export function AuthProvider({ children }) {
       }
       setLineProfile(profile)
 
-      // Find employee linked to this LINE userId
-      const { data: emp } = await supabase
-        .from('employees')
-        .select('*')
-        .eq('line_user_id', profile.lineUserId)
-        .eq('status', '在職')
-        .single()
+      // Try to find employee linked to this LINE userId
+      try {
+        const { data: emp } = await supabase
+          .from('employees')
+          .select('*')
+          .eq('line_user_id', profile.lineUserId)
+          .eq('status', '在職')
+          .single()
 
-      if (emp) {
-        setEmployee(emp)
-      } else if (isDev) {
-        // DEV fallback: use first active employee
+        if (emp) {
+          setEmployee(emp)
+        }
+      } catch (dbErr) {
+        // Column might not exist yet or no match — that's OK
+        console.log('Employee lookup:', dbErr?.message || dbErr)
+      }
+
+      // DEV fallback
+      if (!employee && isDev) {
         const { data } = await supabase
           .from('employees')
           .select('*')
           .eq('status', '在職')
           .limit(1)
           .single()
-        setEmployee(data)
+        if (data) {
+          setEmployee(data)
+          setLineProfile(prev => ({ ...prev, displayName: data.name }))
+        }
       }
-      // employee stays null → App.jsx shows binding screen with LINE userId
     } catch (err) {
       console.error('Init error:', err)
-      // Fallback for environments without LIFF
       if (window.location.hostname === 'localhost') {
-        const { data } = await supabase
-          .from('employees')
-          .select('*')
-          .eq('status', '在職')
-          .limit(1)
-          .single()
-        setEmployee(data)
-        setLineProfile({ lineUserId: 'dev', displayName: data?.name || 'DEV', pictureUrl: '' })
-      } else {
-        setError('初始化失敗，請稍後再試。')
+        try {
+          const { data } = await supabase
+            .from('employees')
+            .select('*')
+            .eq('status', '在職')
+            .limit(1)
+            .single()
+          setEmployee(data)
+          setLineProfile({ lineUserId: 'dev', displayName: data?.name || 'DEV', pictureUrl: '' })
+        } catch (e) { /* ignore */ }
       }
+      // Don't set error — let App.jsx show the binding screen with LINE userId
     } finally {
       setLoading(false)
     }
