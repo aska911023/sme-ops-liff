@@ -57,12 +57,31 @@ export default function App() {
   }
 
   if (!employee) {
+    const uid = lineProfile?.lineUserId || ''
     return (
       <div className="loading-screen">
         <div style={{ fontSize: 48 }}>🔗</div>
-        <div style={{ color: 'var(--t2)', fontSize: 14, textAlign: 'center', padding: '0 32px' }}>
-          尚未綁定員工帳號<br />請聯繫管理員設定
+        <div style={{ color: 'var(--t2)', fontSize: 14, textAlign: 'center', padding: '0 32px', marginBottom: 20 }}>
+          尚未綁定員工帳號<br />請將下方 ID 提供給管理員
         </div>
+        {uid && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--t3)' }}>你的 LINE User ID：</div>
+            <div
+              onClick={() => { navigator.clipboard?.writeText(uid); alert('已複製！') }}
+              style={{
+                padding: '10px 20px', borderRadius: 10,
+                background: 'var(--cyan-dim)', border: '1px solid rgba(34,211,238,0.3)',
+                color: 'var(--cyan)', fontSize: 13, fontWeight: 700,
+                fontFamily: 'monospace', wordBreak: 'break-all',
+                cursor: 'pointer', textAlign: 'center',
+              }}
+            >
+              {uid}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--t3)' }}>點擊上方可複製</div>
+          </div>
+        )}
       </div>
     )
   }
