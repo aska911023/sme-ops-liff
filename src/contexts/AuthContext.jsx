@@ -48,9 +48,8 @@ export function AuthProvider({ children }) {
           .limit(1)
           .single()
         setEmployee(data)
-      } else {
-        setError('找不到您的員工帳號，請聯繫管理員綁定 LINE 帳號。')
       }
+      // employee stays null → App.jsx shows binding screen with LINE userId
     } catch (err) {
       console.error('Init error:', err)
       // Fallback for environments without LIFF
