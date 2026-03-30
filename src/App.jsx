@@ -51,7 +51,10 @@ export default function App() {
     return (
       <div className="loading-screen">
         <div style={{ fontSize: 48 }}>😵</div>
-        <div style={{ color: 'var(--t2)', fontSize: 14, textAlign: 'center', padding: '0 32px' }}>{error}</div>
+        <div style={{ color: 'var(--t2)', fontSize: 14, textAlign: 'center', padding: '0 32px', marginBottom: 16 }}>{error}</div>
+        <div style={{ fontSize: 11, color: 'var(--t3)', padding: '8px 16px', background: 'rgba(255,255,255,0.05)', borderRadius: 8, maxWidth: '80%', wordBreak: 'break-all' }}>
+          LIFF ID: {import.meta.env.VITE_LIFF_ID || '(未設定)'}
+        </div>
       </div>
     )
   }
