@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LINE ID Check</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  body { background: #06091a; color: #f1f5f9; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; }
+  #status { font-size: 14px; color: #94a3b8; margin-bottom: 20px; text-align: center; }
+  #userid { font-size: 16px; font-weight: bold; color: #22d3ee; background: rgba(34,211,238,0.15); border: 1px solid rgba(34,211,238,0.3); padding: 16px 24px; border-radius: 12px; word-break: break-all; text-align: center; cursor: pointer; margin-bottom: 12px; }
+  #hint { font-size: 12px; color: #64748b; }
+  #error { font-size: 13px; color: #f87171; text-align: center; word-break: break-all; max-width: 90%; }
+</style>
+</head>
+<body>
+  <div id="status">初始化中...</div>
+  <div id="userid" style="display:none" onclick="copy()"></div>
+  <div id="hint" style="display:none">點擊上方文字複製</div>
+  <div id="error"></div>
+
+<script>
+async function main() {
+  try {
+    document.getElementById('status').textContent = '正在連接 LINE...'
+    await liff.init({ liffId: '2009642363-lqpzLwFk' })
+
+    document.getElementById('status').textContent = '已連接，取得資料中...'
+
+    if (!liff.isLoggedIn()) {
+      document.getElementById('status').textContent = '正在跳轉登入...'
+      liff.login()
+      return
+    }
+
+    const profile = await liff.getProfile()
+
+    document.getElementById('status').textContent = '你好，' + profile.displayName
+    document.getElementById('userid').textContent = profile.userId
+    document.getElementById('userid').style.display = 'block'
+    document.getElementById('hint').style.display = 'block'
+  } catch(e) {
+    document.getElementById('status').textContent = '發生錯誤'
+    document.getElementById('error').textContent = e.message || JSON.stringify(e)
+  }
+}
+
+function copy() {
+  var text = document.getElementById('userid').textContent
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+    document.getElementById('hint').textContent = '已複製！'
+  } else {
+    // fallback
+    var input = document.createElement('input')
+    input.value = text
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    document.getElementById('hint').textContent = '已複製！'
+  }
+}
+
+main()
+</script>
+</body>
+</html>
