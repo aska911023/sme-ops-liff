@@ -17,6 +17,17 @@ async function reply(replyToken, messages) {
   })
 }
 
+// ── Get LINE profile ──
+async function getLineProfile(userId) {
+  try {
+    const res = await fetch(`https://api.line.me/v2/bot/profile/${userId}`, {
+      headers: { Authorization: `Bearer ${CHANNEL_ACCESS_TOKEN}` },
+    })
+    if (res.ok) return await res.json()
+  } catch (e) { /* ignore */ }
+  return null
+}
+
 // ── Find employee by LINE userId ──
 async function getEmployee(lineUserId) {
   const { data } = await supabase.from('employees').select('*').eq('line_user_id', lineUserId).eq('status', '在職').maybeSingle()
@@ -331,6 +342,19 @@ export default async function handler(req, res) {
     const lineUserId = source?.userId
 
     if (!lineUserId || !replyToken) continue
+
+    // Auto-log LINE user (upsert to line_users table)
+    try {
+      const profile = await getLineProfile(lineUserId)
+      if (profile) {
+        await supabase.from('line_users').upsert({
+          line_user_id: lineUserId,
+          display_name: profile.displayName,
+          picture_url: profile.pictureUrl || null,
+          last_active: new Date().toISOString(),
+        }, { onConflict: 'line_user_id' })
+      }
+    } catch (e) { /* ignore logging errors */ }
 
     const emp = await getEmployee(lineUserId)
 
