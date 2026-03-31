@@ -9,6 +9,7 @@ import InventoryPage from './pages/Inventory'
 import Tasks from './pages/Tasks'
 import Expenses from './pages/Expenses'
 import NewCustomer from './pages/NewCustomer'
+import OffRequest from './pages/OffRequest'
 
 function TabBar() {
   const navigate = useNavigate()
@@ -100,6 +101,7 @@ export default function App() {
         <Route path="/tasks" element={<Tasks />} />
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/customer/new" element={<NewCustomer />} />
+        <Route path="/off-request" element={<OffRequest />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <TabBar />

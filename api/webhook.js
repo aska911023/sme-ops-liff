@@ -314,6 +314,7 @@ async function handleMenu(replyToken) {
           { type: 'button', action: { type: 'message', label: '💰 查薪資', text: '薪資' }, style: 'secondary', height: 'sm' },
           { type: 'button', action: { type: 'message', label: '📋 假期餘額', text: '假期' }, style: 'secondary', height: 'sm' },
           { type: 'button', action: { type: 'message', label: '⚙️ 我的任務', text: '任務' }, style: 'secondary', height: 'sm' },
+          { type: 'button', action: { type: 'message', label: '📅 排休申請', text: '排休' }, style: 'secondary', height: 'sm' },
           { type: 'separator', margin: 'lg' },
           { type: 'button', action: { type: 'uri', label: '📱 開啟完整平台', uri: `https://liff.line.me/${LIFF_ID}` }, style: 'primary', color: '#0D47A1', height: 'sm', margin: 'md' },
         ],
@@ -391,6 +392,26 @@ export default async function handler(req, res) {
       } else {
         await reply(replyToken, { type: 'text', text: '📦 請輸入品名\n例：庫存 螺絲' })
       }
+    } else if (text === '排休' || text === '/排休' || text === '排班' || text === '/排班') {
+      await reply(replyToken, {
+        type: 'flex', altText: '排休申請',
+        contents: {
+          type: 'bubble', size: 'kilo',
+          header: {
+            type: 'box', layout: 'vertical', backgroundColor: '#E65100', paddingAll: '16px',
+            contents: [
+              { type: 'text', text: '📅 排休申請', color: '#ffffff', size: 'lg', weight: 'bold' },
+              { type: 'text', text: '選擇希望休假的日期', color: '#FFCC80', size: 'xs', margin: 'sm' },
+            ],
+          },
+          footer: {
+            type: 'box', layout: 'vertical', paddingAll: '12px',
+            contents: [
+              { type: 'button', action: { type: 'uri', label: '開啟排休頁面', uri: `https://liff.line.me/${LIFF_ID}/off-request` }, style: 'primary', color: '#E65100', height: 'sm' },
+            ],
+          },
+        },
+      })
     } else if (text === '選單' || text === '功能' || text === 'menu' || text === '/menu') {
       await handleMenu(replyToken)
     } else {

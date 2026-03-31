@@ -8,6 +8,7 @@ const MENUS = [
   { path: '/inventory', icon: '📦', label: '查庫存', color: 'var(--orange)', dim: 'var(--orange-dim)' },
   { path: '/tasks', icon: '⚙️', label: '流程回報', color: 'var(--purple)', dim: 'var(--purple-dim)' },
   { path: '/expenses', icon: '🧾', label: '報帳', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
+  { path: '/off-request', icon: '📅', label: '排休申請', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
   { path: '/customer/new', icon: '🤝', label: '新增客戶', color: 'var(--pink)', dim: 'rgba(244,114,182,0.15)' },
 ]
 
