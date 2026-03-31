@@ -1,5 +1,10 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+
+// Init theme
+const savedTheme = localStorage.getItem('liff-theme')
+if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme)
 
 const MENUS = [
   { path: '/clock', icon: '⏰', label: '打卡', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
@@ -14,6 +19,7 @@ const MENUS = [
 
 export default function Home() {
   const { employee, lineProfile } = useAuth()
+  const [theme, setTheme] = useState(() => localStorage.getItem('liff-theme') || 'dark')
   const hour = new Date().getHours()
   const greeting = hour < 12 ? '早安' : hour < 18 ? '午安' : '晚安'
 
@@ -69,6 +75,25 @@ export default function Home() {
             <div className="menu-label">{m.label}</div>
           </Link>
         ))}
+      </div>
+
+      {/* Theme Toggle */}
+      <div
+        onClick={() => {
+          const next = theme === 'light' ? 'dark' : 'light'
+          document.documentElement.setAttribute('data-theme', next)
+          localStorage.setItem('liff-theme', next)
+          setTheme(next)
+        }}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          marginTop: 20, padding: '12px', borderRadius: 12,
+          background: 'var(--card)', border: '1px solid var(--border)',
+          cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--t2)',
+        }}
+      >
+        {theme === 'light' ? '🌙' : '☀️'}
+        <span>{theme === 'light' ? '深色模式' : '淺色模式'}</span>
       </div>
     </div>
   )

@@ -27,6 +27,47 @@
   --radius: 14px;
 }
 
+/* ── Light Theme ── */
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --bg2: #e4e7ec;
+  --card: rgba(255,255,255,0.85);
+  --card-hover: rgba(255,255,255,0.95);
+  --glass: rgba(0,0,0,0.03);
+  --cyan: #0891b2;
+  --cyan-dim: rgba(8,145,178,0.1);
+  --blue: #2563eb;
+  --blue-dim: rgba(37,99,235,0.1);
+  --purple: #7c3aed;
+  --purple-dim: rgba(124,58,237,0.1);
+  --green: #059669;
+  --green-dim: rgba(5,150,105,0.1);
+  --orange: #ea580c;
+  --orange-dim: rgba(234,88,12,0.1);
+  --red: #dc2626;
+  --red-dim: rgba(220,38,38,0.1);
+  --pink: #db2777;
+  --yellow: #d97706;
+  --t1: #1e293b;
+  --t2: #475569;
+  --t3: #64748b;
+  --border: rgba(0,0,0,0.06);
+  --border2: rgba(0,0,0,0.1);
+}
+[data-theme="light"] .form-input {
+  background: rgba(255,255,255,0.9);
+  border-color: rgba(0,0,0,0.12);
+  color: #1e293b;
+}
+[data-theme="light"] .tab-bar {
+  background: rgba(255,255,255,0.95);
+  border-top-color: rgba(0,0,0,0.08);
+}
+[data-theme="light"] .clock-display {
+  background: linear-gradient(135deg, var(--cyan), var(--blue));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { min-height: 100vh; min-height: 100dvh; }
 body {
