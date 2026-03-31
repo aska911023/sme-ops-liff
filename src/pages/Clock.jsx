@@ -44,25 +44,27 @@ export default function ClockPage() {
 
     try {
       if (type === 'in') {
-        const { data } = await supabase.from('attendance_records').insert({
+        const row = {
           employee: employee.name,
           date: today,
           clock_in: now,
           status: now <= '09:00' ? '正常' : '遲到',
-          location: location ? `${location.lat.toFixed(4)},${location.lng.toFixed(4)}` : null,
-        }).select().single()
+        }
+        const { data, error } = await supabase.from('attendance_records').insert(row).select().single()
+        if (error) { setMsg(`打卡失敗: ${error.message}`); setLoading(false); return }
         if (data) { setTodayRecord(data); setMsg('上班打卡成功 ✓') }
       } else {
-        const clockIn = todayRecord?.clock_in || '09:00'
+        const clockIn = todayRecord?.clock_in?.slice(0, 5) || '09:00'
         const hours = Math.max(0, Math.round((new Date(`2000-01-01T${now}`) - new Date(`2000-01-01T${clockIn}`)) / 3600000 * 10) / 10)
-        const { data } = await supabase.from('attendance_records')
+        const { data, error } = await supabase.from('attendance_records')
           .update({ clock_out: now, hours })
           .eq('id', todayRecord.id)
           .select().single()
+        if (error) { setMsg(`打卡失敗: ${error.message}`); setLoading(false); return }
         if (data) { setTodayRecord(data); setMsg('下班打卡成功 ✓') }
       }
     } catch (e) {
-      setMsg('打卡失敗，請稍後再試')
+      setMsg('打卡失敗: ' + (e.message || '未知錯誤'))
     }
     setLoading(false)
     setTimeout(() => setMsg(''), 3000)

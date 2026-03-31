@@ -32,7 +32,7 @@ export default function Leave() {
     const start = new Date(form.start_date)
     const end = new Date(form.end_date)
     const days = Math.max(1, Math.ceil((end - start) / 86400000) + 1)
-    const { data } = await supabase.from('leave_requests').insert({
+    const { data, error } = await supabase.from('leave_requests').insert({
       employee: employee.name,
       type: form.type,
       start_date: form.start_date,
@@ -41,6 +41,7 @@ export default function Leave() {
       reason: form.reason,
       status: '待審核',
     }).select().single()
+    if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
     if (data) {
       setRecords(prev => [data, ...prev])
       setShowForm(false)

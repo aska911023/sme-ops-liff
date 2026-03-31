@@ -28,21 +28,21 @@ export default function NewCustomer() {
   const handleSubmit = async () => {
     if (!form.name) return
     setSubmitting(true)
-    const { data, error } = await supabase.from('customers').insert({
-      name: form.name,
-      contact_person: form.contact_person,
-      phone: form.phone,
-      email: form.email,
-      address: form.address,
-      tag: form.tag,
-      location: form.location,
-      notes: form.notes,
-      credit_limit: Number(form.credit_limit) || 0,
-      outstanding_amount: 0,
-      assigned_to: form.assigned_to,
-      status: '活躍',
-    }).select().single()
+    const row = { name: form.name, status: '活躍' }
+    if (form.contact_person) row.contact_person = form.contact_person
+    if (form.phone) row.phone = form.phone
+    if (form.email) row.email = form.email
+    if (form.address) row.address = form.address
+    if (form.tag) row.tag = form.tag
+    if (form.location) row.location = form.location
+    if (form.notes) row.notes = form.notes
+    if (form.credit_limit) row.credit_limit = Number(form.credit_limit) || 0
+    row.outstanding_amount = 0
+    if (form.assigned_to) row.assigned_to = form.assigned_to
 
+    const { data, error } = await supabase.from('customers').insert(row).select().single()
+
+    if (error) { alert('新增失敗: ' + error.message); setSubmitting(false); return }
     if (data) {
       setSuccess(true)
       setTimeout(() => navigate('/'), 2000)

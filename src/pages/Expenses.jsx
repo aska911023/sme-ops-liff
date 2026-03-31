@@ -29,7 +29,7 @@ export default function Expenses() {
   const handleSubmit = async () => {
     if (!form.amount || !form.date) return
     setSubmitting(true)
-    const { data } = await supabase.from('expenses').insert({
+    const { data, error } = await supabase.from('expenses').insert({
       employee: employee.name,
       category: form.category,
       amount: Number(form.amount),
@@ -38,6 +38,7 @@ export default function Expenses() {
       receipt: form.receipt,
       status: '待審核',
     }).select().single()
+    if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
     if (data) {
       setRecords(prev => [data, ...prev])
       setShowForm(false)
