@@ -6,41 +6,75 @@ import { supabase } from '../lib/supabase'
 
 const DAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
-function getWeekDates(offset = 0) {
-  const now = new Date()
-  const dayOfWeek = now.getDay() || 7
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - dayOfWeek + 1 + offset * 7)
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    return d.toISOString().slice(0, 10)
-  })
+function getMonthDates(year, month) {
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+
+  // Monday=0 based offset for first day
+  let startDow = firstDay.getDay() || 7 // 1=Mon..7=Sun
+  startDow -= 1 // 0=Mon..6=Sun
+
+  const dates = []
+
+  // Padding days from previous month
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = new Date(year, month, -i)
+    dates.push({ date: d.toISOString().slice(0, 10), currentMonth: false })
+  }
+
+  // Current month days
+  for (let i = 1; i <= lastDay.getDate(); i++) {
+    const d = new Date(year, month, i)
+    dates.push({ date: d.toISOString().slice(0, 10), currentMonth: true })
+  }
+
+  // Padding days for remaining cells (fill to complete week rows)
+  while (dates.length % 7 !== 0) {
+    const d = new Date(year, month + 1, dates.length - (startDow + lastDay.getDate()) + 1)
+    dates.push({ date: d.toISOString().slice(0, 10), currentMonth: false })
+  }
+
+  return dates
 }
 
 export default function OffRequest() {
   const { employee } = useAuth()
   const navigate = useNavigate()
-  const [weekOffset, setWeekOffset] = useState(1) // default next week
+
+  const now = new Date()
+  const [viewYear, setViewYear] = useState(now.getFullYear())
+  const [viewMonth, setViewMonth] = useState(now.getMonth())
   const [myRequests, setMyRequests] = useState([])
   const [mySchedules, setMySchedules] = useState([])
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
 
-  const weekDates = getWeekDates(weekOffset)
-  const weekStart = weekDates[0]
-  const weekEnd = weekDates[6]
+  const monthDates = getMonthDates(viewYear, viewMonth)
+  const monthStart = monthDates[0].date
+  const monthEnd = monthDates[monthDates.length - 1].date
+  const todayStr = now.toISOString().slice(0, 10)
+
+  const monthLabel = `${viewYear} 年 ${viewMonth + 1} 月`
+
+  const prevMonth = () => {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11) }
+    else setViewMonth(m => m - 1)
+  }
+  const nextMonth = () => {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0) }
+    else setViewMonth(m => m + 1)
+  }
 
   useEffect(() => {
     if (!employee) return
     Promise.all([
-      supabase.from('off_requests').select('*').eq('employee', employee.name).gte('date', weekStart).lte('date', weekEnd),
-      supabase.from('schedules').select('*').eq('employee', employee.name).gte('date', weekStart).lte('date', weekEnd),
+      supabase.from('off_requests').select('*').eq('employee', employee.name).gte('date', monthStart).lte('date', monthEnd),
+      supabase.from('schedules').select('*').eq('employee', employee.name).gte('date', monthStart).lte('date', monthEnd),
     ]).then(([o, s]) => {
       setMyRequests(o.data || [])
       setMySchedules(s.data || [])
     })
-  }, [employee, weekStart])
+  }, [employee, monthStart, monthEnd])
 
   const isRequested = (date) => myRequests.some(r => r.date === date)
   const getSchedule = (date) => mySchedules.find(s => s.date === date)?.shift || ''
@@ -48,11 +82,9 @@ export default function OffRequest() {
   const toggleDay = async (date) => {
     setSaving(true)
     if (isRequested(date)) {
-      // Remove request
       await supabase.from('off_requests').delete().eq('employee', employee.name).eq('date', date)
       setMyRequests(prev => prev.filter(r => r.date !== date))
     } else {
-      // Add request
       const { data } = await supabase.from('off_requests').insert({
         employee: employee.name,
         date,
@@ -63,7 +95,10 @@ export default function OffRequest() {
     setSaving(false)
   }
 
-  const totalRequested = myRequests.length
+  const totalRequested = myRequests.filter(r => {
+    const d = new Date(r.date)
+    return d.getFullYear() === viewYear && d.getMonth() === viewMonth
+  }).length
 
   return (
     <div className="page">
@@ -72,52 +107,83 @@ export default function OffRequest() {
         <div className="header-title">📅 排休申請</div>
       </div>
 
-      {/* Week Nav */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 20 }}>
-        <button onClick={() => setWeekOffset(w => w - 1)} style={{
+      {/* Month Nav */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+        <button onClick={prevMonth} style={{
           background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10,
           padding: '8px 12px', cursor: 'pointer', color: 'var(--t2)',
         }}><ChevronLeft size={18} /></button>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{weekStart.slice(5)} ~ {weekEnd.slice(5)}</div>
-          <div style={{ fontSize: 11, color: 'var(--t3)' }}>{weekOffset === 0 ? '本週' : weekOffset === 1 ? '下週' : `${weekOffset > 0 ? '+' : ''}${weekOffset} 週`}</div>
+          <div style={{ fontSize: 17, fontWeight: 800 }}>{monthLabel}</div>
         </div>
-        <button onClick={() => setWeekOffset(w => w + 1)} style={{
+        <button onClick={nextMonth} style={{
           background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10,
           padding: '8px 12px', cursor: 'pointer', color: 'var(--t2)',
         }}><ChevronRight size={18} /></button>
       </div>
 
-      <div style={{ fontSize: 12, color: 'var(--t3)', textAlign: 'center', marginBottom: 16 }}>
-        點擊日期選擇希望休假的天（已選 {totalRequested} 天）
+      <div style={{ fontSize: 12, color: 'var(--t3)', textAlign: 'center', marginBottom: 12 }}>
+        點擊日期選擇希望休假的天（本月已選 <span style={{ color: 'var(--orange)', fontWeight: 700 }}>{totalRequested}</span> 天）
       </div>
 
-      {/* Day Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 20 }}>
-        {weekDates.map((date, i) => {
+      {/* Day Headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
+        {DAY_LABELS.map((d, i) => (
+          <div key={d} style={{
+            textAlign: 'center', fontSize: 11, fontWeight: 700,
+            color: i >= 5 ? 'var(--orange)' : 'var(--t3)',
+            padding: '6px 0',
+          }}>{d}</div>
+        ))}
+      </div>
+
+      {/* Calendar Grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 20 }}>
+        {monthDates.map(({ date, currentMonth }) => {
           const requested = isRequested(date)
           const schedule = getSchedule(date)
           const isRest = schedule === '休'
-          const isPast = date < new Date().toISOString().slice(0, 10)
+          const isPast = date < todayStr
+          const isToday = date === todayStr
+          const dayNum = parseInt(date.slice(8))
+          const dow = new Date(date).getDay()
+          const isWeekend = dow === 0 || dow === 6
+
           return (
             <button
               key={date}
-              disabled={isPast || saving}
-              onClick={() => !isPast && toggleDay(date)}
+              disabled={isPast || !currentMonth || saving}
+              onClick={() => !isPast && currentMonth && toggleDay(date)}
               style={{
-                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                padding: '14px 4px', borderRadius: 12, border: 'none', cursor: isPast ? 'default' : 'pointer',
-                background: requested ? 'var(--orange-dim)' : isRest ? 'var(--green-dim)' : schedule ? 'var(--cyan-dim)' : 'var(--card)',
-                border: requested ? '2px solid var(--orange)' : '2px solid transparent',
-                opacity: isPast ? 0.4 : 1,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 2, padding: '10px 2px', borderRadius: 12, cursor: (isPast || !currentMonth) ? 'default' : 'pointer',
+                background: requested
+                  ? 'var(--orange-dim)'
+                  : isToday
+                    ? 'var(--cyan-dim)'
+                    : isRest
+                      ? 'var(--green-dim)'
+                      : 'var(--card)',
+                border: requested
+                  ? '2px solid var(--orange)'
+                  : isToday
+                    ? '2px solid var(--cyan)'
+                    : '1px solid var(--border)',
+                opacity: !currentMonth ? 0.25 : isPast ? 0.4 : 1,
                 transition: 'all 0.15s',
+                minHeight: 56,
               }}
             >
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--t2)' }}>週{DAY_LABELS[i]}</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: requested ? 'var(--orange)' : 'var(--t1)' }}>
-                {date.slice(8)}
+              <div style={{
+                fontSize: 15, fontWeight: 800,
+                color: requested ? 'var(--orange)' : isToday ? 'var(--cyan)' : isWeekend && currentMonth ? 'var(--orange)' : 'var(--t1)',
+              }}>
+                {dayNum}
               </div>
-              <div style={{ fontSize: 10, color: requested ? 'var(--orange)' : isRest ? 'var(--green)' : schedule ? 'var(--cyan)' : 'var(--t3)' }}>
+              <div style={{
+                fontSize: 9, fontWeight: 600,
+                color: requested ? 'var(--orange)' : isRest ? 'var(--green)' : schedule ? 'var(--cyan)' : 'transparent',
+              }}>
                 {requested ? '希望休' : schedule || '-'}
               </div>
             </button>
@@ -125,18 +191,24 @@ export default function OffRequest() {
         })}
       </div>
 
-      {/* Current Schedule */}
-      {mySchedules.length > 0 && (
-        <div className="card">
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 10 }}>本週已排班</div>
-          {mySchedules.map(s => (
-            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--border)', fontSize: 14 }}>
-              <span style={{ color: 'var(--t2)' }}>{s.date} (週{DAY_LABELS[weekDates.indexOf(s.date)]})</span>
-              <span style={{ fontWeight: 700, color: s.shift === '休' ? 'var(--green)' : 'var(--cyan)' }}>{s.shift}</span>
-            </div>
-          ))}
+      {/* Legend */}
+      <div style={{
+        display: 'flex', gap: 16, justifyContent: 'center', marginBottom: 16,
+        fontSize: 11, color: 'var(--t3)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--orange-dim)', border: '1.5px solid var(--orange)' }} />
+          希望休
         </div>
-      )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--green-dim)' }} />
+          已排休
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ width: 10, height: 10, borderRadius: 3, background: 'var(--cyan-dim)', border: '1.5px solid var(--cyan)' }} />
+          今天
+        </div>
+      </div>
 
       {/* Message */}
       {msg && (
@@ -147,7 +219,7 @@ export default function OffRequest() {
         }}>{msg}</div>
       )}
 
-      <div style={{ fontSize: 11, color: 'var(--t3)', textAlign: 'center', marginTop: 16 }}>
+      <div style={{ fontSize: 11, color: 'var(--t3)', textAlign: 'center', marginTop: 12 }}>
         排休申請送出後，管理員會在 AI 自動排班時優先安排
       </div>
     </div>
