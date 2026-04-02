@@ -7,6 +7,18 @@ const LIFF_ID = process.env.VITE_LIFF_ID
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// ── Brand Colors (matching Rich Menu) ──
+const C = {
+  clock:     { bg: '#EFF9FB', accent: '#0891B2', text: '#0E7490', sub: '#67B2C4' },
+  leave:     { bg: '#EEF2FF', accent: '#2563EB', text: '#1E40AF', sub: '#7C9CF5' },
+  salary:    { bg: '#ECFDF5', accent: '#059669', text: '#047857', sub: '#6EBF9E' },
+  inventory: { bg: '#FFF7ED', accent: '#EA580C', text: '#C2410C', sub: '#F5A366' },
+  task:      { bg: '#F5F3FF', accent: '#7C3AED', text: '#6D28D9', sub: '#B49AFA' },
+  expense:   { bg: '#F5F3FF', accent: '#7C3AED', text: '#6D28D9', sub: '#B49AFA' },
+  more:      { bg: '#FDF2F8', accent: '#DB2777', text: '#BE185D', sub: '#F09DC4' },
+  brand:     { bg: '#EFF9FB', accent: '#0891B2', text: '#0E7490', sub: '#67B2C4' },
+}
+
 // ── Reply helper ──
 async function reply(replyToken, messages) {
   if (!Array.isArray(messages)) messages = [messages]
@@ -35,11 +47,11 @@ async function getEmployee(lineUserId) {
 }
 
 // ── Flex: info row ──
-function infoRow(label, value, valueColor = '#333333') {
+function infoRow(label, value, valueColor = '#334155') {
   return {
     type: 'box', layout: 'horizontal', margin: 'md',
     contents: [
-      { type: 'text', text: label, color: '#888888', size: 'sm', flex: 2 },
+      { type: 'text', text: label, color: '#94A3B8', size: 'sm', flex: 2 },
       { type: 'text', text: String(value || '-'), color: valueColor, size: 'sm', flex: 3, weight: 'bold' },
     ],
   }
@@ -59,26 +71,24 @@ async function handleClock(replyToken, emp) {
   let title, statusText, statusColor, detail
 
   if (!existing) {
-    // Clock in
     const status = now <= '09:00' ? '正常' : '遲到'
     await supabase.from('attendance_records').insert({ employee: emp.name, date: today, clock_in: now, status })
-    title = '上班打卡成功 ✓'
+    title = '上班打卡成功'
     statusText = status
-    statusColor = status === '正常' ? '#4CAF50' : '#FF9800'
+    statusColor = status === '正常' ? C.salary.accent : C.inventory.accent
     detail = `上班時間：${now}`
   } else if (!existing.clock_out) {
-    // Clock out
     const clockIn = (existing.clock_in || '09:00').slice(0, 5)
     const hours = Math.max(0, Math.round((new Date(`2000-01-01T${now}`) - new Date(`2000-01-01T${clockIn}`)) / 3600000 * 10) / 10)
     await supabase.from('attendance_records').update({ clock_out: now, hours }).eq('id', existing.id)
-    title = '下班打卡成功 ✓'
+    title = '下班打卡成功'
     statusText = `工時 ${hours}h`
-    statusColor = '#2196F3'
+    statusColor = C.leave.accent
     detail = `${clockIn} → ${now}`
   } else {
     title = '今日已完成打卡'
     statusText = `${existing.clock_in?.slice(0,5)} → ${existing.clock_out?.slice(0,5)}`
-    statusColor = '#4CAF50'
+    statusColor = C.salary.accent
     detail = `工時 ${existing.hours}h`
   }
 
@@ -87,10 +97,10 @@ async function handleClock(replyToken, emp) {
     contents: {
       type: 'bubble', size: 'kilo',
       header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#1B5E20', paddingAll: '16px',
+        type: 'box', layout: 'vertical', backgroundColor: C.clock.bg, paddingAll: '18px',
         contents: [
-          { type: 'text', text: '⏰ 打卡', color: '#ffffff', size: 'sm' },
-          { type: 'text', text: title, color: '#ffffff', size: 'lg', weight: 'bold', margin: 'sm' },
+          { type: 'text', text: '⏰ 打卡', color: C.clock.sub, size: 'xs', weight: 'bold' },
+          { type: 'text', text: title, color: C.clock.text, size: 'lg', weight: 'bold', margin: 'sm' },
         ],
       },
       body: {
@@ -123,27 +133,27 @@ async function handleSalary(replyToken, emp) {
     contents: {
       type: 'bubble', size: 'mega',
       header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#1565C0', paddingAll: '16px',
+        type: 'box', layout: 'vertical', backgroundColor: C.salary.bg, paddingAll: '18px',
         contents: [
-          { type: 'text', text: `💰 ${month} 薪資`, color: '#ffffff', size: 'sm' },
-          { type: 'text', text: `NT$ ${(data.net_salary || 0).toLocaleString()}`, color: '#ffffff', size: 'xxl', weight: 'bold', margin: 'sm' },
-          { type: 'text', text: '實發薪資', color: '#90CAF9', size: 'xs', margin: 'sm' },
+          { type: 'text', text: `💰 ${month} 薪資`, color: C.salary.sub, size: 'xs', weight: 'bold' },
+          { type: 'text', text: `NT$ ${(data.net_salary || 0).toLocaleString()}`, color: C.salary.text, size: 'xxl', weight: 'bold', margin: 'sm' },
+          { type: 'text', text: '實發薪資', color: C.salary.sub, size: 'xs', margin: 'sm' },
         ],
       },
       body: {
         type: 'box', layout: 'vertical', paddingAll: '16px',
         contents: [
-          { type: 'text', text: '▲ 加項', color: '#4CAF50', size: 'xs', weight: 'bold' },
+          { type: 'text', text: '加項', color: C.salary.accent, size: 'xs', weight: 'bold' },
           infoRow('底薪', `NT$ ${(data.base_salary || 0).toLocaleString()}`),
-          infoRow('津貼', `+${(data.allowance || 0).toLocaleString()}`, '#4CAF50'),
-          infoRow('加班費', `+${(data.overtime || 0).toLocaleString()}`, '#2196F3'),
-          infoRow('獎金', `+${(data.bonus || 0).toLocaleString()}`, '#9C27B0'),
+          infoRow('津貼', `+${(data.allowance || 0).toLocaleString()}`, C.salary.accent),
+          infoRow('加班費', `+${(data.overtime || 0).toLocaleString()}`, C.leave.accent),
+          infoRow('獎金', `+${(data.bonus || 0).toLocaleString()}`, C.task.accent),
           { type: 'separator', margin: 'lg' },
-          { type: 'text', text: '▼ 扣項', color: '#F44336', size: 'xs', weight: 'bold', margin: 'lg' },
-          infoRow('事假扣薪', data.absence_deduction ? `-${data.absence_deduction.toLocaleString()}` : '-', '#F44336'),
-          infoRow('遲到扣薪', data.late_deduction ? `-${data.late_deduction.toLocaleString()}` : '-', '#F44336'),
-          infoRow('其他扣款', data.other_deduction ? `-${data.other_deduction.toLocaleString()}` : '-', '#F44336'),
-          infoRow('勞健保', `-${(data.insurance || 0).toLocaleString()}`, '#FF9800'),
+          { type: 'text', text: '扣項', color: '#DC2626', size: 'xs', weight: 'bold', margin: 'lg' },
+          infoRow('事假扣薪', data.absence_deduction ? `-${data.absence_deduction.toLocaleString()}` : '-', '#DC2626'),
+          infoRow('遲到扣薪', data.late_deduction ? `-${data.late_deduction.toLocaleString()}` : '-', '#DC2626'),
+          infoRow('其他扣款', data.other_deduction ? `-${data.other_deduction.toLocaleString()}` : '-', '#DC2626'),
+          infoRow('勞健保', `-${(data.insurance || 0).toLocaleString()}`, C.inventory.accent),
         ],
       },
     },
@@ -161,9 +171,9 @@ async function handleLeaveBalance(replyToken, emp) {
     contents: {
       type: 'bubble', size: 'kilo',
       header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#00695C', paddingAll: '16px',
+        type: 'box', layout: 'vertical', backgroundColor: C.leave.bg, paddingAll: '18px',
         contents: [
-          { type: 'text', text: '📋 假期餘額', color: '#ffffff', size: 'lg', weight: 'bold' },
+          { type: 'text', text: '📋 假期餘額', color: C.leave.text, size: 'lg', weight: 'bold' },
         ],
       },
       body: {
@@ -171,15 +181,15 @@ async function handleLeaveBalance(replyToken, emp) {
         contents: [
           infoRow('員工', emp.name),
           infoRow('年度', `${year}`),
-          infoRow('已使用', `${used} 天`, '#F44336'),
+          infoRow('已使用', `${used} 天`, '#DC2626'),
           { type: 'separator', margin: 'lg' },
-          { type: 'text', text: '詳細請至 LIFF 查看', size: 'xs', color: '#888888', margin: 'lg', align: 'center' },
+          { type: 'text', text: '詳細請至 LIFF 查看', size: 'xs', color: '#94A3B8', margin: 'lg', align: 'center' },
         ],
       },
       footer: {
         type: 'box', layout: 'vertical', paddingAll: '12px',
         contents: [
-          { type: 'button', action: { type: 'uri', label: '申請請假', uri: `https://liff.line.me/${LIFF_ID}/leave` }, style: 'primary', color: '#00695C', height: 'sm' },
+          { type: 'button', action: { type: 'uri', label: '申請請假', uri: `https://liff.line.me/${LIFF_ID}/leave` }, style: 'primary', color: C.leave.accent, height: 'sm' },
         ],
       },
     },
@@ -195,18 +205,18 @@ async function handleTasks(replyToken, emp) {
     return
   }
 
-  const priColor = (p) => p === '高' ? '#F44336' : p === '中' ? '#FF9800' : '#2196F3'
-  const statusColor = (s) => s === '已完成' ? '#4CAF50' : s === '進行中' ? '#2196F3' : '#9E9E9E'
+  const priColor = (p) => p === '高' ? '#DC2626' : p === '中' ? C.inventory.accent : C.leave.accent
+  const statusColor = (s) => s === '已完成' ? C.salary.accent : s === '進行中' ? C.leave.accent : '#94A3B8'
 
   const bubbles = tasks.slice(0, 8).map(t => ({
     type: 'bubble', size: 'kilo',
     header: {
       type: 'box', layout: 'vertical',
-      backgroundColor: t.status === '已完成' ? '#388E3C' : '#E65100',
-      paddingAll: '14px',
+      backgroundColor: t.status === '已完成' ? C.salary.bg : C.task.bg,
+      paddingAll: '16px',
       contents: [
-        { type: 'text', text: t.workflow || '任務', color: '#ffffff', size: 'xs' },
-        { type: 'text', text: t.title, color: '#ffffff', size: 'lg', weight: 'bold', wrap: true },
+        { type: 'text', text: t.workflow || '任務', color: t.status === '已完成' ? C.salary.sub : C.task.sub, size: 'xs', weight: 'bold' },
+        { type: 'text', text: t.title, color: t.status === '已完成' ? C.salary.text : C.task.text, size: 'lg', weight: 'bold', wrap: true },
       ],
     },
     body: {
@@ -221,8 +231,8 @@ async function handleTasks(replyToken, emp) {
     footer: t.status !== '已完成' ? {
       type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
       contents: [
-        { type: 'button', action: { type: 'postback', label: '✏️ 進行中', data: `task_update_${t.id}_進行中` }, style: 'secondary', height: 'sm', flex: 1 },
-        { type: 'button', action: { type: 'postback', label: '✅ 完成', data: `task_update_${t.id}_已完成` }, style: 'primary', color: '#4CAF50', height: 'sm', flex: 1 },
+        { type: 'button', action: { type: 'postback', label: '進行中', data: `task_update_${t.id}_進行中` }, style: 'secondary', height: 'sm', flex: 1 },
+        { type: 'button', action: { type: 'postback', label: '完成', data: `task_update_${t.id}_已完成` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 },
       ],
     } : undefined,
   }))
@@ -246,19 +256,19 @@ async function handleInventory(replyToken, keyword) {
     type: 'bubble', size: 'kilo',
     header: {
       type: 'box', layout: 'vertical',
-      backgroundColor: (s.quantity || 0) <= (s.min_qty || 10) ? '#B71C1C' : '#1B5E20',
-      paddingAll: '14px',
+      backgroundColor: (s.quantity || 0) <= (s.min_qty || 10) ? '#FEF2F2' : C.inventory.bg,
+      paddingAll: '16px',
       contents: [
-        { type: 'text', text: s.sku_code || '', color: '#ffffff', size: 'xs' },
-        { type: 'text', text: s.sku_name, color: '#ffffff', size: 'md', weight: 'bold', wrap: true },
+        { type: 'text', text: s.sku_code || '', color: (s.quantity || 0) <= (s.min_qty || 10) ? '#F87171' : C.inventory.sub, size: 'xs', weight: 'bold' },
+        { type: 'text', text: s.sku_name, color: (s.quantity || 0) <= (s.min_qty || 10) ? '#991B1B' : C.inventory.text, size: 'md', weight: 'bold', wrap: true },
       ],
     },
     body: {
       type: 'box', layout: 'vertical', paddingAll: '14px',
       contents: [
-        { type: 'text', text: String(s.quantity || 0), size: '3xl', weight: 'bold', align: 'center', color: (s.quantity || 0) <= (s.min_qty || 10) ? '#F44336' : '#4CAF50' },
-        { type: 'text', text: s.unit || '個', size: 'sm', align: 'center', color: '#888888' },
-        ...(s.quantity <= (s.min_qty || 10) ? [{ type: 'text', text: '⚠ 低庫存警示', size: 'xs', color: '#F44336', align: 'center', margin: 'md' }] : []),
+        { type: 'text', text: String(s.quantity || 0), size: '3xl', weight: 'bold', align: 'center', color: (s.quantity || 0) <= (s.min_qty || 10) ? '#DC2626' : C.salary.accent },
+        { type: 'text', text: s.unit || '個', size: 'sm', align: 'center', color: '#94A3B8' },
+        ...(s.quantity <= (s.min_qty || 10) ? [{ type: 'text', text: '低庫存警示', size: 'xs', color: '#DC2626', align: 'center', margin: 'md' }] : []),
       ],
     },
   }))
@@ -285,12 +295,35 @@ async function handlePostback(replyToken, data, emp) {
             contents: [
               { type: 'text', text: status === '已完成' ? '✅' : '📝', size: '3xl', align: 'center' },
               { type: 'text', text: `「${updated.title}」`, size: 'md', weight: 'bold', align: 'center', margin: 'lg', wrap: true },
-              { type: 'text', text: `已更新為 ${status}`, size: 'sm', color: '#888888', align: 'center', margin: 'sm' },
+              { type: 'text', text: `已更新為 ${status}`, size: 'sm', color: '#94A3B8', align: 'center', margin: 'sm' },
             ],
           },
         },
       })
     }
+  }
+}
+
+// ── 排休 ──
+function buildOffRequestFlex() {
+  return {
+    type: 'flex', altText: '排休申請',
+    contents: {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: C.clock.bg, paddingAll: '18px',
+        contents: [
+          { type: 'text', text: '📅 排休申請', color: C.clock.text, size: 'lg', weight: 'bold' },
+          { type: 'text', text: '選擇希望休假的日期', color: C.clock.sub, size: 'xs', margin: 'sm' },
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: '12px',
+        contents: [
+          { type: 'button', action: { type: 'uri', label: '開啟排休頁面', uri: `https://liff.line.me/${LIFF_ID}/off-request` }, style: 'primary', color: C.clock.accent, height: 'sm' },
+        ],
+      },
+    },
   }
 }
 
@@ -301,10 +334,10 @@ async function handleMenu(replyToken) {
     contents: {
       type: 'bubble', size: 'mega',
       header: {
-        type: 'box', layout: 'vertical', backgroundColor: '#0D47A1', paddingAll: '20px',
+        type: 'box', layout: 'vertical', backgroundColor: C.brand.bg, paddingAll: '20px',
         contents: [
-          { type: 'text', text: 'SME OPS', color: '#ffffff', size: 'xl', weight: 'bold' },
-          { type: 'text', text: '員工服務選單', color: '#90CAF9', size: 'sm', margin: 'sm' },
+          { type: 'text', text: 'SME OPS', color: C.brand.text, size: 'xl', weight: 'bold' },
+          { type: 'text', text: '員工服務選單', color: C.brand.sub, size: 'sm', margin: 'sm' },
         ],
       },
       body: {
@@ -316,7 +349,7 @@ async function handleMenu(replyToken) {
           { type: 'button', action: { type: 'message', label: '⚙️ 我的任務', text: '任務' }, style: 'secondary', height: 'sm' },
           { type: 'button', action: { type: 'message', label: '📅 排休申請', text: '排休' }, style: 'secondary', height: 'sm' },
           { type: 'separator', margin: 'lg' },
-          { type: 'button', action: { type: 'uri', label: '📱 開啟完整平台', uri: `https://liff.line.me/${LIFF_ID}` }, style: 'primary', color: '#0D47A1', height: 'sm', margin: 'md' },
+          { type: 'button', action: { type: 'uri', label: '📱 開啟完整平台', uri: `https://liff.line.me/${LIFF_ID}` }, style: 'primary', color: C.brand.accent, height: 'sm', margin: 'md' },
         ],
       },
     },
@@ -372,7 +405,7 @@ export default async function handler(req, res) {
 
     // Not bound yet
     if (!emp) {
-      await reply(replyToken, { type: 'text', text: `❌ 尚未綁定帳號\n\n你的 LINE ID:\n${lineUserId}\n\n請將此 ID 提供給管理員進行綁定。` })
+      await reply(replyToken, { type: 'text', text: `尚未綁定帳號\n\n你的 LINE ID:\n${lineUserId}\n\n請將此 ID 提供給管理員進行綁定。` })
       continue
     }
 
@@ -393,29 +426,10 @@ export default async function handler(req, res) {
         await reply(replyToken, { type: 'text', text: '📦 請輸入品名\n例：庫存 螺絲' })
       }
     } else if (text === '排休' || text === '/排休' || text === '排班' || text === '/排班') {
-      await reply(replyToken, {
-        type: 'flex', altText: '排休申請',
-        contents: {
-          type: 'bubble', size: 'kilo',
-          header: {
-            type: 'box', layout: 'vertical', backgroundColor: '#E65100', paddingAll: '16px',
-            contents: [
-              { type: 'text', text: '📅 排休申請', color: '#ffffff', size: 'lg', weight: 'bold' },
-              { type: 'text', text: '選擇希望休假的日期', color: '#FFCC80', size: 'xs', margin: 'sm' },
-            ],
-          },
-          footer: {
-            type: 'box', layout: 'vertical', paddingAll: '12px',
-            contents: [
-              { type: 'button', action: { type: 'uri', label: '開啟排休頁面', uri: `https://liff.line.me/${LIFF_ID}/off-request` }, style: 'primary', color: '#E65100', height: 'sm' },
-            ],
-          },
-        },
-      })
+      await reply(replyToken, buildOffRequestFlex())
     } else if (text === '選單' || text === '功能' || text === 'menu' || text === '/menu') {
       await handleMenu(replyToken)
     } else {
-      // Default: show menu
       await handleMenu(replyToken)
     }
   }
