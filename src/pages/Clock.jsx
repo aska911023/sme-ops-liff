@@ -24,6 +24,8 @@ export default function ClockPage() {
   const [gpsError, setGpsError] = useState('')
   const [store, setStore] = useState(null)
   const [distance, setDistance] = useState(null)
+  const [clientIp, setClientIp] = useState(null)
+  const [wifiMatch, setWifiMatch] = useState(null) // null=checking, true/false
   const [msg, setMsg] = useState('')
 
   const today = new Date().toISOString().slice(0, 10)
@@ -49,7 +51,7 @@ export default function ClockPage() {
     if (employee.store) {
       supabase
         .from('stores')
-        .select('name, lat, lng, clock_radius')
+        .select('name, lat, lng, clock_radius, allowed_wifi')
         .eq('name', employee.store)
         .maybeSingle()
         .then(({ data }) => {
@@ -72,6 +74,12 @@ export default function ClockPage() {
     } else {
       setGpsError('此裝置不支援 GPS')
     }
+
+    // Get client IP for WiFi check
+    fetch('https://api.ipify.org?format=json')
+      .then(r => r.json())
+      .then(d => setClientIp(d.ip))
+      .catch(() => setClientIp(null))
   }, [employee])
 
   // Calculate distance when both location and store are available
@@ -82,9 +90,32 @@ export default function ClockPage() {
     }
   }, [location, store])
 
-  const radius = store?.clock_radius || 300
+  // Check WiFi IP match
+  useEffect(() => {
+    if (!clientIp || !store?.allowed_wifi?.length) {
+      setWifiMatch(null) // no WiFi restriction or no IP yet
+      return
+    }
+    // Simple IP prefix/CIDR matching
+    const match = store.allowed_wifi.some(rule => {
+      if (rule.includes('/')) {
+        // CIDR: compare prefix part
+        const prefix = rule.split('/')[0]
+        const prefixParts = prefix.split('.').slice(0, 3).join('.')
+        return clientIp.startsWith(prefixParts)
+      }
+      return clientIp === rule || clientIp.startsWith(rule)
+    })
+    setWifiMatch(match)
+  }, [clientIp, store])
+
+  const radius = store?.clock_radius || 150
   const isInRange = distance !== null && distance <= radius
-  const canClock = location && (isInRange || !store?.lat)
+  const hasWifiRule = store?.allowed_wifi?.length > 0
+  // Can clock if: GPS in range OR WiFi IP matches. If neither rule is set, allow.
+  const gpsOk = isInRange || !store?.lat
+  const wifiOk = !hasWifiRule || wifiMatch === true
+  const canClock = location && (gpsOk || wifiOk)
 
   const handleClock = async (type) => {
     if (loading || !canClock) return
@@ -188,6 +219,41 @@ export default function ClockPage() {
               </div>
             )}
           </>
+        )}
+
+        {/* WiFi IP Status */}
+        {hasWifiRule && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)' }}>WiFi 網路驗證</span>
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '10px 14px', borderRadius: 10,
+              background: wifiMatch === true ? 'var(--green-dim)' : wifiMatch === false ? 'var(--red-dim)' : 'var(--card)',
+              border: `1px solid ${wifiMatch === true ? 'rgba(52,211,153,0.2)' : wifiMatch === false ? 'rgba(248,113,113,0.2)' : 'var(--border)'}`,
+            }}>
+              {wifiMatch === null ? (
+                <span style={{ fontSize: 13, color: 'var(--t3)' }}>偵測中...</span>
+              ) : wifiMatch ? (
+                <>
+                  <CheckCircle size={18} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--green)' }}>門市 WiFi 已連線</div>
+                    <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>IP: {clientIp}</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle size={18} style={{ color: 'var(--red)', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--red)' }}>非門市網路</div>
+                    <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>IP: {clientIp || '無法取得'}（請連接門市 WiFi）</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         )}
       </div>
 
