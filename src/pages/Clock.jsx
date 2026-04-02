@@ -1,7 +1,19 @@
 import { useState, useEffect } from 'react'
-import { MapPin } from 'lucide-react'
+import { MapPin, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+
+// Haversine formula: distance between two GPS points in meters
+function getDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371000
+  const toRad = (d) => (d * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
 
 export default function ClockPage() {
   const { employee } = useAuth()
@@ -9,6 +21,9 @@ export default function ClockPage() {
   const [todayRecord, setTodayRecord] = useState(null)
   const [loading, setLoading] = useState(false)
   const [location, setLocation] = useState(null)
+  const [gpsError, setGpsError] = useState('')
+  const [store, setStore] = useState(null)
+  const [distance, setDistance] = useState(null)
   const [msg, setMsg] = useState('')
 
   const today = new Date().toISOString().slice(0, 10)
@@ -18,8 +33,10 @@ export default function ClockPage() {
     return () => clearInterval(timer)
   }, [])
 
+  // Load today's record + employee's store GPS
   useEffect(() => {
     if (!employee) return
+
     supabase
       .from('attendance_records')
       .select('*')
@@ -28,17 +45,49 @@ export default function ClockPage() {
       .maybeSingle()
       .then(({ data }) => setTodayRecord(data))
 
-    // Get GPS
+    // Get store GPS info
+    if (employee.store) {
+      supabase
+        .from('stores')
+        .select('name, lat, lng, clock_radius')
+        .eq('name', employee.store)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setStore(data)
+        })
+    }
+
+    // Get current GPS
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        pos => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => {}
+        (pos) => {
+          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+          setGpsError('')
+        },
+        (err) => {
+          setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
       )
+    } else {
+      setGpsError('此裝置不支援 GPS')
     }
   }, [employee])
 
+  // Calculate distance when both location and store are available
+  useEffect(() => {
+    if (location && store?.lat && store?.lng) {
+      const d = getDistance(location.lat, location.lng, store.lat, store.lng)
+      setDistance(Math.round(d))
+    }
+  }, [location, store])
+
+  const radius = store?.clock_radius || 300
+  const isInRange = distance !== null && distance <= radius
+  const canClock = location && (isInRange || !store?.lat)
+
   const handleClock = async (type) => {
-    if (loading) return
+    if (loading || !canClock) return
     setLoading(true)
     const now = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })
 
@@ -83,28 +132,98 @@ export default function ClockPage() {
       </div>
 
       {/* Clock Display */}
-      <div style={{ textAlign: 'center', margin: '20px 0 32px' }}>
+      <div style={{ textAlign: 'center', margin: '20px 0 24px' }}>
         <div className="clock-display">
           {time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
         </div>
-        {location && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 8, fontSize: 12, color: 'var(--t3)' }}>
-            <MapPin size={12} /> GPS 定位已取得
+      </div>
+
+      {/* GPS Status Card */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          <MapPin size={16} style={{ color: 'var(--cyan)' }} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)' }}>GPS 定位狀態</span>
+        </div>
+
+        {gpsError ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--red)', fontSize: 13 }}>
+            <XCircle size={16} />
+            <span>{gpsError}</span>
           </div>
+        ) : !location ? (
+          <div style={{ fontSize: 13, color: 'var(--t3)' }}>定位中...</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)', marginBottom: 8 }}>
+              <span>門市：{store?.name || employee?.store || '-'}</span>
+              <span>範圍：{radius}m</span>
+            </div>
+
+            {distance !== null && store?.lat ? (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '10px 14px', borderRadius: 10,
+                background: isInRange ? 'var(--green-dim)' : 'var(--red-dim)',
+                border: `1px solid ${isInRange ? 'rgba(52,211,153,0.2)' : 'rgba(248,113,113,0.2)'}`,
+              }}>
+                {isInRange ? (
+                  <CheckCircle size={18} style={{ color: 'var(--green)', flexShrink: 0 }} />
+                ) : (
+                  <AlertTriangle size={18} style={{ color: 'var(--red)', flexShrink: 0 }} />
+                )}
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: isInRange ? 'var(--green)' : 'var(--red)' }}>
+                    {isInRange ? '在打卡範圍內' : '不在打卡範圍內'}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
+                    距離門市 {distance >= 1000 ? `${(distance / 1000).toFixed(1)}km` : `${distance}m`}
+                    {!isInRange && ` (需在 ${radius}m 以內)`}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--t3)' }}>
+                <CheckCircle size={14} style={{ color: 'var(--green)', verticalAlign: 'middle', marginRight: 4 }} />
+                GPS 已取得（門市未設定座標，不限制範圍）
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Clock Button */}
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
         {!clockedIn ? (
-          <button className="clock-btn clock-in" onClick={() => handleClock('in')} disabled={loading}>
-            <span style={{ fontSize: 28 }}>👆</span>
-            上班打卡
+          <button
+            className={`clock-btn ${canClock ? 'clock-in' : ''}`}
+            onClick={() => handleClock('in')}
+            disabled={loading || !canClock}
+            style={!canClock ? {
+              background: 'var(--card)', border: '2px solid var(--border)',
+              color: 'var(--t3)', boxShadow: 'none', cursor: 'not-allowed',
+              width: 140, height: 140, borderRadius: '50%',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 4, fontSize: 16, fontWeight: 800,
+            } : undefined}
+          >
+            <span style={{ fontSize: 28 }}>{canClock ? '👆' : '📍'}</span>
+            {canClock ? '上班打卡' : '範圍外'}
           </button>
         ) : !clockedOut ? (
-          <button className="clock-btn clock-out" onClick={() => handleClock('out')} disabled={loading}>
-            <span style={{ fontSize: 28 }}>👋</span>
-            下班打卡
+          <button
+            className={`clock-btn ${canClock ? 'clock-out' : ''}`}
+            onClick={() => handleClock('out')}
+            disabled={loading || !canClock}
+            style={!canClock ? {
+              background: 'var(--card)', border: '2px solid var(--border)',
+              color: 'var(--t3)', boxShadow: 'none', cursor: 'not-allowed',
+              width: 140, height: 140, borderRadius: '50%',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 4, fontSize: 16, fontWeight: 800,
+            } : undefined}
+          >
+            <span style={{ fontSize: 28 }}>{canClock ? '👋' : '📍'}</span>
+            {canClock ? '下班打卡' : '範圍外'}
           </button>
         ) : (
           <div style={{
@@ -122,7 +241,8 @@ export default function ClockPage() {
       {msg && (
         <div style={{
           textAlign: 'center', padding: '10px', borderRadius: 10,
-          background: 'var(--green-dim)', color: 'var(--green)',
+          background: msg.includes('失敗') ? 'var(--red-dim)' : 'var(--green-dim)',
+          color: msg.includes('失敗') ? 'var(--red)' : 'var(--green)',
           fontSize: 14, fontWeight: 600, marginBottom: 20,
         }}>{msg}</div>
       )}
