@@ -128,22 +128,24 @@ body {
 .menu-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 .menu-item {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
-  padding: 16px 8px; border-radius: var(--radius);
+  padding: 18px 8px 14px; border-radius: 16px;
   background: var(--card); border: 1px solid var(--border);
   cursor: pointer; transition: all 0.2s;
   text-decoration: none; color: var(--t1);
 }
-.menu-item:active { transform: scale(0.96); }
+.menu-item:active { transform: scale(0.95); background: var(--card-hover); }
 .menu-icon {
-  width: 44px; height: 44px; border-radius: 12px;
+  width: 46px; height: 46px; border-radius: 14px;
   display: flex; align-items: center; justify-content: center;
-  font-size: 22px;
+  font-size: 23px;
+  transition: transform 0.2s;
 }
-.menu-label { font-size: 12px; font-weight: 600; text-align: center; }
+.menu-item:active .menu-icon { transform: scale(1.1); }
+.menu-label { font-size: 11px; font-weight: 700; text-align: center; letter-spacing: 0.3px; }
 
 /* ── Info Row ── */
 .info-row {

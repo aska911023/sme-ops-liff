@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>LINE Rich Menu — SME OPS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; background: #1a1a2e; font-family: -apple-system, 'Noto Sans TC', sans-serif;
+    padding: 40px;
+  }
+  .info {
+    color: #94a3b8; font-size: 14px; margin-bottom: 20px; text-align: center;
+  }
+  .info strong { color: #22d3ee; }
+
+  /* Rich Menu Canvas — 2500x1686 scaled down for preview */
+  .rich-menu {
+    width: 833px; height: 562px; /* 2500/3 x 1686/3 */
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 3px;
+    background: #0a0f2e;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+
+  .menu-cell {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; cursor: default;
+    position: relative; overflow: hidden;
+    transition: all 0.3s ease;
+  }
+
+  .menu-cell::before {
+    content: '';
+    position: absolute; inset: 0;
+    opacity: 0.06;
+    background: radial-gradient(circle at 50% 40%, currentColor 0%, transparent 70%);
+  }
+
+  .menu-cell .icon-wrap {
+    width: 72px; height: 72px;
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 36px;
+    position: relative; z-index: 1;
+  }
+
+  .menu-cell .label {
+    font-size: 20px; font-weight: 800;
+    letter-spacing: 1px;
+    position: relative; z-index: 1;
+  }
+
+  .menu-cell .sub {
+    font-size: 11px; font-weight: 500;
+    opacity: 0.5;
+    letter-spacing: 0.5px;
+    position: relative; z-index: 1;
+    margin-top: -6px;
+  }
+
+  /* Cell styles */
+  .cell-clock {
+    background: linear-gradient(160deg, #0c1a3a 0%, #0a1230 100%);
+    color: #22d3ee;
+  }
+  .cell-clock .icon-wrap {
+    background: rgba(34,211,238,0.12);
+    border: 1.5px solid rgba(34,211,238,0.25);
+    box-shadow: 0 4px 20px rgba(34,211,238,0.15);
+  }
+
+  .cell-leave {
+    background: linear-gradient(160deg, #0c1a3a 0%, #0a1230 100%);
+    color: #3b82f6;
+  }
+  .cell-leave .icon-wrap {
+    background: rgba(59,130,246,0.12);
+    border: 1.5px solid rgba(59,130,246,0.25);
+    box-shadow: 0 4px 20px rgba(59,130,246,0.15);
+  }
+
+  .cell-salary {
+    background: linear-gradient(160deg, #0c1a3a 0%, #0a1230 100%);
+    color: #34d399;
+  }
+  .cell-salary .icon-wrap {
+    background: rgba(52,211,153,0.12);
+    border: 1.5px solid rgba(52,211,153,0.25);
+    box-shadow: 0 4px 20px rgba(52,211,153,0.15);
+  }
+
+  .cell-inventory {
+    background: linear-gradient(160deg, #0c1a3a 0%, #0a1230 100%);
+    color: #fb923c;
+  }
+  .cell-inventory .icon-wrap {
+    background: rgba(251,146,60,0.12);
+    border: 1.5px solid rgba(251,146,60,0.25);
+    box-shadow: 0 4px 20px rgba(251,146,60,0.15);
+  }
+
+  .cell-expense {
+    background: linear-gradient(160deg, #0c1a3a 0%, #0a1230 100%);
+    color: #a78bfa;
+  }
+  .cell-expense .icon-wrap {
+    background: rgba(167,139,250,0.12);
+    border: 1.5px solid rgba(167,139,250,0.25);
+    box-shadow: 0 4px 20px rgba(167,139,250,0.15);
+  }
+
+  .cell-more {
+    background: linear-gradient(160deg, #0c1a3a 0%, #0a1230 100%);
+    color: #f472b6;
+  }
+  .cell-more .icon-wrap {
+    background: rgba(244,114,182,0.12);
+    border: 1.5px solid rgba(244,114,182,0.25);
+    box-shadow: 0 4px 20px rgba(244,114,182,0.15);
+  }
+
+  /* Divider lines */
+  .rich-menu .menu-cell {
+    border-right: 1px solid rgba(148,163,184,0.08);
+    border-bottom: 1px solid rgba(148,163,184,0.08);
+  }
+  .rich-menu .menu-cell:nth-child(3n) { border-right: none; }
+  .rich-menu .menu-cell:nth-child(n+4) { border-bottom: none; }
+
+  .tip {
+    color: #64748b; font-size: 12px; margin-top: 20px; text-align: center; line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+  <div class="info">
+    LINE Rich Menu 預覽 — 實際尺寸 <strong>2500 x 1686</strong>（此為 1/3 縮放預覽）
+  </div>
+
+  <div class="rich-menu">
+    <!-- Row 1 -->
+    <div class="menu-cell cell-clock">
+      <div class="icon-wrap">⏰</div>
+      <div class="label">打卡</div>
+      <div class="sub">CLOCK IN/OUT</div>
+    </div>
+    <div class="menu-cell cell-leave">
+      <div class="icon-wrap">📋</div>
+      <div class="label">請假</div>
+      <div class="sub">LEAVE</div>
+    </div>
+    <div class="menu-cell cell-salary">
+      <div class="icon-wrap">💰</div>
+      <div class="label">薪水</div>
+      <div class="sub">SALARY</div>
+    </div>
+
+    <!-- Row 2 -->
+    <div class="menu-cell cell-inventory">
+      <div class="icon-wrap">📦</div>
+      <div class="label">庫存</div>
+      <div class="sub">INVENTORY</div>
+    </div>
+    <div class="menu-cell cell-expense">
+      <div class="icon-wrap">🧾</div>
+      <div class="label">報帳</div>
+      <div class="sub">EXPENSE</div>
+    </div>
+    <div class="menu-cell cell-more">
+      <div class="icon-wrap">✨</div>
+      <div class="label">更多</div>
+      <div class="sub">MORE</div>
+    </div>
+  </div>
+
+  <div class="tip">
+    使用方式：在瀏覽器全螢幕截圖此區塊，或按右鍵另存圖片<br>
+    上傳至 LINE Official Account Manager → Rich Menu → 設定圖片
+  </div>
+</body>
+</html>
