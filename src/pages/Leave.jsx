@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
-const TYPES = ['特休', '事假', '病假', '公假', '婚假', '喪假', '產假', '陪產假']
+const TYPES = ['特休', '事假', '病假', '公假', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理不適假']
 
 export default function Leave() {
   const { employee } = useAuth()
@@ -12,7 +12,7 @@ export default function Leave() {
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ type: TYPES[0], start_date: '', end_date: '', reason: '' })
+  const [form, setForm] = useState({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
   const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
@@ -27,17 +27,32 @@ export default function Leave() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const handleSubmit = async () => {
-    if (!form.start_date || !form.end_date) return
+    if (!form.start_date) return
     setSubmitting(true)
-    const start = new Date(form.start_date)
-    const end = new Date(form.end_date)
-    const days = Math.max(1, Math.ceil((end - start) / 86400000) + 1)
+
+    let days, hours
+    if (form.unit === 'hour') {
+      // 時數制
+      const [sh, sm] = form.start_time.split(':').map(Number)
+      const [eh, em] = form.end_time.split(':').map(Number)
+      hours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+      days = Math.round(hours / 8 * 10) / 10 // 換算天數
+    } else {
+      const start = new Date(form.start_date)
+      const end = new Date(form.end_date || form.start_date)
+      days = Math.max(1, Math.ceil((end - start) / 86400000) + 1)
+      hours = days * 8
+    }
+
     const { data, error } = await supabase.from('leave_requests').insert({
       employee: employee.name,
       type: form.type,
       start_date: form.start_date,
-      end_date: form.end_date,
+      end_date: form.end_date || form.start_date,
       days,
+      hours,
+      start_time: form.unit === 'hour' ? form.start_time : null,
+      end_time: form.unit === 'hour' ? form.end_time : null,
       reason: form.reason,
       status: '待審核',
     }).select().single()
@@ -45,7 +60,7 @@ export default function Leave() {
     if (data) {
       setRecords(prev => [data, ...prev])
       setShowForm(false)
-      setForm({ type: TYPES[0], start_date: '', end_date: '', reason: '' })
+      setForm({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
     }
     setSubmitting(false)
   }
@@ -70,16 +85,45 @@ export default function Leave() {
               {TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div className="form-group">
-              <label className="form-label">開始日期</label>
-              <input className="form-input" type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">結束日期</label>
-              <input className="form-input" type="date" value={form.end_date} onChange={e => set('end_date', e.target.value)} />
+          {/* Day / Hour toggle */}
+          <div className="form-group">
+            <label className="form-label">請假單位</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{ value: 'day', label: '整天' }, { value: 'hour', label: '時數' }].map(u => (
+                <button key={u.value} onClick={() => set('unit', u.value)} style={{
+                  flex: 1, padding: '8px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  border: `1.5px solid ${form.unit === u.value ? 'var(--cyan)' : 'var(--border2)'}`,
+                  background: form.unit === u.value ? 'var(--cyan-dim)' : 'var(--card)',
+                  color: form.unit === u.value ? 'var(--cyan)' : 'var(--t2)',
+                  cursor: 'pointer',
+                }}>{u.label}</button>
+              ))}
             </div>
           </div>
+          <div style={{ display: 'grid', gridTemplateColumns: form.unit === 'hour' ? '1fr' : '1fr 1fr', gap: 10 }}>
+            <div className="form-group">
+              <label className="form-label">{form.unit === 'hour' ? '日期' : '開始日期'}</label>
+              <input className="form-input" type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} />
+            </div>
+            {form.unit === 'day' && (
+              <div className="form-group">
+                <label className="form-label">結束日期</label>
+                <input className="form-input" type="date" value={form.end_date} onChange={e => set('end_date', e.target.value)} />
+              </div>
+            )}
+          </div>
+          {form.unit === 'hour' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div className="form-group">
+                <label className="form-label">開始時間</label>
+                <input className="form-input" type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">結束時間</label>
+                <input className="form-input" type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)} />
+              </div>
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">請假事由</label>
             <textarea className="form-input" placeholder="請輸入請假原因..." value={form.reason} onChange={e => set('reason', e.target.value)} />
@@ -113,8 +157,12 @@ export default function Leave() {
             <span className="badge badge-cyan">{r.type}</span>
             <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
           </div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{r.start_date} ~ {r.end_date}</div>
-          <div style={{ fontSize: 12, color: 'var(--t3)' }}>{r.days} 天{r.reason ? ` · ${r.reason}` : ''}</div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+            {r.start_date}{r.start_time ? ` ${r.start_time}` : ''}{r.end_date !== r.start_date ? ` ~ ${r.end_date}` : ''}{r.end_time ? ` ${r.end_time}` : ''}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--t3)' }}>
+            {r.hours && r.hours < 8 ? `${r.hours} 小時` : `${r.days} 天`}{r.reason ? ` · ${r.reason}` : ''}
+          </div>
         </div>
       ))}
     </div>
