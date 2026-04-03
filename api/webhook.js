@@ -279,11 +279,12 @@ async function handleInventory(replyToken, keyword) {
   })
 }
 
-// Postback: 更新任務狀態
+// Postback handler: tasks, leave approval, PR approval
 async function handlePostback(replyToken, data, emp) {
-  const match = data.match(/^task_update_(\d+)_(.+)$/)
-  if (match) {
-    const [, id, status] = match
+  // Task update
+  const taskMatch = data.match(/^task_update_(\d+)_(.+)$/)
+  if (taskMatch) {
+    const [, id, status] = taskMatch
     const { data: updated } = await supabase.from('tasks').update({ status }).eq('id', Number(id)).select().single()
     if (updated) {
       await reply(replyToken, {
@@ -301,7 +302,161 @@ async function handlePostback(replyToken, data, emp) {
         },
       })
     }
+    return
   }
+
+  // Leave approval: leave_approve_{id} / leave_reject_{id}
+  const leaveMatch = data.match(/^leave_(approve|reject)_(\d+)$/)
+  if (leaveMatch) {
+    const [, action, id] = leaveMatch
+    const newStatus = action === 'approve' ? '已核准' : '已駁回'
+    const { data: updated } = await supabase.from('leave_requests').update({ status: newStatus }).eq('id', Number(id)).select().single()
+    if (updated) {
+      await reply(replyToken, {
+        type: 'flex', altText: `假單${newStatus}`,
+        contents: {
+          type: 'bubble', size: 'kilo',
+          header: {
+            type: 'box', layout: 'vertical', backgroundColor: action === 'approve' ? C.salary.bg : '#FEF2F2', paddingAll: '16px',
+            contents: [
+              { type: 'text', text: action === 'approve' ? '✅ 假單已核准' : '❌ 假單已駁回', color: action === 'approve' ? C.salary.text : '#991B1B', size: 'lg', weight: 'bold' },
+            ],
+          },
+          body: {
+            type: 'box', layout: 'vertical', paddingAll: '16px',
+            contents: [
+              infoRow('員工', updated.employee),
+              infoRow('類型', updated.type || '-'),
+              infoRow('日期', updated.start_date || '-'),
+              infoRow('天數', `${updated.days || 1} 天`),
+              infoRow('審核者', emp.name),
+            ],
+          },
+        },
+      })
+    }
+    return
+  }
+
+  // PR approval: pr_approve_{id} / pr_reject_{id}
+  const prMatch = data.match(/^pr_(approve|reject)_(\d+)$/)
+  if (prMatch) {
+    const [, action, id] = prMatch
+    const newStatus = action === 'approve' ? '已核准' : '已駁回'
+    const { data: updated } = await supabase.from('purchase_requests').update({ status: newStatus, approved_by: emp.name }).eq('id', Number(id)).select().single()
+    if (updated) {
+      await reply(replyToken, {
+        type: 'flex', altText: `採購申請${newStatus}`,
+        contents: {
+          type: 'bubble', size: 'kilo',
+          header: {
+            type: 'box', layout: 'vertical', backgroundColor: action === 'approve' ? C.salary.bg : '#FEF2F2', paddingAll: '16px',
+            contents: [
+              { type: 'text', text: action === 'approve' ? '✅ 採購申請已核准' : '❌ 採購申請已駁回', color: action === 'approve' ? C.salary.text : '#991B1B', size: 'lg', weight: 'bold' },
+            ],
+          },
+          body: {
+            type: 'box', layout: 'vertical', paddingAll: '16px',
+            contents: [
+              infoRow('PR 編號', updated.pr_number),
+              infoRow('申請人', updated.requester),
+              infoRow('金額', `NT$ ${(updated.total_amount || 0).toLocaleString()}`),
+              infoRow('審核者', emp.name),
+            ],
+          },
+        },
+      })
+    }
+    return
+  }
+}
+
+// ── 簽核通知：發送待簽核通知給主管 ──
+async function sendApprovalNotification(type, record) {
+  // Find managers with LINE ID
+  const { data: managers } = await supabase
+    .from('employees').select('name, line_user_id')
+    .in('position', ['經理', '主管', '資深工程師', '行銷經理'])
+    .not('line_user_id', 'is', null)
+
+  if (!managers?.length) return
+
+  for (const mgr of managers) {
+    if (!mgr.line_user_id) continue
+
+    if (type === 'leave') {
+      await pushToUser(mgr.line_user_id, {
+        type: 'flex', altText: '待簽核假單',
+        contents: {
+          type: 'bubble', size: 'kilo',
+          header: {
+            type: 'box', layout: 'vertical', backgroundColor: C.leave.bg, paddingAll: '16px',
+            contents: [
+              { type: 'text', text: '📋 待簽核假單', color: C.leave.text, size: 'lg', weight: 'bold' },
+              { type: 'text', text: '請審核以下請假申請', color: C.leave.sub, size: 'xs', margin: 'sm' },
+            ],
+          },
+          body: {
+            type: 'box', layout: 'vertical', paddingAll: '16px',
+            contents: [
+              infoRow('員工', record.employee),
+              infoRow('類型', record.type || '-'),
+              infoRow('日期', record.start_date || '-'),
+              infoRow('天數', `${record.days || 1} 天`),
+              infoRow('原因', record.reason || '-'),
+            ],
+          },
+          footer: {
+            type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+            contents: [
+              { type: 'button', action: { type: 'postback', label: '✅ 核准', data: `leave_approve_${record.id}` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 },
+              { type: 'button', action: { type: 'postback', label: '❌ 駁回', data: `leave_reject_${record.id}` }, style: 'secondary', height: 'sm', flex: 1 },
+            ],
+          },
+        },
+      })
+    }
+
+    if (type === 'pr') {
+      await pushToUser(mgr.line_user_id, {
+        type: 'flex', altText: '待簽核採購申請',
+        contents: {
+          type: 'bubble', size: 'kilo',
+          header: {
+            type: 'box', layout: 'vertical', backgroundColor: C.clock.bg, paddingAll: '16px',
+            contents: [
+              { type: 'text', text: '🛒 待簽核採購申請', color: C.clock.text, size: 'lg', weight: 'bold' },
+            ],
+          },
+          body: {
+            type: 'box', layout: 'vertical', paddingAll: '16px',
+            contents: [
+              infoRow('PR 編號', record.pr_number),
+              infoRow('申請人', record.requester),
+              infoRow('部門', record.department),
+              infoRow('金額', `NT$ ${(record.total_amount || 0).toLocaleString()}`),
+              infoRow('原因', record.reason || '-'),
+            ],
+          },
+          footer: {
+            type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+            contents: [
+              { type: 'button', action: { type: 'postback', label: '✅ 核准', data: `pr_approve_${record.id}` }, style: 'primary', color: C.clock.accent, height: 'sm', flex: 1 },
+              { type: 'button', action: { type: 'postback', label: '❌ 駁回', data: `pr_reject_${record.id}` }, style: 'secondary', height: 'sm', flex: 1 },
+            ],
+          },
+        },
+      })
+    }
+  }
+}
+
+async function pushToUser(to, message) {
+  await fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${CHANNEL_ACCESS_TOKEN}` },
+    body: JSON.stringify({ to, messages: [message] }),
+  })
 }
 
 // ── 排休 ──
