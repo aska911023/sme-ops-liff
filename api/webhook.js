@@ -371,15 +371,24 @@ async function handlePostback(replyToken, data, emp) {
   }
 }
 
-// ── 簽核通知：發送待簽核通知給主管 ──
+// ── 簽核通知：根據組織架構找直屬主管 ──
 async function sendApprovalNotification(type, record) {
-  // Find managers with LINE ID
-  const { data: managers } = await supabase
-    .from('employees').select('name, line_user_id')
-    .in('position', ['經理', '主管', '資深工程師', '行銷經理'])
-    .not('line_user_id', 'is', null)
+  // 動態簽核：找到申請人的直屬主管
+  const { data: emp } = await supabase
+    .from('employees').select('supervisor')
+    .eq('name', record.employee || record.requester)
+    .maybeSingle()
 
-  if (!managers?.length) return
+  if (!emp?.supervisor) return
+
+  const { data: supervisor } = await supabase
+    .from('employees').select('name, line_user_id')
+    .eq('name', emp.supervisor)
+    .maybeSingle()
+
+  if (!supervisor?.line_user_id) return
+
+  const managers = [supervisor]
 
   for (const mgr of managers) {
     if (!mgr.line_user_id) continue
