@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { MapPin, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -13,6 +13,18 @@ function getDistance(lat1, lng1, lat2, lng2) {
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// Check if an IP matches a CIDR or exact IP entry
+function ipMatchesCIDR(ip, cidr) {
+  const ipToNum = (s) => s.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0
+  const trimmed = cidr.trim()
+  if (trimmed.includes('/')) {
+    const [network, bits] = trimmed.split('/')
+    const mask = ~((1 << (32 - parseInt(bits, 10))) - 1) >>> 0
+    return (ipToNum(ip) & mask) === (ipToNum(network) & mask)
+  }
+  return ip === trimmed
 }
 
 export default function ClockPage() {
@@ -90,23 +102,13 @@ export default function ClockPage() {
     }
   }, [location, store])
 
-  // Check WiFi IP match
+  // Check WiFi IP match (proper CIDR)
   useEffect(() => {
     if (!clientIp || !store?.allowed_wifi?.length) {
-      setWifiMatch(null) // no WiFi restriction or no IP yet
+      setWifiMatch(null)
       return
     }
-    // Simple IP prefix/CIDR matching
-    const match = store.allowed_wifi.some(rule => {
-      if (rule.includes('/')) {
-        // CIDR: compare prefix part
-        const prefix = rule.split('/')[0]
-        const prefixParts = prefix.split('.').slice(0, 3).join('.')
-        return clientIp.startsWith(prefixParts)
-      }
-      return clientIp === rule || clientIp.startsWith(rule)
-    })
-    setWifiMatch(match)
+    setWifiMatch(store.allowed_wifi.some(rule => ipMatchesCIDR(clientIp, rule)))
   }, [clientIp, store])
 
   const radius = store?.clock_radius || 150
@@ -116,6 +118,13 @@ export default function ClockPage() {
   const gpsOk = isInRange || !store?.lat
   const wifiOk = !hasWifiRule || wifiMatch === true
   const canClock = location && (gpsOk || wifiOk)
+
+  // Determine clock-in location name
+  const getLocationName = () => {
+    if (gpsOk && store?.name) return store.name
+    if (wifiOk && store?.name) return store.name
+    return '外部位置'
+  }
 
   const handleClock = async (type) => {
     if (loading || !canClock) return
@@ -129,6 +138,10 @@ export default function ClockPage() {
           date: today,
           clock_in: now,
           status: now <= '09:00' ? '正常' : '遲到',
+          clock_in_lat: location?.lat || null,
+          clock_in_lng: location?.lng || null,
+          clock_in_ip: clientIp || null,
+          clock_in_location: getLocationName(),
         }
         const { data, error } = await supabase.from('attendance_records').insert(row).select().single()
         if (error) { setMsg(`打卡失敗: ${error.message}`); setLoading(false); return }
@@ -137,7 +150,13 @@ export default function ClockPage() {
         const clockIn = todayRecord?.clock_in?.slice(0, 5) || '09:00'
         const hours = Math.max(0, Math.round((new Date(`2000-01-01T${now}`) - new Date(`2000-01-01T${clockIn}`)) / 3600000 * 10) / 10)
         const { data, error } = await supabase.from('attendance_records')
-          .update({ clock_out: now, hours })
+          .update({
+            clock_out: now,
+            hours,
+            clock_out_lat: location?.lat || null,
+            clock_out_lng: location?.lng || null,
+            clock_out_ip: clientIp || null,
+          })
           .eq('id', todayRecord.id)
           .select().single()
         if (error) { setMsg(`打卡失敗: ${error.message}`); setLoading(false); return }
@@ -225,6 +244,7 @@ export default function ClockPage() {
         {hasWifiRule && (
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <Wifi size={14} style={{ color: 'var(--cyan)' }} />
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)' }}>WiFi 網路驗證</span>
             </div>
             <div style={{
@@ -338,6 +358,22 @@ export default function ClockPage() {
             {todayRecord?.status || '未打卡'}
           </span>
         </div>
+        {todayRecord?.clock_in_location && (
+          <div className="info-row">
+            <span className="info-label">打卡地點</span>
+            <span className="info-value" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <MapPin size={12} /> {todayRecord.clock_in_location}
+            </span>
+          </div>
+        )}
+        {todayRecord?.clock_in_ip && (
+          <div className="info-row">
+            <span className="info-label">IP 位址</span>
+            <span className="info-value" style={{ fontFamily: 'monospace', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Wifi size={12} /> {todayRecord.clock_in_ip}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )
