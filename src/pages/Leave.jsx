@@ -90,7 +90,8 @@ export default function Leave() {
   const [form, setForm] = useState({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
   const [submitting, setSubmitting] = useState(false)
   const [showAllBalances, setShowAllBalances] = useState(false)
-  const [attachFiles, setAttachFiles] = useState([]) // { file, preview }
+  const [attachFiles, setAttachFiles] = useState([]) // new files: { file, preview }
+  const [existingAttach, setExistingAttach] = useState([]) // existing URLs from DB
   const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
@@ -112,6 +113,7 @@ export default function Leave() {
     setEditingId(null)
     setShowForm(false)
     setAttachFiles([])
+    setExistingAttach([])
   }
 
   const handleFileSelect = (e) => {
@@ -153,6 +155,8 @@ export default function Leave() {
       unit: r.start_time ? 'hour' : 'day',
       reason: r.reason || '',
     })
+    setExistingAttach(r.attachments || [])
+    setAttachFiles([])
     setEditingId(r.id)
     setShowForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -202,17 +206,18 @@ export default function Leave() {
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
     if (result) {
-      // Upload attachments if any
+      // Upload new attachments + keep existing ones
+      const allAttach = [...existingAttach]
       if (attachFiles.length > 0) {
         setUploading(true)
-        const urls = await uploadAttachments(result.id)
-        if (urls.length > 0) {
-          const existing = result.attachments || []
-          const { data: updated } = await supabase.from('leave_requests')
-            .update({ attachments: [...existing, ...urls] }).eq('id', result.id).select().single()
-          if (updated) result = updated
-        }
+        const newUrls = await uploadAttachments(result.id)
+        allAttach.push(...newUrls)
         setUploading(false)
+      }
+      if (allAttach.length > 0) {
+        const { data: updated } = await supabase.from('leave_requests')
+          .update({ attachments: allAttach }).eq('id', result.id).select().single()
+        if (updated) result = updated
       }
       if (editingId) {
         setRecords(prev => prev.map(r => r.id === result.id ? result : r))
@@ -411,6 +416,26 @@ export default function Leave() {
               <Paperclip size={14} /> 選擇圖片/檔案
               <input type="file" accept="image/*,.pdf" multiple hidden onChange={handleFileSelect} />
             </label>
+            {/* Existing attachments (when editing) */}
+            {existingAttach.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {existingAttach.map((url, i) => (
+                  <div key={'ex-' + i} style={{ position: 'relative', width: 72, height: 72, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--green)' }}>
+                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
+                    <div style={{ display: 'none', width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', fontSize: 9, color: 'var(--t3)' }}>
+                      已上傳
+                    </div>
+                    <button onClick={() => setExistingAttach(prev => prev.filter((_, j) => j !== i))} style={{
+                      position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                    }}><X size={10} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* New file previews */}
             {attachFiles.length > 0 && (
               <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
                 {attachFiles.map((f, i) => (
