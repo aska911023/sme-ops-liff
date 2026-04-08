@@ -19,7 +19,7 @@ function calcAnnualLeave(joinDate) {
   return Math.min(30, 15 + (Math.floor(years) - 10))
 }
 
-// 各假別年度上限
+// 各假別年度上限（曆年制：1/1 ~ 12/31）
 const LEAVE_LIMITS = {
   '事假': 14,
   '病假': 30,
@@ -29,6 +29,27 @@ const LEAVE_LIMITS = {
   '婚假': 8,
   '陪產假': 7,
   '產檢假': 7,
+}
+
+// 取得特休年度區間（到職週年制）
+function getAnnualLeaveRange(joinDate) {
+  const join = new Date(joinDate)
+  const now = new Date()
+  const thisAnniv = new Date(now.getFullYear(), join.getMonth(), join.getDate())
+  if (thisAnniv > now) {
+    // 今年週年還沒到，用去年週年 ~ 今年週年
+    const lastAnniv = new Date(now.getFullYear() - 1, join.getMonth(), join.getDate())
+    return { start: lastAnniv, end: thisAnniv }
+  }
+  // 今年週年已過，用今年週年 ~ 明年週年
+  const nextAnniv = new Date(now.getFullYear() + 1, join.getMonth(), join.getDate())
+  return { start: thisAnniv, end: nextAnniv }
+}
+
+// 取得曆年區間
+function getCalendarYearRange() {
+  const year = new Date().getFullYear()
+  return { start: new Date(year, 0, 1), end: new Date(year + 1, 0, 1) }
 }
 
 export default function Leave() {
@@ -163,8 +184,18 @@ export default function Leave() {
       {employee?.join_date && (() => {
         const annualTotal = calcAnnualLeave(employee.join_date)
         const approved = records.filter(r => r.status !== '已拒絕')
-        const usedByType = (type) => approved.filter(r => r.type === type).reduce((s, r) => s + (r.days || 0), 0)
-        const annualUsed = usedByType('特休')
+
+        // 特休：到職週年制
+        const annualRange = getAnnualLeaveRange(employee.join_date)
+        const annualUsed = approved
+          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+          .reduce((s, r) => s + (r.days || 0), 0)
+
+        // 其他假別：曆年制
+        const calRange = getCalendarYearRange()
+        const usedByType = (type) => approved
+          .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
+          .reduce((s, r) => s + (r.days || 0), 0)
         const balances = [
           { label: '特休', total: annualTotal, used: annualUsed, color: 'var(--cyan)' },
           ...Object.entries(LEAVE_LIMITS).map(([type, total]) => ({
@@ -195,6 +226,10 @@ export default function Leave() {
             <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>
               年資 {Math.round((new Date() - new Date(employee.join_date)) / (365.25 * 86400000) * 10) / 10} 年
               {annualTotal === 0 && '（未滿 6 個月，尚無特休）'}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>
+              特休週期：{annualRange.start.toLocaleDateString('zh-TW')} ~ {new Date(annualRange.end.getTime() - 86400000).toLocaleDateString('zh-TW')}
+              ｜其他假別：{calRange.start.getFullYear()} 年度
             </div>
           </div>
         )
