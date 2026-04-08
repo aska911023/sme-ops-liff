@@ -136,8 +136,14 @@ export default function Leave() {
     for (const { file } of attachFiles) {
       const ext = file.name.split('.').pop()
       const path = `${employee.name}/${leaveId}-${Date.now()}.${ext}`
-      const { error } = await supabase.storage.from('leave-attachments').upload(path, file)
-      if (!error) {
+      const { error } = await supabase.storage.from('leave-attachments').upload(path, file, {
+        cacheControl: '3600',
+        upsert: true,
+      })
+      if (error) {
+        console.error('Upload failed:', error)
+        alert(`附件上傳失敗: ${error.message}`)
+      } else {
         const { data } = supabase.storage.from('leave-attachments').getPublicUrl(path)
         urls.push(data.publicUrl)
       }
