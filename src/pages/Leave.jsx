@@ -458,11 +458,11 @@ export default function Leave() {
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-success" style={{ flex: 1 }} onClick={handleSubmit} disabled={submitting || uploading}>
+            <button className="btn btn-success" style={{ flex: 3 }} onClick={handleSubmit} disabled={submitting || uploading}>
               {uploading ? '上傳中...' : submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
             </button>
             {editingId && (
-              <button className="btn" style={{ padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--t3)' }} onClick={resetForm}>
+              <button className="btn" style={{ flex: 1, background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--t3)' }} onClick={resetForm}>
                 取消
               </button>
             )}
