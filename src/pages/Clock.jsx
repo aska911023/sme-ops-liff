@@ -3,6 +3,8 @@ import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
+const GPS_ACCURACY_THRESHOLD = 200
+
 // Haversine formula: distance between two GPS points in meters
 function getDistance(lat1, lng1, lat2, lng2) {
   const R = 6371000
@@ -17,14 +19,69 @@ function getDistance(lat1, lng1, lat2, lng2) {
 
 // Check if an IP matches a CIDR or exact IP entry
 function ipMatchesCIDR(ip, cidr) {
-  const ipToNum = (s) => s.split('.').reduce((acc, oct) => (acc << 8) + parseInt(oct, 10), 0) >>> 0
   const trimmed = cidr.trim()
+  if (!trimmed) return false
+  const ipToNum = (s) => {
+    const parts = s.split('.')
+    if (parts.length !== 4) return null
+    let num = 0
+    for (const p of parts) {
+      const n = parseInt(p, 10)
+      if (isNaN(n) || n < 0 || n > 255) return null
+      num = (num << 8) + n
+    }
+    return num >>> 0
+  }
+  const ipNum = ipToNum(ip)
+  if (ipNum === null) return false
   if (trimmed.includes('/')) {
-    const [network, bits] = trimmed.split('/')
-    const mask = ~((1 << (32 - parseInt(bits, 10))) - 1) >>> 0
-    return (ipToNum(ip) & mask) === (ipToNum(network) & mask)
+    const [network, bitsStr] = trimmed.split('/')
+    const bits = parseInt(bitsStr, 10)
+    if (isNaN(bits) || bits < 0 || bits > 32) return false
+    const netNum = ipToNum(network)
+    if (netNum === null) return false
+    const mask = bits === 0 ? 0 : ~((1 << (32 - bits)) - 1) >>> 0
+    return (ipNum & mask) === (netNum & mask)
   }
   return ip === trimmed
+}
+
+// Get public IP with retry + backup API
+async function fetchPublicIP() {
+  const apis = [
+    'https://api.ipify.org?format=json',
+    'https://api.seeip.org/jsonip',
+  ]
+  for (const url of apis) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+      if (!res.ok) continue
+      const data = await res.json()
+      return data.ip
+    } catch { /* try next */ }
+  }
+  return null
+}
+
+// Server-side clock-in via Edge Function
+async function serverClockIn(payload) {
+  const url = import.meta.env.VITE_SUPABASE_URL
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const res = await fetch(`${url}/functions/v1/clock-in`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`,
+      'apikey': key,
+    },
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json()
+  if (!res.ok) {
+    const msg = data.reasons ? `${data.error}\n${data.reasons.join('\n')}` : (data.error || '伺服器錯誤')
+    throw new Error(msg)
+  }
+  return data
 }
 
 export default function ClockPage() {
@@ -35,8 +92,11 @@ export default function ClockPage() {
   const [location, setLocation] = useState(null)
   const [gpsError, setGpsError] = useState('')
   const [store, setStore] = useState(null)
+  const [gpsAccuracy, setGpsAccuracy] = useState(null)
+  const [gpsWeak, setGpsWeak] = useState(false)
   const [distance, setDistance] = useState(null)
   const [clientIp, setClientIp] = useState(null)
+  const [ipError, setIpError] = useState(false)
   const [wifiMatch, setWifiMatch] = useState(null) // null=checking, true/false
   const [msg, setMsg] = useState('')
 
@@ -75,23 +135,36 @@ export default function ClockPage() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-          setGpsError('')
+          const { latitude, longitude, accuracy } = pos.coords
+          setLocation({ lat: latitude, lng: longitude })
+          setGpsAccuracy(Math.round(accuracy))
+          if (accuracy > GPS_ACCURACY_THRESHOLD) {
+            setGpsWeak(true)
+            setGpsError(`GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考`)
+          } else {
+            setGpsWeak(false)
+            setGpsError('')
+          }
         },
         (err) => {
           setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 15000 }
       )
     } else {
       setGpsError('此裝置不支援 GPS')
     }
 
-    // Get client IP for WiFi check
-    fetch('https://api.ipify.org?format=json')
-      .then(r => r.json())
-      .then(d => setClientIp(d.ip))
-      .catch(() => setClientIp(null))
+    // Get client IP for WiFi check (with retry + backup)
+    fetchPublicIP().then(ip => {
+      if (ip) {
+        setClientIp(ip)
+        setIpError(false)
+      } else {
+        setClientIp(null)
+        setIpError(true)
+      }
+    })
   }, [employee])
 
   // Calculate distance when both location and store are available
@@ -112,10 +185,10 @@ export default function ClockPage() {
   }, [clientIp, store])
 
   const radius = store?.clock_radius || 150
-  const isInRange = distance !== null && distance <= radius
+  const isInRange = distance !== null && distance <= radius && !gpsWeak
   const hasWifiRule = store?.allowed_wifi?.length > 0
-  // Can clock if: GPS in range OR WiFi IP matches. If neither rule is set, allow.
-  const gpsOk = isInRange || !store?.lat
+  // Can clock if: GPS in range (and accurate) OR WiFi IP matches. If neither rule is set, allow.
+  const gpsOk = (isInRange || !store?.lat) && !gpsWeak
   const wifiOk = !hasWifiRule || wifiMatch === true
   const canClock = location && (gpsOk || wifiOk)
 
@@ -129,44 +202,24 @@ export default function ClockPage() {
   const handleClock = async (type) => {
     if (loading || !canClock) return
     setLoading(true)
-    const now = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })
 
     try {
-      if (type === 'in') {
-        const row = {
-          employee: employee.name,
-          date: today,
-          clock_in: now,
-          status: now <= '09:00' ? '正常' : '遲到',
-          clock_in_lat: location?.lat || null,
-          clock_in_lng: location?.lng || null,
-          clock_in_ip: clientIp || null,
-          clock_in_location: getLocationName(),
-        }
-        const { data, error } = await supabase.from('attendance_records').insert(row).select().single()
-        if (error) { setMsg(`打卡失敗: ${error.message}`); setLoading(false); return }
-        if (data) { setTodayRecord(data); setMsg('上班打卡成功 ✓') }
-      } else {
-        const clockIn = todayRecord?.clock_in?.slice(0, 5) || '09:00'
-        const hours = Math.max(0, Math.round((new Date(`2000-01-01T${now}`) - new Date(`2000-01-01T${clockIn}`)) / 3600000 * 10) / 10)
-        const { data, error } = await supabase.from('attendance_records')
-          .update({
-            clock_out: now,
-            hours,
-            clock_out_lat: location?.lat || null,
-            clock_out_lng: location?.lng || null,
-            clock_out_ip: clientIp || null,
-          })
-          .eq('id', todayRecord.id)
-          .select().single()
-        if (error) { setMsg(`打卡失敗: ${error.message}`); setLoading(false); return }
-        if (data) { setTodayRecord(data); setMsg('下班打卡成功 ✓') }
-      }
+      const action = type === 'in' ? 'clock_in' : 'clock_out'
+      const data = await serverClockIn({
+        employee: employee.name,
+        action,
+        lat: location?.lat || null,
+        lng: location?.lng || null,
+        accuracy: gpsAccuracy || null,
+        ip: clientIp || null,
+      })
+      setTodayRecord(data.record)
+      setMsg(type === 'in' ? '上班打卡成功 ✓' : '下班打卡成功 ✓')
     } catch (e) {
       setMsg('打卡失敗: ' + (e.message || '未知錯誤'))
     }
     setLoading(false)
-    setTimeout(() => setMsg(''), 3000)
+    setTimeout(() => setMsg(''), 5000)
   }
 
   const clockedIn = !!todayRecord?.clock_in
@@ -196,8 +249,8 @@ export default function ClockPage() {
         </div>
 
         {gpsError ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--red)', fontSize: 13 }}>
-            <XCircle size={16} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: gpsWeak ? 'var(--orange, #fb923c)' : 'var(--red)', fontSize: 13 }}>
+            {gpsWeak ? <AlertTriangle size={16} /> : <XCircle size={16} />}
             <span>{gpsError}</span>
           </div>
         ) : !location ? (
@@ -253,7 +306,15 @@ export default function ClockPage() {
               background: wifiMatch === true ? 'var(--green-dim)' : wifiMatch === false ? 'var(--red-dim)' : 'var(--card)',
               border: `1px solid ${wifiMatch === true ? 'rgba(52,211,153,0.2)' : wifiMatch === false ? 'rgba(248,113,113,0.2)' : 'var(--border)'}`,
             }}>
-              {wifiMatch === null ? (
+              {ipError ? (
+                <>
+                  <AlertTriangle size={18} style={{ color: 'var(--red)', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--red)' }}>無法取得網路 IP</div>
+                    <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>請確認網路連線正常</div>
+                  </div>
+                </>
+              ) : wifiMatch === null ? (
                 <span style={{ fontSize: 13, color: 'var(--t3)' }}>偵測中...</span>
               ) : wifiMatch ? (
                 <>
