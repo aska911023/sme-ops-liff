@@ -11,6 +11,7 @@ import Expenses from './pages/Expenses'
 import NewCustomer from './pages/NewCustomer'
 import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
+import Overtime from './pages/Overtime'
 
 function TabBar() {
   const navigate = useNavigate()
@@ -104,6 +105,7 @@ export default function App() {
         <Route path="/customer/new" element={<NewCustomer />} />
         <Route path="/off-request" element={<OffRequest />} />
         <Route path="/business-trip" element={<BusinessTrip />} />
+        <Route path="/overtime" element={<Overtime />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <TabBar />
