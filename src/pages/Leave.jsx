@@ -359,7 +359,10 @@ export default function Leave() {
         <div className="card" style={{ borderColor: 'rgba(34,211,238,0.2)' }}>
           <div className="form-group">
             <label className="form-label">假別</label>
-            <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+            <select className="form-input" value={form.type} onChange={e => {
+              set('type', e.target.value)
+              if (e.target.value === '家庭照顧假') set('unit', 'hour')
+            }}>
               {TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
           </div>
@@ -367,15 +370,20 @@ export default function Leave() {
           <div className="form-group">
             <label className="form-label">請假單位</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              {[{ value: 'day', label: '整天' }, { value: 'hour', label: '時數' }].map(u => (
-                <button key={u.value} onClick={() => set('unit', u.value)} style={{
-                  flex: 1, padding: '8px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                  border: `1.5px solid ${form.unit === u.value ? 'var(--cyan)' : 'var(--border2)'}`,
-                  background: form.unit === u.value ? 'var(--cyan-dim)' : 'var(--card)',
-                  color: form.unit === u.value ? 'var(--cyan)' : 'var(--t2)',
-                  cursor: 'pointer',
-                }}>{u.label}</button>
-              ))}
+              {[{ value: 'day', label: '整天' }, { value: 'hour', label: '時數' }].map(u => {
+                const hourOnly = form.type === '家庭照顧假'
+                const disabled = hourOnly && u.value === 'day'
+                return (
+                  <button key={u.value} onClick={() => !disabled && set('unit', u.value)} style={{
+                    flex: 1, padding: '8px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    border: `1.5px solid ${form.unit === u.value ? 'var(--cyan)' : 'var(--border2)'}`,
+                    background: form.unit === u.value ? 'var(--cyan-dim)' : 'var(--card)',
+                    color: disabled ? 'var(--t3)' : form.unit === u.value ? 'var(--cyan)' : 'var(--t2)',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    opacity: disabled ? 0.5 : 1,
+                  }}>{u.label}{disabled ? '（不適用）' : ''}</button>
+                )
+              })}
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: form.unit === 'hour' ? '1fr' : '1fr 1fr', gap: 10 }}>
