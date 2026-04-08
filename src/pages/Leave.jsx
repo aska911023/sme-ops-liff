@@ -177,6 +177,22 @@ export default function Leave() {
 
   const handleSubmit = async () => {
     if (!form.start_date) return
+
+    // Check date overlap with existing leaves
+    const startD = new Date(form.start_date)
+    const endD = new Date(form.end_date || form.start_date)
+    const overlap = records.find(r => {
+      if (r.id === editingId) return false // skip self when editing
+      if (r.status === '已拒絕') return false
+      const rStart = new Date(r.start_date)
+      const rEnd = new Date(r.end_date || r.start_date)
+      return startD <= rEnd && endD >= rStart
+    })
+    if (overlap) {
+      alert(`日期與已申請的「${overlap.type}」（${overlap.start_date}${overlap.end_date !== overlap.start_date ? ' ~ ' + overlap.end_date : ''}）重疊，請修改日期`)
+      return
+    }
+
     setSubmitting(true)
 
     let days, hours
