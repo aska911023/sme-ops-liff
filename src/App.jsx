@@ -12,6 +12,7 @@ import NewCustomer from './pages/NewCustomer'
 import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
 import Overtime from './pages/Overtime'
+import Approve from './pages/Approve'
 
 function TabBar() {
   const navigate = useNavigate()
@@ -106,6 +107,7 @@ export default function App() {
         <Route path="/off-request" element={<OffRequest />} />
         <Route path="/business-trip" element={<BusinessTrip />} />
         <Route path="/overtime" element={<Overtime />} />
+        <Route path="/approve" element={<Approve />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <TabBar />

@@ -19,6 +19,11 @@ const MENUS = [
   { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)', desc: '差旅申報' },
 ]
 
+// 主管專屬功能
+const MANAGER_MENUS = [
+  { path: '/approve', icon: '✅', label: '審核中心', color: 'var(--green)', dim: 'var(--green-dim)', desc: '假單/加班審核' },
+]
+
 export default function Home() {
   const { employee, lineProfile } = useAuth()
   const [theme, setTheme] = useState(() => localStorage.getItem('liff-theme') || 'dark')
@@ -135,6 +140,36 @@ export default function Home() {
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--t1)' }}>功能選單</div>
         <div style={{ fontSize: 11, color: 'var(--t3)' }}>{MENUS.length} 項功能</div>
       </div>
+
+      {/* Manager Section */}
+      {employee?.role === 'manager' && (
+        <>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            marginBottom: 14,
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--green)' }}>主管功能</div>
+          </div>
+          <div className="menu-grid" style={{ marginBottom: 20 }}>
+            {MANAGER_MENUS.map(m => (
+              <Link key={m.path} to={m.path} className="menu-item" style={{ position: 'relative', overflow: 'hidden', border: '1.5px solid rgba(52,211,153,0.2)' }}>
+                <div style={{
+                  position: 'absolute', top: -15, right: -15, width: 40, height: 40,
+                  borderRadius: '50%', background: m.dim, pointerEvents: 'none', opacity: 0.5,
+                }} />
+                <div className="menu-icon" style={{
+                  background: m.dim,
+                  border: `1.5px solid ${m.color}25`,
+                  boxShadow: `0 2px 8px ${m.color}10`,
+                }}>
+                  {m.icon}
+                </div>
+                <div className="menu-label">{m.label}</div>
+              </Link>
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="menu-grid">
         {MENUS.map(m => (
