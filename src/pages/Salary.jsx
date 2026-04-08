@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, ChevronDown } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -52,18 +52,24 @@ export default function Salary() {
       ) : (
         <>
           {/* Month Selector */}
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 8, marginBottom: 16 }}>
-            {records.map(r => (
-              <button key={r.month} onClick={() => setSelectedMonth(r.month)} style={{
-                padding: '8px 16px', borderRadius: 10, border: '1px solid var(--border2)',
-                background: selectedMonth === r.month ? 'var(--cyan)' : 'var(--card)',
-                color: selectedMonth === r.month ? '#fff' : 'var(--t2)',
-                fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer',
-                flexShrink: 0,
-              }}>
-                {r.month}
-              </button>
-            ))}
+          <div style={{ position: 'relative', marginBottom: 16 }}>
+            <select
+              className="form-input"
+              value={selectedMonth || ''}
+              onChange={e => setSelectedMonth(e.target.value)}
+              style={{
+                width: '100%', padding: '12px 40px 12px 16px', borderRadius: 12,
+                fontSize: 15, fontWeight: 700, color: 'var(--cyan)',
+                background: 'var(--card)', border: '1.5px solid rgba(34,211,238,0.3)',
+                appearance: 'none', cursor: 'pointer',
+              }}
+            >
+              {records.map(r => {
+                const [y, m] = r.month.split('-')
+                return <option key={r.month} value={r.month}>{y} 年 {parseInt(m)} 月</option>
+              })}
+            </select>
+            <ChevronDown size={18} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--cyan)', pointerEvents: 'none' }} />
           </div>
 
           {current && (
