@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, Plus, Pencil, Trash2, FileText, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronLeft, Plus, Pencil, Trash2, FileText, ChevronDown, ChevronUp, Paperclip, Image, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -90,6 +90,8 @@ export default function Leave() {
   const [form, setForm] = useState({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
   const [submitting, setSubmitting] = useState(false)
   const [showAllBalances, setShowAllBalances] = useState(false)
+  const [attachFiles, setAttachFiles] = useState([]) // { file, preview }
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     if (!employee) return
@@ -109,6 +111,36 @@ export default function Leave() {
     setForm({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
     setEditingId(null)
     setShowForm(false)
+    setAttachFiles([])
+  }
+
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files)
+    const newFiles = files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))
+    setAttachFiles(prev => [...prev, ...newFiles].slice(0, 5)) // max 5
+    e.target.value = ''
+  }
+
+  const removeFile = (idx) => {
+    setAttachFiles(prev => {
+      URL.revokeObjectURL(prev[idx].preview)
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+
+  const uploadAttachments = async (leaveId) => {
+    if (attachFiles.length === 0) return []
+    const urls = []
+    for (const { file } of attachFiles) {
+      const ext = file.name.split('.').pop()
+      const path = `${employee.name}/${leaveId}-${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('leave-attachments').upload(path, file)
+      if (!error) {
+        const { data } = supabase.storage.from('leave-attachments').getPublicUrl(path)
+        urls.push(data.publicUrl)
+      }
+    }
+    return urls
   }
 
   const handleEdit = (r) => {
@@ -161,21 +193,31 @@ export default function Leave() {
       status: '待審核',
     }
 
-    let data, error
+    let result, error
     if (editingId) {
-      // Update existing
-      ;({ data, error } = await supabase.from('leave_requests').update(payload).eq('id', editingId).select().single())
+      ;({ data: result, error } = await supabase.from('leave_requests').update(payload).eq('id', editingId).select().single())
     } else {
-      // Insert new
-      ;({ data, error } = await supabase.from('leave_requests').insert(payload).select().single())
+      ;({ data: result, error } = await supabase.from('leave_requests').insert(payload).select().single())
     }
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
-    if (data) {
+    if (result) {
+      // Upload attachments if any
+      if (attachFiles.length > 0) {
+        setUploading(true)
+        const urls = await uploadAttachments(result.id)
+        if (urls.length > 0) {
+          const existing = result.attachments || []
+          const { data: updated } = await supabase.from('leave_requests')
+            .update({ attachments: [...existing, ...urls] }).eq('id', result.id).select().single()
+          if (updated) result = updated
+        }
+        setUploading(false)
+      }
       if (editingId) {
-        setRecords(prev => prev.map(r => r.id === data.id ? data : r))
+        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
       } else {
-        setRecords(prev => [data, ...prev])
+        setRecords(prev => [result, ...prev])
       }
       resetForm()
     }
@@ -355,9 +397,44 @@ export default function Leave() {
             <label className="form-label">請假事由</label>
             <textarea className="form-input" placeholder="請輸入請假原因..." value={form.reason} onChange={e => set('reason', e.target.value)} />
           </div>
+          {/* Attachments */}
+          <div className="form-group">
+            <label className="form-label">附件證明（選填）</label>
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 6 }}>
+              喪假需附死亡證明、婚假需附結婚證書等，最多 5 張
+            </div>
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '12px', borderRadius: 10, border: '2px dashed var(--border2)',
+              color: 'var(--cyan)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}>
+              <Paperclip size={14} /> 選擇圖片/檔案
+              <input type="file" accept="image/*,.pdf" multiple hidden onChange={handleFileSelect} />
+            </label>
+            {attachFiles.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {attachFiles.map((f, i) => (
+                  <div key={i} style={{ position: 'relative', width: 72, height: 72, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border2)' }}>
+                    {f.file.type.startsWith('image/') ? (
+                      <img src={f.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', fontSize: 10, color: 'var(--t3)' }}>
+                        {f.file.name.split('.').pop().toUpperCase()}
+                      </div>
+                    )}
+                    <button onClick={() => removeFile(i)} style={{
+                      position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                    }}><X size={10} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-success" style={{ flex: 1 }} onClick={handleSubmit} disabled={submitting}>
-              {submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
+            <button className="btn btn-success" style={{ flex: 1 }} onClick={handleSubmit} disabled={submitting || uploading}>
+              {uploading ? '上傳中...' : submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
             </button>
             {editingId && (
               <button className="btn" style={{ padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--t3)' }} onClick={resetForm}>
@@ -501,6 +578,19 @@ export default function Leave() {
           <div style={{ fontSize: 12, color: 'var(--t3)' }}>
             {r.hours && r.hours < 8 ? `${r.hours} 小時` : `${r.days} 天`}{r.reason ? ` · ${r.reason}` : ''}
           </div>
+          {r.attachments?.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+              {r.attachments.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noreferrer" style={{
+                  display: 'flex', alignItems: 'center', gap: 3, padding: '3px 8px',
+                  borderRadius: 6, background: 'var(--cyan-dim)', fontSize: 10,
+                  color: 'var(--cyan)', textDecoration: 'none', fontWeight: 600,
+                }}>
+                  <Image size={10} /> 附件 {i + 1}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       ))}
     </div>
