@@ -98,7 +98,7 @@ export default function Home() {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800 }}>{greeting}，{employee?.name}</div>
             <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 3 }}>
-              {employee?.department || ''}{employee?.position ? ` · ${employee.position}` : ''}
+              {employee?.dept || ''}{employee?.position ? ` · ${employee.position}` : ''}
             </div>
             <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>{dateStr}</div>
           </div>

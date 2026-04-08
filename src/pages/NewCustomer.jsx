@@ -19,7 +19,7 @@ export default function NewCustomer() {
   })
 
   useEffect(() => {
-    supabase.from('locations').select('*').order('name').then(({ data }) => setLocations(data || []))
+    supabase.from('stores').select('*').order('name').then(({ data }) => setLocations(data || []))
     if (employee) setForm(f => ({ ...f, assigned_to: employee.name }))
   }, [employee])
 
