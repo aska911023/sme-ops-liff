@@ -7,9 +7,11 @@ import { supabase } from '../lib/supabase'
 export default function Approve() {
   const { employee } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('leave') // leave | overtime
+  const [tab, setTab] = useState('leave') // leave | overtime | trip | expense
   const [leaves, setLeaves] = useState([])
   const [overtimes, setOvertimes] = useState([])
+  const [trips, setTrips] = useState([])
+  const [expenses, setExpenses] = useState([])
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(null) // id being processed
 
@@ -18,9 +20,13 @@ export default function Approve() {
     Promise.all([
       supabase.from('leave_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('overtime_requests').select('*').order('created_at', { ascending: false }),
-    ]).then(([l, o]) => {
+      supabase.from('business_trips').select('*').order('created_at', { ascending: false }),
+      supabase.from('expenses').select('*').order('created_at', { ascending: false }),
+    ]).then(([l, o, t, e]) => {
       setLeaves(l.data || [])
       setOvertimes(o.data || [])
+      setTrips(t.data || [])
+      setExpenses(e.data || [])
       setLoading(false)
     })
   }, [employee])
@@ -65,12 +71,53 @@ export default function Approve() {
     setProcessing(null)
   }
 
+  const handleTrip = async (id, action) => {
+    if (action === '已駁回') {
+      const reason = prompt('請輸入駁回原因：')
+      if (reason === null) return
+      if (!reason.trim()) { alert('請填寫駁回原因'); return }
+      setProcessing(id)
+      const { data } = await supabase.from('business_trips')
+        .update({ status: '已駁回', reject_reason: reason.trim() })
+        .eq('id', id).select().single()
+      if (data) setTrips(prev => prev.map(t => t.id === id ? data : t))
+    } else {
+      setProcessing(id)
+      const { data } = await supabase.from('business_trips')
+        .update({ status: '已核准' })
+        .eq('id', id).select().single()
+      if (data) setTrips(prev => prev.map(t => t.id === id ? data : t))
+    }
+    setProcessing(null)
+  }
+
+  const handleExpense = async (id, action) => {
+    if (action === '已駁回') {
+      const reason = prompt('請輸入駁回原因：')
+      if (reason === null) return
+      if (!reason.trim()) { alert('請填寫駁回原因'); return }
+      setProcessing(id)
+      const { data } = await supabase.from('expenses')
+        .update({ status: '已駁回', reject_reason: reason.trim() })
+        .eq('id', id).select().single()
+      if (data) setExpenses(prev => prev.map(e => e.id === id ? data : e))
+    } else {
+      setProcessing(id)
+      const { data } = await supabase.from('expenses')
+        .update({ status: '已核銷' })
+        .eq('id', id).select().single()
+      if (data) setExpenses(prev => prev.map(e => e.id === id ? data : e))
+    }
+    setProcessing(null)
+  }
+
   const pendingLeaves = leaves.filter(l => l.status === '待審核')
   const pendingOTs = overtimes.filter(o => o.status === '待審核')
-  const totalPending = pendingLeaves.length + pendingOTs.length
+  const pendingTrips = trips.filter(t => t.status === '待審核')
+  const pendingExps = expenses.filter(e => e.status === '待審核')
+  const totalPending = pendingLeaves.length + pendingOTs.length + pendingTrips.length + pendingExps.length
 
-  const statusColor = (s) => s === '已核准' ? 'var(--green)' : s === '已拒絕' ? 'var(--red)' : 'var(--orange)'
-  const statusBadge = (s) => s === '已核准' ? 'badge-green' : s === '已拒絕' ? 'badge-red' : 'badge-orange'
+  const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已拒絕' || s === '已駁回' ? 'badge-red' : 'badge-orange'
 
   return (
     <div className="page">
@@ -88,10 +135,12 @@ export default function Approve() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {[
           { key: 'leave', label: '請假', count: pendingLeaves.length },
           { key: 'overtime', label: '加班', count: pendingOTs.length },
+          { key: 'trip', label: '出差', count: pendingTrips.length },
+          { key: 'expense', label: '報帳', count: pendingExps.length },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)} style={{
             flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, fontWeight: 700,
@@ -171,7 +220,7 @@ export default function Approve() {
             </div>
           ))}
         </>
-      ) : (
+      ) : tab === 'overtime' ? (
         <>
           {overtimes.length === 0 ? (
             <div className="empty">尚無加班申請</div>
@@ -198,6 +247,88 @@ export default function Approve() {
                     opacity: processing === o.id ? 0.5 : 1,
                   }}><Check size={16} /> 核准</button>
                   <button disabled={processing === o.id} onClick={() => handleOvertime(o.id, '已拒絕')} style={{
+                    flex: 1, padding: '10px', borderRadius: 10,
+                    border: '1.5px solid var(--red)', background: 'transparent',
+                    color: 'var(--red)', fontSize: 14, fontWeight: 700,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  }}><X size={16} /> 駁回</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      ) : tab === 'trip' ? (
+        <>
+          {trips.length === 0 ? (
+            <div className="empty">尚無出差申請</div>
+          ) : trips.map(t => (
+            <div key={t.id} className="list-item">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 800 }}>{t.employee}</span>
+                  <span style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 600 }}>{t.destination}</span>
+                </div>
+                <span className={`badge ${statusBadge(t.status)}`}>{t.status}</span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>{t.start_date} ~ {t.end_date}</div>
+              {t.purpose && <div style={{ fontSize: 12, color: 'var(--t3)' }}>{t.purpose}</div>}
+              {t.budget > 0 && <div style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 600, marginTop: 4 }}>預算：NT$ {Number(t.budget).toLocaleString()}</div>}
+              {t.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>駁回原因：{t.reject_reason}</div>}
+              {t.status === '待審核' && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button disabled={processing === t.id} onClick={() => handleTrip(t.id, '已核准')} style={{
+                    flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+                    background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    opacity: processing === t.id ? 0.5 : 1,
+                  }}><Check size={16} /> 核准</button>
+                  <button disabled={processing === t.id} onClick={() => handleTrip(t.id, '已駁回')} style={{
+                    flex: 1, padding: '10px', borderRadius: 10,
+                    border: '1.5px solid var(--red)', background: 'transparent',
+                    color: 'var(--red)', fontSize: 14, fontWeight: 700,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  }}><X size={16} /> 駁回</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      ) : (
+        <>
+          {expenses.length === 0 ? (
+            <div className="empty">尚無報帳申請</div>
+          ) : expenses.map(e => (
+            <div key={e.id} className="list-item">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 800 }}>{e.employee}</span>
+                  <span className="badge badge-cyan">{e.category}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>NT$ {Number(e.amount).toLocaleString()}</span>
+                </div>
+                <span className={`badge ${statusBadge(e.status)}`}>{e.status}</span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--t2)' }}>{e.date}{e.description ? ` · ${e.description}` : ''}</div>
+              {e.attachments?.length > 0 && (
+                <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                  {e.attachments.map((url, i) => (
+                    <a key={i} href={url} target="_blank" rel="noreferrer" style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px',
+                      borderRadius: 6, fontSize: 10, fontWeight: 600,
+                      background: 'var(--cyan-dim)', color: 'var(--cyan)', textDecoration: 'none',
+                    }}><Paperclip size={10} /> 收據 {i + 1}</a>
+                  ))}
+                </div>
+              )}
+              {e.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>駁回原因：{e.reject_reason}</div>}
+              {e.status === '待審核' && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button disabled={processing === e.id} onClick={() => handleExpense(e.id, '已核銷')} style={{
+                    flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+                    background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    opacity: processing === e.id ? 0.5 : 1,
+                  }}><Check size={16} /> 核銷</button>
+                  <button disabled={processing === e.id} onClick={() => handleExpense(e.id, '已駁回')} style={{
                     flex: 1, padding: '10px', borderRadius: 10,
                     border: '1.5px solid var(--red)', background: 'transparent',
                     color: 'var(--red)', fontSize: 14, fontWeight: 700,

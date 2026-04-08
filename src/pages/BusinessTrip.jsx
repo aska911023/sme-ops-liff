@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, Plus } from 'lucide-react'
+import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -10,6 +10,7 @@ export default function BusinessTrip() {
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({ destination: '', start_date: '', end_date: '', purpose: '', budget: '' })
   const [submitting, setSubmitting] = useState(false)
 
@@ -24,10 +25,31 @@ export default function BusinessTrip() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const resetForm = () => {
+    setForm({ destination: '', start_date: '', end_date: '', purpose: '', budget: '' })
+    setEditingId(null)
+    setShowForm(false)
+  }
+
+  const handleEdit = (r) => {
+    setForm({ destination: r.destination, start_date: r.start_date, end_date: r.end_date, purpose: r.purpose || '', budget: r.budget || '' })
+    setEditingId(r.id)
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleDelete = async (r) => {
+    if (!confirm('確定要撤回這筆出差申請嗎？')) return
+    const { error } = await supabase.from('business_trips').delete().eq('id', r.id)
+    if (error) { alert('撤回失敗: ' + error.message); return }
+    setRecords(prev => prev.filter(x => x.id !== r.id))
+  }
+
   const handleSubmit = async () => {
-    if (!form.destination || !form.start_date || !form.end_date) return
+    if (!form.destination || !form.start_date || !form.end_date) { alert('請填寫目的地和日期'); return }
     setSubmitting(true)
-    const { data, error } = await supabase.from('business_trips').insert({
+
+    const payload = {
       employee: employee.name,
       destination: form.destination,
       start_date: form.start_date,
@@ -35,12 +57,22 @@ export default function BusinessTrip() {
       purpose: form.purpose,
       budget: Number(form.budget) || 0,
       status: '待審核',
-    }).select().single()
+    }
+
+    let result, error
+    if (editingId) {
+      ;({ data: result, error } = await supabase.from('business_trips').update(payload).eq('id', editingId).select().single())
+    } else {
+      ;({ data: result, error } = await supabase.from('business_trips').insert(payload).select().single())
+    }
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
-    if (data) {
-      setRecords(prev => [data, ...prev])
-      setShowForm(false)
-      setForm({ destination: '', start_date: '', end_date: '', purpose: '', budget: '' })
+    if (result) {
+      if (editingId) {
+        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
+      } else {
+        setRecords(prev => [result, ...prev])
+      }
+      resetForm()
     }
     setSubmitting(false)
   }
@@ -52,8 +84,8 @@ export default function BusinessTrip() {
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
         <div className="header-title">✈️ 出差申請</div>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowForm(!showForm)}>
-          <Plus size={14} /> 新增
+        <button className="btn btn-primary btn-sm" onClick={() => { if (showForm) resetForm(); else { setEditingId(null); setShowForm(true) } }}>
+          <Plus size={14} /> {showForm ? '取消' : '新增'}
         </button>
       </div>
 
@@ -81,9 +113,14 @@ export default function BusinessTrip() {
             <label className="form-label">預估費用 (NT$)</label>
             <input className="form-input" type="number" placeholder="0" value={form.budget} onChange={e => set('budget', e.target.value)} />
           </div>
-          <button className="btn btn-success" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? '送出中...' : '送出申請'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-success" style={{ flex: 3 }} onClick={handleSubmit} disabled={submitting}>
+              {submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
+            </button>
+            {editingId && (
+              <button className="btn" style={{ flex: 1, background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--t3)' }} onClick={resetForm}>取消</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -105,16 +142,39 @@ export default function BusinessTrip() {
       ) : records.length === 0 ? (
         <div className="empty">尚無出差紀錄</div>
       ) : records.map(r => (
-        <div key={r.id} className="list-item">
+        <div key={r.id} className="list-item" style={{ borderLeft: editingId === r.id ? '3px solid var(--cyan)' : undefined }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 14, fontWeight: 700 }}>{r.destination}</span>
-            <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
+              {r.status === '待審核' && (
+                <>
+                  <button onClick={() => handleEdit(r)} style={{
+                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                    background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
+                    display: 'flex', alignItems: 'center', gap: 3,
+                  }}><Pencil size={11} /> 編輯</button>
+                  <button onClick={() => handleDelete(r)} style={{
+                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                    background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
+                    display: 'flex', alignItems: 'center', gap: 3,
+                  }}><Trash2 size={11} /> 撤回</button>
+                </>
+              )}
+            </div>
           </div>
           <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>{r.start_date} ~ {r.end_date}</div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)' }}>
             <span>{r.purpose}</span>
             {r.budget > 0 && <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>NT$ {r.budget.toLocaleString()}</span>}
           </div>
+          {r.reject_reason && (
+            <div style={{
+              fontSize: 12, color: 'var(--red)', marginTop: 6,
+              padding: '6px 10px', borderRadius: 8, background: 'var(--red-dim)',
+              border: '1px solid rgba(248,113,113,0.15)',
+            }}>駁回原因：{r.reject_reason}</div>
+          )}
         </div>
       ))}
     </div>

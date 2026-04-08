@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, Plus } from 'lucide-react'
+import { ChevronLeft, Plus, Pencil, Trash2, Paperclip, Image, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -10,57 +10,158 @@ export default function Expenses() {
   const { employee } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
+  const [trips, setTrips] = useState([]) // for linking
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ category: CATEGORIES[0], amount: '', date: '', description: '', receipt: true })
+  const [editingId, setEditingId] = useState(null)
+  const [form, setForm] = useState({ category: CATEGORIES[0], amount: '', date: '', description: '', receipt: true, business_trip_id: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [attachFiles, setAttachFiles] = useState([])
+  const [existingAttach, setExistingAttach] = useState([])
+  const [uploading, setUploading] = useState(false)
 
   useEffect(() => {
     if (!employee) return
-    supabase.from('expenses')
-      .select('*')
-      .eq('employee', employee.name)
-      .order('date', { ascending: false })
-      .then(({ data }) => { setRecords(data || []); setLoading(false) })
+    Promise.all([
+      supabase.from('expenses').select('*').eq('employee', employee.name).order('date', { ascending: false }),
+      supabase.from('business_trips').select('id, destination, start_date, end_date').eq('employee', employee.name).in('status', ['已核准', '出差中']).order('start_date', { ascending: false }),
+    ]).then(([e, t]) => {
+      setRecords(e.data || [])
+      setTrips(t.data || [])
+      setLoading(false)
+    })
   }, [employee])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const resetForm = () => {
+    setForm({ category: CATEGORIES[0], amount: '', date: '', description: '', receipt: true, business_trip_id: '' })
+    setEditingId(null)
+    setShowForm(false)
+    setAttachFiles([])
+    setExistingAttach([])
+  }
+
+  const handleEdit = (r) => {
+    setForm({
+      category: r.category, amount: r.amount, date: r.date,
+      description: r.description || '', receipt: r.receipt,
+      business_trip_id: r.business_trip_id || '',
+    })
+    setExistingAttach(r.attachments || [])
+    setAttachFiles([])
+    setEditingId(r.id)
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleDelete = async (r) => {
+    if (!confirm('確定要撤回這筆報帳嗎？')) return
+    const { error } = await supabase.from('expenses').delete().eq('id', r.id)
+    if (error) { alert('撤回失敗: ' + error.message); return }
+    setRecords(prev => prev.filter(x => x.id !== r.id))
+  }
+
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files)
+    setAttachFiles(prev => [...prev, ...files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))].slice(0, 5))
+    e.target.value = ''
+  }
+
+  const removeFile = (i) => {
+    setAttachFiles(prev => { URL.revokeObjectURL(prev[i].preview); return prev.filter((_, j) => j !== i) })
+  }
+
+  const uploadReceipts = async (expenseId) => {
+    if (attachFiles.length === 0) return []
+    const urls = []
+    for (const { file } of attachFiles) {
+      const ext = file.name.split('.').pop()
+      const path = `emp-${employee.id}/${expenseId}-${Date.now()}.${ext}`
+      const { error } = await supabase.storage.from('expense-receipts').upload(path, file, { upsert: true })
+      if (error) {
+        alert(`收據上傳失敗: ${error.message}`)
+      } else {
+        const { data } = supabase.storage.from('expense-receipts').getPublicUrl(path)
+        urls.push(data.publicUrl)
+      }
+    }
+    return urls
+  }
+
   const handleSubmit = async () => {
-    if (!form.amount || !form.date) return
+    if (!form.amount || !form.date) { alert('請填寫金額和日期'); return }
     setSubmitting(true)
-    const { data, error } = await supabase.from('expenses').insert({
+
+    const payload = {
       employee: employee.name,
       category: form.category,
       amount: Number(form.amount),
       date: form.date,
       description: form.description,
       receipt: form.receipt,
+      business_trip_id: form.business_trip_id ? Number(form.business_trip_id) : null,
       status: '待審核',
-    }).select().single()
+    }
+
+    let result, error
+    if (editingId) {
+      ;({ data: result, error } = await supabase.from('expenses').update(payload).eq('id', editingId).select().single())
+    } else {
+      ;({ data: result, error } = await supabase.from('expenses').insert(payload).select().single())
+    }
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
-    if (data) {
-      setRecords(prev => [data, ...prev])
-      setShowForm(false)
-      setForm({ category: CATEGORIES[0], amount: '', date: '', description: '', receipt: true })
+
+    if (result) {
+      // Upload receipts
+      const allAttach = [...existingAttach]
+      if (attachFiles.length > 0) {
+        setUploading(true)
+        const newUrls = await uploadReceipts(result.id)
+        allAttach.push(...newUrls)
+        setUploading(false)
+      }
+      if (allAttach.length > 0) {
+        const { data: updated } = await supabase.from('expenses')
+          .update({ attachments: allAttach }).eq('id', result.id).select().single()
+        if (updated) result = updated
+      }
+
+      if (editingId) {
+        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
+      } else {
+        setRecords(prev => [result, ...prev])
+      }
+      resetForm()
     }
     setSubmitting(false)
   }
 
   const totalPending = records.filter(r => r.status === '待審核').reduce((s, r) => s + Number(r.amount || 0), 0)
+  const getTripLabel = (id) => { const t = trips.find(t => t.id === id); return t ? `${t.destination} (${t.start_date})` : '' }
 
   return (
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
         <div className="header-title">🧾 報帳申請</div>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowForm(!showForm)}>
-          <Plus size={14} /> 新增
+        <button className="btn btn-primary btn-sm" onClick={() => { if (showForm) resetForm(); else { setEditingId(null); setShowForm(true) } }}>
+          <Plus size={14} /> {showForm ? '取消' : '新增'}
         </button>
       </div>
 
       {showForm && (
         <div className="card" style={{ borderColor: 'rgba(251,191,36,0.2)' }}>
+          {/* Trip linking */}
+          {trips.length > 0 && (
+            <div className="form-group">
+              <label className="form-label">關聯出差（選填）</label>
+              <select className="form-input" value={form.business_trip_id} onChange={e => set('business_trip_id', e.target.value)}>
+                <option value="">— 不關聯 —</option>
+                {trips.map(t => <option key={t.id} value={t.id}>{t.destination}（{t.start_date} ~ {t.end_date}）</option>)}
+              </select>
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div className="form-group">
               <label className="form-label">類別</label>
@@ -79,18 +180,57 @@ export default function Expenses() {
           </div>
           <div className="form-group">
             <label className="form-label">說明</label>
-            <input className="form-input" type="text" placeholder="費用說明..." value={form.description} onChange={e => set('description', e.target.value)} />
+            <textarea className="form-input" rows={2} placeholder="費用說明..." value={form.description} onChange={e => set('description', e.target.value)} />
           </div>
+          {/* Receipt upload */}
           <div className="form-group">
-            <label className="form-label">收據</label>
-            <select className="form-input" value={form.receipt} onChange={e => set('receipt', e.target.value === 'true')}>
-              <option value="true">有收據</option>
-              <option value="false">無收據</option>
-            </select>
+            <label className="form-label">收據照片</label>
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '12px', borderRadius: 10, border: '2px dashed var(--border2)',
+              color: 'var(--cyan)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            }}>
+              <Paperclip size={14} /> 拍照 / 選擇圖片
+              <input type="file" accept="image/*,.pdf" multiple hidden onChange={handleFileSelect} />
+            </label>
+            {existingAttach.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {existingAttach.map((url, i) => (
+                  <div key={'ex-' + i} style={{ position: 'relative', width: 72, height: 72, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--green)' }}>
+                    <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      onError={e => { e.target.style.display = 'none' }} />
+                    <button onClick={() => setExistingAttach(prev => prev.filter((_, j) => j !== i))} style={{
+                      position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                    }}><X size={10} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {attachFiles.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                {attachFiles.map((f, i) => (
+                  <div key={i} style={{ position: 'relative', width: 72, height: 72, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border2)' }}>
+                    <img src={f.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button onClick={() => removeFile(i)} style={{
+                      position: 'absolute', top: 2, right: 2, width: 18, height: 18, borderRadius: '50%',
+                      background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+                    }}><X size={10} /></button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <button className="btn btn-success" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? '送出中...' : '送出報銷'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-success" style={{ flex: 3 }} onClick={handleSubmit} disabled={submitting || uploading}>
+              {uploading ? '上傳中...' : submitting ? '送出中...' : editingId ? '更新報帳' : '送出報帳'}
+            </button>
+            {editingId && (
+              <button className="btn" style={{ flex: 1, background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--t3)' }} onClick={resetForm}>取消</button>
+            )}
+          </div>
         </div>
       )}
 
@@ -112,18 +252,54 @@ export default function Expenses() {
       ) : records.length === 0 ? (
         <div className="empty">尚無報銷紀錄</div>
       ) : records.map(r => (
-        <div key={r.id} className="list-item">
+        <div key={r.id} className="list-item" style={{ borderLeft: editingId === r.id ? '3px solid var(--cyan)' : undefined }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="badge badge-cyan">{r.category}</span>
               <span style={{ fontSize: 16, fontWeight: 800 }}>NT$ {Number(r.amount).toLocaleString()}</span>
             </div>
-            <span className={`badge ${r.status === '已核銷' ? 'badge-green' : 'badge-orange'}`}>{r.status}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className={`badge ${r.status === '已核銷' ? 'badge-green' : r.status === '已駁回' ? 'badge-red' : 'badge-orange'}`}>{r.status}</span>
+              {r.status === '待審核' && (
+                <>
+                  <button onClick={() => handleEdit(r)} style={{
+                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                    background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
+                    display: 'flex', alignItems: 'center', gap: 3,
+                  }}><Pencil size={11} /> 編輯</button>
+                  <button onClick={() => handleDelete(r)} style={{
+                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                    background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
+                    display: 'flex', alignItems: 'center', gap: 3,
+                  }}><Trash2 size={11} /> 撤回</button>
+                </>
+              )}
+            </div>
           </div>
           <div style={{ fontSize: 12, color: 'var(--t3)' }}>
             {r.date}{r.description ? ` · ${r.description}` : ''}
-            {r.receipt ? '' : ' · 無收據'}
           </div>
+          {r.business_trip_id && (
+            <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4 }}>✈️ {getTripLabel(r.business_trip_id)}</div>
+          )}
+          {r.attachments?.length > 0 && (
+            <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+              {r.attachments.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noreferrer" style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px',
+                  borderRadius: 6, background: 'var(--cyan-dim)', fontSize: 10, fontWeight: 600,
+                  color: 'var(--cyan)', textDecoration: 'none',
+                }}><Image size={10} /> 收據 {i + 1}</a>
+              ))}
+            </div>
+          )}
+          {r.reject_reason && (
+            <div style={{
+              fontSize: 12, color: 'var(--red)', marginTop: 6,
+              padding: '6px 10px', borderRadius: 8, background: 'var(--red-dim)',
+              border: '1px solid rgba(248,113,113,0.15)',
+            }}>駁回原因：{r.reject_reason}</div>
+          )}
         </div>
       ))}
     </div>
