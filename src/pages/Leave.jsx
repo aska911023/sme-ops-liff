@@ -52,10 +52,28 @@ function getCalendarYearRange() {
   return { start: new Date(year, 0, 1), end: new Date(year + 1, 0, 1) }
 }
 
+// 計算工作天數（排除週六日 + 國定假日）
+function countWorkDays(startStr, endStr, holidayList) {
+  if (!startStr) return 0
+  const start = new Date(startStr)
+  const end = new Date(endStr || startStr)
+  const holidaySet = new Set(holidayList)
+  let count = 0
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const day = d.getDay() // 0=Sun, 6=Sat
+    const dateStr = d.toISOString().slice(0, 10)
+    if (day !== 0 && day !== 6 && !holidaySet.has(dateStr)) {
+      count++
+    }
+  }
+  return Math.max(1, count)
+}
+
 export default function Leave() {
   const { employee } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
+  const [holidays, setHolidays] = useState([]) // ['2026-04-04', ...]
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null) // null = new, id = editing
@@ -64,11 +82,14 @@ export default function Leave() {
 
   useEffect(() => {
     if (!employee) return
-    supabase.from('leave_requests')
-      .select('*')
-      .eq('employee', employee.name)
-      .order('start_date', { ascending: false })
-      .then(({ data }) => { setRecords(data || []); setLoading(false) })
+    Promise.all([
+      supabase.from('leave_requests').select('*').eq('employee', employee.name).order('start_date', { ascending: false }),
+      supabase.from('holidays').select('date'),
+    ]).then(([lr, hd]) => {
+      setRecords(lr.data || [])
+      setHolidays((hd.data || []).map(h => h.date))
+      setLoading(false)
+    })
   }, [employee])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -112,9 +133,7 @@ export default function Leave() {
       hours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
       days = Math.round(hours / 8 * 10) / 10
     } else {
-      const start = new Date(form.start_date)
-      const end = new Date(form.end_date || form.start_date)
-      days = Math.max(1, Math.ceil((end - start) / 86400000) + 1)
+      days = countWorkDays(form.start_date, form.end_date || form.start_date, holidays)
       hours = days * 8
     }
 
@@ -211,6 +230,24 @@ export default function Leave() {
               </div>
             </div>
           )}
+          {/* Days preview */}
+          {form.unit === 'day' && form.start_date && (() => {
+            const wd = countWorkDays(form.start_date, form.end_date || form.start_date, holidays)
+            const start = new Date(form.start_date)
+            const end = new Date(form.end_date || form.start_date)
+            const calDays = Math.max(1, Math.ceil((end - start) / 86400000) + 1)
+            const skipped = calDays - wd
+            return (
+              <div style={{
+                padding: '10px 14px', borderRadius: 10, marginBottom: 10,
+                background: 'var(--cyan-dim)', border: '1px solid rgba(34,211,238,0.15)',
+                fontSize: 13, color: 'var(--t2)',
+              }}>
+                實際請假 <b style={{ color: 'var(--cyan)' }}>{wd} 個工作天</b>
+                {skipped > 0 && <span style={{ color: 'var(--t3)', fontSize: 12 }}>（已扣除 {skipped} 天假日/週末）</span>}
+              </div>
+            )
+          })()}
           <div className="form-group">
             <label className="form-label">請假事由</label>
             <textarea className="form-input" placeholder="請輸入請假原因..." value={form.reason} onChange={e => set('reason', e.target.value)} />
