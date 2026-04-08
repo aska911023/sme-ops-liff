@@ -135,7 +135,7 @@ export default function Leave() {
     const urls = []
     for (const { file } of attachFiles) {
       const ext = file.name.split('.').pop()
-      const path = `${employee.name}/${leaveId}-${Date.now()}.${ext}`
+      const path = `emp-${employee.id}/${leaveId}-${Date.now()}.${ext}`
       const { error } = await supabase.storage.from('leave-attachments').upload(path, file, {
         cacheControl: '3600',
         upsert: true,
