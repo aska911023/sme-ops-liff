@@ -625,6 +625,15 @@ export default function Leave() {
           <div style={{ fontSize: 12, color: 'var(--t3)' }}>
             {r.hours && r.hours < 8 ? `${r.hours} 小時` : `${r.days} 天`}{r.reason ? ` · ${r.reason}` : ''}
           </div>
+          {r.reject_reason && (
+            <div style={{
+              fontSize: 12, color: 'var(--red)', marginTop: 6,
+              padding: '6px 10px', borderRadius: 8, background: 'var(--red-dim)',
+              border: '1px solid rgba(248,113,113,0.15)',
+            }}>
+              拒絕原因：{r.reject_reason}
+            </div>
+          )}
           {r.attachments?.length > 0 && (
             <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
               {r.attachments.map((url, i) => (
