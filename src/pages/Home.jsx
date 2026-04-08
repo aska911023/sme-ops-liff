@@ -16,6 +16,7 @@ const MENUS = [
   { path: '/expenses', icon: '🧾', label: '報帳', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)', desc: '費用報銷' },
   { path: '/off-request', icon: '📅', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)', desc: '排休選日' },
   { path: '/overtime', icon: '🕐', label: '加班申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)', desc: '加班申報' },
+  { path: '/clock-correction', icon: '🔧', label: '補打卡', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)', desc: '補正打卡' },
   { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)', desc: '差旅申報' },
 ]
 
