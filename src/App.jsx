@@ -14,6 +14,7 @@ import BusinessTrip from './pages/BusinessTrip'
 import Overtime from './pages/Overtime'
 import Approve from './pages/Approve'
 import ClockCorrection from './pages/ClockCorrection'
+import MySchedule from './pages/MySchedule'
 
 function TabBar() {
   const navigate = useNavigate()
@@ -110,6 +111,7 @@ export default function App() {
         <Route path="/overtime" element={<Overtime />} />
         <Route path="/approve" element={<Approve />} />
         <Route path="/clock-correction" element={<ClockCorrection />} />
+        <Route path="/my-schedule" element={<MySchedule />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <TabBar />
