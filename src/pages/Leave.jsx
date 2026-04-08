@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, Plus } from 'lucide-react'
+import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -58,6 +58,7 @@ export default function Leave() {
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState(null) // null = new, id = editing
   const [form, setForm] = useState({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
   const [submitting, setSubmitting] = useState(false)
 
@@ -72,17 +73,44 @@ export default function Leave() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const resetForm = () => {
+    setForm({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
+    setEditingId(null)
+    setShowForm(false)
+  }
+
+  const handleEdit = (r) => {
+    setForm({
+      type: r.type,
+      start_date: r.start_date,
+      end_date: r.end_date || r.start_date,
+      start_time: r.start_time || '09:00',
+      end_time: r.end_time || '18:00',
+      unit: r.start_time ? 'hour' : 'day',
+      reason: r.reason || '',
+    })
+    setEditingId(r.id)
+    setShowForm(true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleDelete = async (r) => {
+    if (!confirm(`確定要撤回這筆${r.type}申請嗎？`)) return
+    const { error } = await supabase.from('leave_requests').delete().eq('id', r.id)
+    if (error) { alert('撤回失敗: ' + error.message); return }
+    setRecords(prev => prev.filter(x => x.id !== r.id))
+  }
+
   const handleSubmit = async () => {
     if (!form.start_date) return
     setSubmitting(true)
 
     let days, hours
     if (form.unit === 'hour') {
-      // 時數制
       const [sh, sm] = form.start_time.split(':').map(Number)
       const [eh, em] = form.end_time.split(':').map(Number)
       hours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
-      days = Math.round(hours / 8 * 10) / 10 // 換算天數
+      days = Math.round(hours / 8 * 10) / 10
     } else {
       const start = new Date(form.start_date)
       const end = new Date(form.end_date || form.start_date)
@@ -90,7 +118,7 @@ export default function Leave() {
       hours = days * 8
     }
 
-    const { data, error } = await supabase.from('leave_requests').insert({
+    const payload = {
       employee: employee.name,
       type: form.type,
       start_date: form.start_date,
@@ -101,12 +129,25 @@ export default function Leave() {
       end_time: form.unit === 'hour' ? form.end_time : null,
       reason: form.reason,
       status: '待審核',
-    }).select().single()
+    }
+
+    let data, error
+    if (editingId) {
+      // Update existing
+      ;({ data, error } = await supabase.from('leave_requests').update(payload).eq('id', editingId).select().single())
+    } else {
+      // Insert new
+      ;({ data, error } = await supabase.from('leave_requests').insert(payload).select().single())
+    }
+
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
     if (data) {
-      setRecords(prev => [data, ...prev])
-      setShowForm(false)
-      setForm({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
+      if (editingId) {
+        setRecords(prev => prev.map(r => r.id === data.id ? data : r))
+      } else {
+        setRecords(prev => [data, ...prev])
+      }
+      resetForm()
     }
     setSubmitting(false)
   }
@@ -118,8 +159,8 @@ export default function Leave() {
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
         <div className="header-title">📋 請假申請</div>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowForm(!showForm)}>
-          <Plus size={14} /> 新增
+        <button className="btn btn-primary btn-sm" onClick={() => { if (showForm) { resetForm() } else { setEditingId(null); setShowForm(true) } }}>
+          <Plus size={14} /> {showForm ? '取消' : '新增'}
         </button>
       </div>
 
@@ -174,9 +215,16 @@ export default function Leave() {
             <label className="form-label">請假事由</label>
             <textarea className="form-input" placeholder="請輸入請假原因..." value={form.reason} onChange={e => set('reason', e.target.value)} />
           </div>
-          <button className="btn btn-success" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? '送出中...' : '送出申請'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-success" style={{ flex: 1 }} onClick={handleSubmit} disabled={submitting}>
+              {submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
+            </button>
+            {editingId && (
+              <button className="btn" style={{ padding: '10px 16px', background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--t3)' }} onClick={resetForm}>
+                取消
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -253,10 +301,26 @@ export default function Leave() {
       ) : records.length === 0 ? (
         <div className="empty">尚無請假紀錄</div>
       ) : records.map(r => (
-        <div key={r.id} className="list-item">
+        <div key={r.id} className="list-item" style={{ borderLeft: editingId === r.id ? '3px solid var(--cyan)' : undefined }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span className="badge badge-cyan">{r.type}</span>
-            <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
+              {r.status === '待審核' && (
+                <>
+                  <button onClick={() => handleEdit(r)} style={{
+                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                    background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
+                    display: 'flex', alignItems: 'center', gap: 3,
+                  }}><Pencil size={11} /> 編輯</button>
+                  <button onClick={() => handleDelete(r)} style={{
+                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                    background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
+                    display: 'flex', alignItems: 'center', gap: 3,
+                  }}><Trash2 size={11} /> 撤回</button>
+                </>
+              )}
+            </div>
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
             {r.start_date}{r.start_time ? ` ${r.start_time}` : ''}{r.end_date !== r.start_date ? ` ~ ${r.end_date}` : ''}{r.end_time ? ` ${r.end_time}` : ''}
