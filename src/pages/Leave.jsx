@@ -6,6 +6,31 @@ import { supabase } from '../lib/supabase'
 
 const TYPES = ['特休', '事假', '病假', '公假', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理假', '產檢假', '家庭照顧假', '公傷病假']
 
+// 特休天數依年資計算（勞基法 §38）
+function calcAnnualLeave(joinDate) {
+  if (!joinDate) return 0
+  const years = (new Date() - new Date(joinDate)) / (365.25 * 86400000)
+  if (years < 0.5) return 0
+  if (years < 1) return 3
+  if (years < 2) return 7
+  if (years < 3) return 10
+  if (years < 5) return 14
+  if (years < 10) return 15
+  return Math.min(30, 15 + (Math.floor(years) - 10))
+}
+
+// 各假別年度上限
+const LEAVE_LIMITS = {
+  '事假': 14,
+  '病假': 30,
+  '心理假': 3,
+  '家庭照顧假': 7,
+  '生理假': 12,
+  '婚假': 8,
+  '陪產假': 7,
+  '產檢假': 7,
+}
+
 export default function Leave() {
   const { employee } = useAuth()
   const navigate = useNavigate()
@@ -133,6 +158,47 @@ export default function Leave() {
           </button>
         </div>
       )}
+
+      {/* Leave Balance */}
+      {employee?.join_date && (() => {
+        const annualTotal = calcAnnualLeave(employee.join_date)
+        const approved = records.filter(r => r.status !== '已拒絕')
+        const usedByType = (type) => approved.filter(r => r.type === type).reduce((s, r) => s + (r.days || 0), 0)
+        const annualUsed = usedByType('特休')
+        const balances = [
+          { label: '特休', total: annualTotal, used: annualUsed, color: 'var(--cyan)' },
+          ...Object.entries(LEAVE_LIMITS).map(([type, total]) => ({
+            label: type, total, used: usedByType(type), color: 'var(--t3)',
+          })).filter(b => b.used > 0 || b.label === '事假' || b.label === '病假'),
+        ]
+        return (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 12 }}>假期餘額</div>
+            {balances.map(b => (
+              <div key={b.label} style={{ marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: 'var(--t2)', fontWeight: 600 }}>{b.label}</span>
+                  <span style={{ color: b.total - b.used <= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
+                    剩 {b.total - b.used} / {b.total} 天
+                  </span>
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', borderRadius: 3,
+                    width: `${Math.min(100, (b.used / b.total) * 100)}%`,
+                    background: b.total - b.used <= 0 ? 'var(--red)' : b.label === '特休' ? 'var(--cyan)' : 'var(--green)',
+                    transition: 'width 0.3s',
+                  }} />
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>
+              年資 {Math.round((new Date() - new Date(employee.join_date)) / (365.25 * 86400000) * 10) / 10} 年
+              {annualTotal === 0 && '（未滿 6 個月，尚無特休）'}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Stats */}
       <div className="stat-row">
