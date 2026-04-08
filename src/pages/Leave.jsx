@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
+import { ChevronLeft, Plus, Pencil, Trash2, FileText, ChevronDown, ChevronUp } from 'lucide-react'
+import { jsPDF } from 'jspdf'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -19,17 +20,26 @@ function calcAnnualLeave(joinDate) {
   return Math.min(30, 15 + (Math.floor(years) - 10))
 }
 
-// 各假別年度上限（曆年制：1/1 ~ 12/31）
-const LEAVE_LIMITS = {
-  '事假': 14,
-  '病假': 30,
-  '心理假': 3,
-  '家庭照顧假': 7,
-  '生理假': 12,
-  '婚假': 8,
-  '陪產假': 7,
-  '產檢假': 7,
+// 各假別年度上限 + 說明（曆年制：1/1 ~ 12/31）
+const LEAVE_INFO = {
+  '特休': { max: null, paid: '有薪', law: '勞基法 §38', note: '依年資計算，未休完應折算工資' },
+  '事假': { max: 14, paid: '無薪', law: '勞工請假規則 §7', note: '因事必須親自處理' },
+  '病假': { max: 30, paid: '半薪', law: '勞工請假規則 §4', note: '未住院30天/年，2026新制10天內不得不利處分' },
+  '心理假': { max: 3, paid: '有薪', law: '2025新制', note: '不需診斷證明，不列入考績' },
+  '家庭照顧假': { max: 7, paid: '無薪', law: '性平法 §20', note: '2026起可以小時為單位，不扣全勤' },
+  '生理假': { max: 12, paid: '半薪', law: '性平法 §14', note: '每月1天，女性員工適用' },
+  '婚假': { max: 8, paid: '有薪', law: '勞工請假規則 §2', note: '登記日前10日起3個月內請畢' },
+  '喪假': { max: 8, paid: '有薪', law: '勞工請假規則 §3', note: '父母/配偶8天、祖父母/子女6天、兄弟姊妹3天' },
+  '陪產假': { max: 7, paid: '有薪', law: '性平法 §15', note: '配偶分娩前後15日內請畢' },
+  '產檢假': { max: 7, paid: '有薪', law: '性平法 §15', note: '可以小時為單位，女性適用' },
+  '公假': { max: null, paid: '有薪', law: '勞工請假規則 §3', note: '選舉、教召、作證等' },
+  '產假': { max: 56, paid: '有薪', law: '勞基法 §50', note: '分娩8週，女性適用' },
+  '育嬰假': { max: 730, paid: '津貼80%', law: '性平法 §16', note: '子女滿3歲前，2026可按日申請' },
+  '公傷病假': { max: null, paid: '有薪', law: '勞基法 §43', note: '職業災害，工資照給' },
 }
+const LEAVE_LIMITS = Object.fromEntries(
+  Object.entries(LEAVE_INFO).filter(([, v]) => v.max).map(([k, v]) => [k, v.max])
+)
 
 // 取得特休年度區間（到職週年制）
 function getAnnualLeaveRange(joinDate) {
@@ -79,6 +89,7 @@ export default function Leave() {
   const [editingId, setEditingId] = useState(null) // null = new, id = editing
   const [form, setForm] = useState({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [showAllBalances, setShowAllBalances] = useState(false)
 
   useEffect(() => {
     if (!employee) return
@@ -172,6 +183,98 @@ export default function Leave() {
   }
 
   const statusBadge = (s) => s === '已核准' ? 'badge-green' : s === '待審核' ? 'badge-orange' : 'badge-red'
+
+  const generateCertificate = (r) => {
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+
+    // Use built-in Helvetica (no CJK font loading needed — we'll use Unicode text rendering)
+    // For CJK we embed a minimal approach: draw with canvas-like text
+    doc.setFont('Helvetica')
+
+    // Border
+    doc.setDrawColor(34, 211, 238)
+    doc.setLineWidth(1)
+    doc.rect(15, 15, 180, 267)
+    doc.setLineWidth(0.3)
+    doc.rect(18, 18, 174, 261)
+
+    // Header
+    doc.setFontSize(10)
+    doc.setTextColor(100)
+    doc.text('SME OPS System', 105, 30, { align: 'center' })
+
+    doc.setFontSize(22)
+    doc.setTextColor(30)
+    doc.text('Leave Certificate', 105, 45, { align: 'center' })
+
+    doc.setFontSize(10)
+    doc.setTextColor(34, 211, 238)
+    doc.text('--- OFFICIAL DOCUMENT ---', 105, 53, { align: 'center' })
+
+    // Info table
+    const info = [
+      ['Employee', r.employee || employee?.name || '-'],
+      ['Department', employee?.dept || '-'],
+      ['Position', employee?.position || '-'],
+      ['Leave Type', r.type],
+      ['Period', `${r.start_date}${r.end_date !== r.start_date ? ' ~ ' + r.end_date : ''}${r.start_time ? ' ' + r.start_time + ' - ' + r.end_time : ''}`],
+      ['Duration', r.hours && r.hours < 8 ? `${r.hours} hours` : `${r.days} day(s)`],
+      ['Reason', r.reason || '-'],
+      ['Status', r.status],
+      ['Approver', r.approver || '-'],
+      ['Applied', r.created_at ? new Date(r.created_at).toLocaleDateString('zh-TW') : '-'],
+    ]
+
+    let y = 70
+    doc.setFontSize(11)
+    info.forEach(([label, value]) => {
+      doc.setTextColor(100)
+      doc.setFont('Helvetica', 'bold')
+      doc.text(label + ':', 30, y)
+      doc.setFont('Helvetica', 'normal')
+      doc.setTextColor(30)
+      doc.text(String(value), 80, y)
+      y += 10
+    })
+
+    // Leave policy reference
+    const leaveInfo = LEAVE_INFO[r.type]
+    if (leaveInfo) {
+      y += 10
+      doc.setDrawColor(200)
+      doc.line(30, y, 180, y)
+      y += 8
+      doc.setFontSize(10)
+      doc.setTextColor(100)
+      doc.setFont('Helvetica', 'bold')
+      doc.text('Legal Basis:', 30, y)
+      doc.setFont('Helvetica', 'normal')
+      doc.text(leaveInfo.law, 80, y)
+      y += 8
+      doc.setFont('Helvetica', 'bold')
+      doc.text('Pay Status:', 30, y)
+      doc.setFont('Helvetica', 'normal')
+      doc.text(leaveInfo.paid, 80, y)
+    }
+
+    // Signature area
+    y = 230
+    doc.setDrawColor(180)
+    doc.line(30, y, 85, y)
+    doc.line(115, y, 175, y)
+    doc.setFontSize(9)
+    doc.setTextColor(120)
+    doc.text('Employee Signature', 57, y + 6, { align: 'center' })
+    doc.text('Supervisor Signature', 145, y + 6, { align: 'center' })
+
+    // Footer
+    doc.setFontSize(8)
+    doc.setTextColor(160)
+    doc.text(`Generated: ${new Date().toLocaleString('zh-TW')}`, 105, 270, { align: 'center' })
+    doc.text('This document is system-generated by SME OPS.', 105, 275, { align: 'center' })
+
+    doc.save(`leave-certificate-${r.employee || 'unknown'}-${r.start_date}.pdf`)
+  }
 
   return (
     <div className="page">
@@ -281,34 +384,60 @@ export default function Leave() {
         const usedByType = (type) => approved
           .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
           .reduce((s, r) => s + (r.days || 0), 0)
-        const balances = [
-          { label: '特休', total: annualTotal, used: annualUsed, color: 'var(--cyan)' },
+        const allBalances = [
+          { label: '特休', total: annualTotal, used: annualUsed },
           ...Object.entries(LEAVE_LIMITS).map(([type, total]) => ({
-            label: type, total, used: usedByType(type), color: 'var(--t3)',
-          })).filter(b => b.used > 0 || b.label === '事假' || b.label === '病假'),
+            label: type, total, used: usedByType(type),
+          })),
         ]
+        const mainBalances = allBalances.filter(b => ['特休', '事假', '病假', '心理假'].includes(b.label))
+        const otherBalances = allBalances.filter(b => !['特休', '事假', '病假', '心理假'].includes(b.label))
+        const displayed = showAllBalances ? allBalances : mainBalances
+
         return (
           <div className="card" style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 12 }}>假期餘額</div>
-            {balances.map(b => (
-              <div key={b.label} style={{ marginBottom: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                  <span style={{ color: 'var(--t2)', fontWeight: 600 }}>{b.label}</span>
-                  <span style={{ color: b.total - b.used <= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
-                    剩 {b.total - b.used} / {b.total} 天
-                  </span>
+            {displayed.map(b => {
+              const info = LEAVE_INFO[b.label]
+              const remaining = b.total - b.used
+              return (
+                <div key={b.label} style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 3 }}>
+                    <span style={{ color: 'var(--t2)', fontWeight: 600 }}>
+                      {b.label}
+                      {info && <span style={{ color: 'var(--t3)', fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
+                        {info.paid} · {info.law}
+                      </span>}
+                    </span>
+                    <span style={{ color: remaining <= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
+                      剩 {remaining} / {b.total} 天
+                    </span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%', borderRadius: 3,
+                      width: `${Math.min(100, (b.used / b.total) * 100)}%`,
+                      background: remaining <= 0 ? 'var(--red)' : b.label === '特休' ? 'var(--cyan)' : 'var(--green)',
+                      transition: 'width 0.3s',
+                    }} />
+                  </div>
+                  {info?.note && showAllBalances && (
+                    <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 2 }}>{info.note}</div>
+                  )}
                 </div>
-                <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
-                  <div style={{
-                    height: '100%', borderRadius: 3,
-                    width: `${Math.min(100, (b.used / b.total) * 100)}%`,
-                    background: b.total - b.used <= 0 ? 'var(--red)' : b.label === '特休' ? 'var(--cyan)' : 'var(--green)',
-                    transition: 'width 0.3s',
-                  }} />
-                </div>
-              </div>
-            ))}
-            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 8 }}>
+              )
+            })}
+            {otherBalances.length > 0 && (
+              <button onClick={() => setShowAllBalances(!showAllBalances)} style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                width: '100%', padding: '6px', borderRadius: 8, border: '1px solid var(--border2)',
+                background: 'transparent', color: 'var(--cyan)', fontSize: 11, fontWeight: 600,
+                cursor: 'pointer', marginTop: 4,
+              }}>
+                {showAllBalances ? <><ChevronUp size={12} /> 收合</> : <><ChevronDown size={12} /> 顯示全部 {allBalances.length} 種假別</>}
+              </button>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 10 }}>
               年資 {Math.round((new Date() - new Date(employee.join_date)) / (365.25 * 86400000) * 10) / 10} 年
               {annualTotal === 0 && '（未滿 6 個月，尚無特休）'}
             </div>
@@ -356,6 +485,13 @@ export default function Leave() {
                     display: 'flex', alignItems: 'center', gap: 3,
                   }}><Trash2 size={11} /> 撤回</button>
                 </>
+              )}
+              {r.status === '已核准' && (
+                <button onClick={() => generateCertificate(r)} style={{
+                  padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                  background: 'var(--card)', color: 'var(--green)', cursor: 'pointer', fontSize: 11,
+                  display: 'flex', alignItems: 'center', gap: 3,
+                }}><FileText size={11} /> 證明</button>
               )}
             </div>
           </div>
