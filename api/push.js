@@ -174,10 +174,71 @@ async function sendSalaryReleased() {
   return { sent }
 }
 
+// ── Task Due Reminder: notify assignees of tasks due tomorrow ──
+async function sendTaskDueReminder() {
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = tomorrow.toISOString().slice(0, 10)
+
+  const { data: steps } = await supabase.from('workflow_steps')
+    .select('*, workflow_instances(template_name, store)')
+    .eq('due_date', tomorrowStr)
+    .in('status', ['待處理', '進行中'])
+
+  if (!steps?.length) return { sent: 0 }
+
+  let sent = 0
+  for (const step of steps) {
+    if (!step.assignee) continue
+    const { data: emp } = await supabase
+      .from('employees').select('line_user_id').eq('name', step.assignee).maybeSingle()
+    if (!emp?.line_user_id) continue
+
+    const inst = step.workflow_instances
+    const label = inst?.store || inst?.template_name || '流程任務'
+
+    await pushMessage(emp.line_user_id, {
+      type: 'flex', altText: `⏰ 任務明日到期：${step.title}`,
+      contents: {
+        type: 'bubble', size: 'kilo',
+        header: {
+          type: 'box', layout: 'vertical', backgroundColor: '#FEF3C7', paddingAll: '16px',
+          contents: [
+            { type: 'text', text: '⏰ 任務到期提醒', color: '#92400E', size: 'lg', weight: 'bold' },
+            { type: 'text', text: '以下任務明天截止', color: '#B45309', size: 'xs', margin: 'sm' },
+          ],
+        },
+        body: {
+          type: 'box', layout: 'vertical', paddingAll: '16px',
+          contents: [
+            { type: 'text', text: step.title, size: 'md', weight: 'bold', wrap: true },
+            { type: 'box', layout: 'horizontal', margin: 'md', contents: [
+              { type: 'text', text: '流程', color: '#94A3B8', size: 'sm', flex: 2 },
+              { type: 'text', text: label, color: '#334155', size: 'sm', flex: 3, weight: 'bold' },
+            ]},
+            { type: 'box', layout: 'horizontal', margin: 'md', contents: [
+              { type: 'text', text: '截止日', color: '#94A3B8', size: 'sm', flex: 2 },
+              { type: 'text', text: tomorrowStr, color: '#DC2626', size: 'sm', flex: 3, weight: 'bold' },
+            ]},
+          ],
+        },
+        footer: {
+          type: 'box', layout: 'vertical', paddingAll: '10px',
+          contents: [
+            { type: 'button', action: { type: 'uri', label: '查看任務', uri: `https://liff.line.me/${LIFF_ID}/tasks` }, style: 'primary', color: '#D97706', height: 'sm' },
+          ],
+        },
+      },
+    })
+    sent++
+  }
+  return { sent }
+}
+
 // ── API Handler ──
 export default async function handler(req, res) {
   if (req.method === 'GET') {
-    return res.status(200).json({ status: 'ok', endpoints: ['schedule_reminder', 'low_inventory', 'salary_released'] })
+    return res.status(200).json({ status: 'ok', endpoints: ['schedule_reminder', 'low_inventory', 'salary_released', 'task_due_reminder'] })
   }
 
   if (req.method !== 'POST') return res.status(405).end()
@@ -201,6 +262,9 @@ export default async function handler(req, res) {
         break
       case 'salary_released':
         result = await sendSalaryReleased()
+        break
+      case 'task_due_reminder':
+        result = await sendTaskDueReminder()
         break
       default:
         return res.status(400).json({ error: `Unknown type: ${type}` })

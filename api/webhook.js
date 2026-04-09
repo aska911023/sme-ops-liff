@@ -196,49 +196,86 @@ async function handleLeaveBalance(replyToken, emp) {
   })
 }
 
-// 查流程任務
+// 查流程任務 (workflow_steps + legacy tasks)
 async function handleTasks(replyToken, emp) {
-  const { data: tasks } = await supabase.from('tasks').select('*').eq('assignee', emp.name).order('id', { ascending: false }).limit(10)
+  // First check workflow_steps
+  const { data: wfSteps } = await supabase.from('workflow_steps')
+    .select('*, workflow_instances(template_name, store)')
+    .eq('assignee', emp.name).in('status', ['待處理', '進行中'])
+    .order('due_date', { ascending: true, nullsFirst: false }).limit(8)
 
-  if (!tasks?.length) {
+  // Fallback to legacy tasks if no workflow steps
+  const { data: tasks } = await supabase.from('tasks').select('*')
+    .eq('assignee', emp.name).neq('status', '已完成')
+    .order('id', { ascending: false }).limit(8)
+
+  const allItems = [
+    ...(wfSteps || []).map(s => ({ type: 'wf', ...s })),
+    ...(tasks || []).map(t => ({ type: 'legacy', ...t })),
+  ]
+
+  if (!allItems.length) {
     await reply(replyToken, { type: 'text', text: '✅ 目前沒有指派給您的任務' })
     return
   }
 
-  const priColor = (p) => p === '高' ? '#DC2626' : p === '中' ? C.inventory.accent : C.leave.accent
   const statusColor = (s) => s === '已完成' ? C.salary.accent : s === '進行中' ? C.leave.accent : '#94A3B8'
 
-  const bubbles = tasks.slice(0, 8).map(t => ({
+  const bubbles = allItems.slice(0, 8).map(item => {
+    const isWf = item.type === 'wf'
+    const title = item.title
+    const label = isWf ? (item.workflow_instances?.store || item.workflow_instances?.template_name || '流程') : (item.workflow || '任務')
+    const postbackPrefix = isWf ? 'wfstep' : 'task'
+    const dueDate = item.due_date || '無截止日'
+
+    return {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: C.task.bg, paddingAll: '16px',
+        contents: [
+          { type: 'text', text: label, color: C.task.sub, size: 'xs', weight: 'bold' },
+          { type: 'text', text: title, color: C.task.text, size: 'lg', weight: 'bold', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'sm',
+        contents: [
+          infoRow('狀態', item.status, statusColor(item.status)),
+          infoRow('負責人', item.assignee || '-'),
+          infoRow('截止日', dueDate),
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+        contents: [
+          { type: 'button', action: { type: 'postback', label: '進行中', data: `${postbackPrefix}_update_${item.id}_進行中` }, style: 'secondary', height: 'sm', flex: 1 },
+          { type: 'button', action: { type: 'postback', label: '✅ 完成', data: `${postbackPrefix}_update_${item.id}_已完成` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 },
+        ],
+      },
+    }
+  })
+
+  // Add LIFF button at the end
+  bubbles.push({
     type: 'bubble', size: 'kilo',
-    header: {
-      type: 'box', layout: 'vertical',
-      backgroundColor: t.status === '已完成' ? C.salary.bg : C.task.bg,
-      paddingAll: '16px',
-      contents: [
-        { type: 'text', text: t.workflow || '任務', color: t.status === '已完成' ? C.salary.sub : C.task.sub, size: 'xs', weight: 'bold' },
-        { type: 'text', text: t.title, color: t.status === '已完成' ? C.salary.text : C.task.text, size: 'lg', weight: 'bold', wrap: true },
-      ],
-    },
     body: {
-      type: 'box', layout: 'vertical', paddingAll: '14px', spacing: 'sm',
+      type: 'box', layout: 'vertical', paddingAll: '20px', justifyContent: 'center', alignItems: 'center',
       contents: [
-        infoRow('狀態', t.status, statusColor(t.status)),
-        infoRow('負責人', t.assignee || '-'),
-        infoRow('截止日', t.due_date || '無截止日'),
-        infoRow('優先', t.priority || '中', priColor(t.priority)),
+        { type: 'text', text: '📋', size: '3xl', align: 'center' },
+        { type: 'text', text: '查看完整任務列表', size: 'md', weight: 'bold', align: 'center', margin: 'lg' },
+        { type: 'text', text: '包含清單勾選、備註回報', size: 'xs', color: '#94A3B8', align: 'center', margin: 'sm' },
       ],
     },
-    footer: t.status !== '已完成' ? {
-      type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+    footer: {
+      type: 'box', layout: 'vertical', paddingAll: '10px',
       contents: [
-        { type: 'button', action: { type: 'postback', label: '進行中', data: `task_update_${t.id}_進行中` }, style: 'secondary', height: 'sm', flex: 1 },
-        { type: 'button', action: { type: 'postback', label: '完成', data: `task_update_${t.id}_已完成` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 },
+        { type: 'button', action: { type: 'uri', label: '開啟任務頁面', uri: `https://liff.line.me/${LIFF_ID}/tasks` }, style: 'primary', color: C.task.accent, height: 'sm' },
       ],
-    } : undefined,
-  }))
+    },
+  })
 
   await reply(replyToken, {
-    type: 'flex', altText: `你有 ${tasks.length} 個任務`,
+    type: 'flex', altText: `你有 ${allItems.length} 個任務`,
     contents: { type: 'carousel', contents: bubbles },
   })
 }
@@ -279,9 +316,35 @@ async function handleInventory(replyToken, keyword) {
   })
 }
 
-// Postback handler: tasks, leave approval, PR approval
+// Postback handler: workflow steps, tasks, leave approval, PR approval
 async function handlePostback(replyToken, data, emp) {
-  // Task update
+  // Workflow step update
+  const wfMatch = data.match(/^wfstep_update_(\d+)_(.+)$/)
+  if (wfMatch) {
+    const [, id, status] = wfMatch
+    const completedAt = status === '已完成' ? new Date().toISOString() : null
+    const { data: updated } = await supabase.from('workflow_steps')
+      .update({ status, completed_at: completedAt }).eq('id', Number(id)).select().single()
+    if (updated) {
+      await reply(replyToken, {
+        type: 'flex', altText: '流程任務已更新',
+        contents: {
+          type: 'bubble', size: 'kilo',
+          body: {
+            type: 'box', layout: 'vertical', paddingAll: '20px', justifyContent: 'center', alignItems: 'center',
+            contents: [
+              { type: 'text', text: status === '已完成' ? '✅' : '📝', size: '3xl', align: 'center' },
+              { type: 'text', text: `「${updated.title}」`, size: 'md', weight: 'bold', align: 'center', margin: 'lg', wrap: true },
+              { type: 'text', text: `已更新為 ${status}`, size: 'sm', color: '#94A3B8', align: 'center', margin: 'sm' },
+            ],
+          },
+        },
+      })
+    }
+    return
+  }
+
+  // Legacy task update
   const taskMatch = data.match(/^task_update_(\d+)_(.+)$/)
   if (taskMatch) {
     const [, id, status] = taskMatch
