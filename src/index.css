@@ -263,3 +263,43 @@ textarea.form-input { resize: vertical; min-height: 80px; }
   background: none; border: none; color: var(--t2);
   font-size: 13px; cursor: pointer; padding: 4px 0; margin-bottom: 8px;
 }
+
+/* ── Page Header Back ── */
+.page-header-back {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 16px; font-weight: 800; color: var(--t1);
+  margin-bottom: 16px; cursor: pointer;
+}
+.page-header-back svg { color: var(--t3); }
+
+/* ── Card Item ── */
+.card-item {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px;
+}
+
+/* ── Stat Mini (inline stat boxes) ── */
+.stat-mini {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; text-align: center;
+}
+.stat-mini-label { font-size: 10px; color: var(--t3); font-weight: 600; }
+.stat-mini-value { font-size: 16px; font-weight: 800; margin-top: 2px; }
+
+/* ── Input ── */
+.input {
+  width: 100%; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--border2); background: var(--card);
+  color: var(--t1); font-size: 14px; outline: none;
+}
+.input:focus { border-color: var(--cyan); }
+.input::placeholder { color: var(--t3); }
+
+/* ── Button Primary ── */
+.btn-primary {
+  padding: 10px 16px; border-radius: 10px; border: none;
+  background: linear-gradient(135deg, var(--cyan), var(--blue));
+  color: #fff; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.btn-primary:active { opacity: 0.8; }
+.btn-primary:disabled { opacity: 0.4; cursor: default; }
