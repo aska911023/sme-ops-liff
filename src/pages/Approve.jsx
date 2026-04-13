@@ -67,7 +67,7 @@ export default function Approve() {
     } else {
       setProcessing(id)
       const { data } = await supabase.from('overtime_requests')
-        .update({ status: '已核准' })
+        .update({ status: '已核准', approver: employee.name })
         .eq('id', id).select().single()
       if (data) setOvertimes(prev => prev.map(o => o.id === id ? data : o))
     }
@@ -87,7 +87,7 @@ export default function Approve() {
     } else {
       setProcessing(id)
       const { data } = await supabase.from('business_trips')
-        .update({ status: '已核准' })
+        .update({ status: '已核准', approver: employee.name })
         .eq('id', id).select().single()
       if (data) setTrips(prev => prev.map(t => t.id === id ? data : t))
     }

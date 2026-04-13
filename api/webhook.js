@@ -135,7 +135,7 @@ async function cascadeOnStepComplete(completedStepId, instanceId) {
 
   // 4. 檢查 instance 是否全部完成
   const { data: inst } = await supabase.from('workflow_instances')
-    .select('*').eq('id', instanceId).single()
+    .select('*').eq('id', instanceId).maybeSingle()
   result.instance = inst
 
   if (allSteps.every(s => s.status === '已完成')) {
@@ -188,9 +188,10 @@ async function notifyStepAutoStarted(step, instanceName) {
 
 // 推播：流程全部完成
 async function notifyWorkflowCompleted(instance) {
-  if (!instance?.started_by) return
+  if (!instance?.started_by && !instance?.assignee) return
+  const notifyName = instance.started_by || instance.assignee
   const { data: emp } = await supabase.from('employees')
-    .select('line_user_id').eq('name', instance.started_by).maybeSingle()
+    .select('line_user_id').eq('name', notifyName).maybeSingle()
   if (!emp?.line_user_id) return
 
   await pushToUser(emp.line_user_id, {
@@ -355,7 +356,7 @@ async function handleStepDetail(replyToken, stepId) {
   const { data: clItems } = await supabase.from('workflow_step_checklist_items')
     .select('*').eq('step_id', stepId).order('sort_order')
 
-  const inst = step.workflow_instances
+  const inst = step.workflow_instances || {}
   const checkedCount = (clItems || []).filter(i => i.checked).length
   const totalCl = (clItems || []).length
 
@@ -466,7 +467,7 @@ async function handleRequestConfirmation(replyToken, stepId, requesterEmp) {
     return
   }
 
-  const inst = step.workflow_instances
+  const inst = step.workflow_instances || {}
 
   // Push 給主管
   await pushToUser(supervisor.line_user_id, {
@@ -546,7 +547,7 @@ async function handleStepConfirmation(replyToken, stepId, action, approverEmp) {
     const { data: assigneeEmp } = await supabase.from('employees')
       .select('line_user_id').eq('name', step.assignee).maybeSingle()
     if (assigneeEmp?.line_user_id) {
-      const inst = step.workflow_instances
+      const inst = step.workflow_instances || {}
       await pushToUser(assigneeEmp.line_user_id, {
         type: 'flex', altText: `任務${isApprove ? '已確認' : '已退回'}：${step.title}`,
         contents: {
@@ -662,8 +663,6 @@ async function handleSalary(replyToken, emp) {
     await reply(replyToken, { type: 'text', text: `📋 ${month} 尚無薪資紀錄` })
     return
   }
-
-  const totalDeduct = (data.absence_deduction || 0) + (data.late_deduction || 0) + (data.other_deduction || 0) + (data.insurance || 0)
 
   await reply(replyToken, {
     type: 'flex', altText: `${month} 薪資明細`,

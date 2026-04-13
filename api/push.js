@@ -96,7 +96,7 @@ async function sendLowInventoryAlert() {
     if (!emp?.line_user_id) continue
 
     const itemList = lowItems.slice(0, 5).map(s =>
-      `• ${s.sku_name}: ${s.quantity} ${s.unit || '個'}`
+      `• ${s.sku_name || '商品'}: ${s.quantity ?? 0} ${s.unit || '個'}`
     ).join('\n')
 
     await pushMessage(emp.line_user_id, {

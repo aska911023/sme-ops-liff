@@ -72,7 +72,7 @@ export default function Tasks() {
         const updated = prev.map(i => i.id === item.id ? data : i)
         const clItems = updated.filter(i => i.checklist_id === item.checklist_id)
         const completed = clItems.filter(i => i.checked).length
-        supabase.from('checklists').update({ completed }).eq('id', item.checklist_id)
+        supabase.from('checklists').update({ completed }).eq('id', item.checklist_id).then()
         return updated
       })
     }

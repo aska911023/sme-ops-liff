@@ -48,7 +48,7 @@ function TabBar() {
 
   const tabs = [
     { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/clock-correction', '/my-schedule', '/approval-status'] },
-    { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer/new'] },
+    { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer'] },
     { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
     { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
   ]
