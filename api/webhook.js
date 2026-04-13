@@ -57,6 +57,543 @@ function infoRow(label, value, valueColor = '#334155') {
   }
 }
 
+// ── Flex: progress bar ──
+function progressBar(percent, color = C.salary.accent) {
+  const p = Math.max(1, Math.min(100, Math.round(percent)))
+  return {
+    type: 'box', layout: 'horizontal', height: '6px',
+    backgroundColor: '#E2E8F0', cornerRadius: '3px', margin: 'lg',
+    contents: [
+      { type: 'box', layout: 'vertical', width: `${p}%`, backgroundColor: color, height: '6px', cornerRadius: '3px', contents: [{ type: 'filler' }] },
+    ],
+  }
+}
+
+// ── Flex: checklist row ──
+function checklistRow(item) {
+  return {
+    type: 'box', layout: 'horizontal', margin: 'sm', spacing: 'md', paddingAll: '4px',
+    action: { type: 'postback', label: (item.title || '').slice(0, 20), data: `wfcl_toggle_${item.id}` },
+    contents: [
+      { type: 'text', text: item.checked ? '✅' : '⬜', size: 'sm', flex: 0 },
+      { type: 'text', text: item.title || '-', size: 'sm', flex: 5, wrap: true, color: item.checked ? '#94A3B8' : '#334155', decoration: item.checked ? 'line-through' : 'none' },
+    ],
+  }
+}
+
+// ── Flex: status badge color ──
+function statusColor(s) {
+  if (s === '已完成') return C.salary.accent
+  if (s === '進行中') return C.leave.accent
+  if (s === '已擱置') return C.inventory.accent
+  return '#94A3B8'
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  WORKFLOW CASCADE & NOTIFICATIONS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// 完成步驟 → 自動推進依賴 → 檢查流程完成
+async function cascadeOnStepComplete(completedStepId, instanceId) {
+  const result = { progressedSteps: [], instanceCompleted: false, instance: null }
+
+  // 1. 查 instance 全部 steps（batch query 避免 N+1）
+  const { data: allSteps } = await supabase.from('workflow_steps')
+    .select('*').eq('instance_id', instanceId).order('step_order')
+  if (!allSteps?.length) return result
+
+  // 2. 查所有相關的 dependencies
+  const stepIds = allSteps.map(s => s.id)
+  const { data: allDeps } = await supabase.from('workflow_step_dependencies')
+    .select('*').in('step_id', stepIds).eq('dep_type', 'prerequisite')
+
+  // 3. 找出依賴被完成步驟的 steps
+  const dependents = (allDeps || []).filter(d => d.depends_on_step_id === completedStepId)
+
+  for (const dep of dependents) {
+    const targetStep = allSteps.find(s => s.id === dep.step_id)
+    if (!targetStep || targetStep.status !== '待處理') continue
+
+    // 檢查該 step 的所有 prerequisites 是否都已完成
+    const targetPrereqs = (allDeps || []).filter(d => d.step_id === dep.step_id)
+    const allMet = targetPrereqs.every(p => {
+      const prereqStep = allSteps.find(s => s.id === p.depends_on_step_id)
+      return prereqStep?.status === '已完成'
+    })
+
+    if (allMet) {
+      const { data: started } = await supabase.from('workflow_steps')
+        .update({ status: '進行中' }).eq('id', dep.step_id).select().single()
+      if (started) {
+        result.progressedSteps.push(started)
+        // 同步更新本地 array
+        const idx = allSteps.findIndex(s => s.id === dep.step_id)
+        if (idx >= 0) allSteps[idx].status = '進行中'
+      }
+    }
+  }
+
+  // 4. 檢查 instance 是否全部完成
+  const { data: inst } = await supabase.from('workflow_instances')
+    .select('*').eq('id', instanceId).single()
+  result.instance = inst
+
+  if (allSteps.every(s => s.status === '已完成')) {
+    await supabase.from('workflow_instances')
+      .update({ status: '已完成', completed_at: new Date().toISOString() })
+      .eq('id', instanceId)
+    result.instanceCompleted = true
+  }
+
+  return result
+}
+
+// 推播：步驟自動啟動
+async function notifyStepAutoStarted(step, instanceName) {
+  if (!step.assignee) return
+  const { data: emp } = await supabase.from('employees')
+    .select('line_user_id').eq('name', step.assignee).maybeSingle()
+  if (!emp?.line_user_id) return
+
+  await pushToUser(emp.line_user_id, {
+    type: 'flex', altText: `任務自動啟動：${step.title}`,
+    contents: {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: C.task.bg, paddingAll: '16px',
+        contents: [
+          { type: 'text', text: '⚡ 任務自動啟動', color: C.task.sub, size: 'xs', weight: 'bold' },
+          { type: 'text', text: step.title, color: C.task.text, size: 'lg', weight: 'bold', wrap: true, margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px',
+        contents: [
+          infoRow('流程', instanceName || '-'),
+          infoRow('負責人', step.assignee),
+          infoRow('截止日', step.due_date || '無'),
+          { type: 'text', text: '前置任務已完成，此步驟已自動開始', size: 'xs', color: '#94A3B8', margin: 'lg', wrap: true },
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+        contents: [
+          { type: 'button', action: { type: 'postback', label: '📋 詳情', data: `wfstep_detail_${step.id}` }, style: 'secondary', height: 'sm', flex: 1 },
+          { type: 'button', action: { type: 'postback', label: '✅ 完成', data: `wfstep_update_${step.id}_已完成` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 },
+        ],
+      },
+    },
+  })
+}
+
+// 推播：流程全部完成
+async function notifyWorkflowCompleted(instance) {
+  if (!instance?.started_by) return
+  const { data: emp } = await supabase.from('employees')
+    .select('line_user_id').eq('name', instance.started_by).maybeSingle()
+  if (!emp?.line_user_id) return
+
+  await pushToUser(emp.line_user_id, {
+    type: 'flex', altText: `流程已完成：${instance.template_name}`,
+    contents: {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: C.salary.bg, paddingAll: '16px',
+        contents: [
+          { type: 'text', text: '🎉 流程已完成', color: C.salary.text, size: 'lg', weight: 'bold' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px',
+        contents: [
+          infoRow('流程', instance.template_name),
+          infoRow('門市', instance.store || '-'),
+          infoRow('完成時間', new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', hour12: false })),
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: '10px',
+        contents: [
+          { type: 'button', action: { type: 'uri', label: '開啟流程頁面', uri: `https://liff.line.me/${LIFF_ID}/tasks` }, style: 'primary', color: C.salary.accent, height: 'sm' },
+        ],
+      },
+    },
+  })
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  WORKFLOW QUERY HANDLERS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// 流程總覽 — 活動流程 carousel
+async function handleWorkflows(replyToken, emp) {
+  const { data: instances } = await supabase.from('workflow_instances')
+    .select('*').eq('status', '進行中').order('started_at', { ascending: false }).limit(8)
+
+  if (!instances?.length) {
+    await reply(replyToken, { type: 'text', text: '📋 目前沒有進行中的流程' })
+    return
+  }
+
+  // Batch 查所有 steps
+  const instIds = instances.map(i => i.id)
+  const { data: allSteps } = await supabase.from('workflow_steps')
+    .select('id, instance_id, status').in('instance_id', instIds)
+
+  const bubbles = instances.map(inst => {
+    const steps = (allSteps || []).filter(s => s.instance_id === inst.id)
+    const done = steps.filter(s => s.status === '已完成').length
+    const total = steps.length
+    const pct = total > 0 ? Math.round(done / total * 100) : 0
+
+    return {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: C.task.bg, paddingAll: '16px',
+        contents: [
+          { type: 'text', text: inst.store || '全店', color: C.task.sub, size: 'xs', weight: 'bold' },
+          { type: 'text', text: inst.template_name, color: C.task.text, size: 'lg', weight: 'bold', wrap: true, margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px',
+        contents: [
+          infoRow('負責人', inst.assignee || inst.started_by || '-'),
+          infoRow('截止日', inst.due_date || '無'),
+          infoRow('進度', `${done}/${total} 步驟 (${pct}%)`, pct === 100 ? C.salary.accent : C.leave.accent),
+          progressBar(pct),
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'vertical', paddingAll: '10px',
+        contents: [
+          { type: 'button', action: { type: 'postback', label: '查看步驟', data: `wfinst_steps_${inst.id}` }, style: 'primary', color: C.task.accent, height: 'sm' },
+        ],
+      },
+    }
+  })
+
+  await reply(replyToken, {
+    type: 'flex', altText: `${instances.length} 個進行中流程`,
+    contents: bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles },
+  })
+}
+
+// Instance 步驟列表
+async function handleInstanceSteps(replyToken, instanceId) {
+  const { data: inst } = await supabase.from('workflow_instances')
+    .select('*').eq('id', instanceId).single()
+  const { data: steps } = await supabase.from('workflow_steps')
+    .select('*').eq('instance_id', instanceId).order('step_order')
+
+  if (!steps?.length) {
+    await reply(replyToken, { type: 'text', text: '找不到此流程的步驟' })
+    return
+  }
+
+  const bubbles = steps.slice(0, 10).map(s => {
+    const statusIcon = s.status === '已完成' ? '✅' : s.status === '進行中' ? '🔵' : s.status === '已擱置' ? '⏸️' : '⬜'
+    const footerBtns = []
+
+    if (s.status === '進行中') {
+      footerBtns.push(
+        { type: 'button', action: { type: 'postback', label: '📋 詳情', data: `wfstep_detail_${s.id}` }, style: 'secondary', height: 'sm', flex: 1 },
+        { type: 'button', action: { type: 'postback', label: '✅ 完成', data: `wfstep_update_${s.id}_已完成` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 },
+      )
+    } else if (s.status === '待處理') {
+      footerBtns.push(
+        { type: 'button', action: { type: 'postback', label: '📋 詳情', data: `wfstep_detail_${s.id}` }, style: 'secondary', height: 'sm' },
+      )
+    } else {
+      footerBtns.push(
+        { type: 'button', action: { type: 'postback', label: '📋 詳情', data: `wfstep_detail_${s.id}` }, style: 'secondary', height: 'sm' },
+      )
+    }
+
+    return {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: s.status === '已完成' ? C.salary.bg : s.status === '進行中' ? C.leave.bg : '#F8FAFC', paddingAll: '14px',
+        contents: [
+          { type: 'text', text: `${statusIcon} 步驟 ${s.step_order}`, color: '#94A3B8', size: 'xs', weight: 'bold' },
+          { type: 'text', text: s.title, color: '#1E293B', size: 'md', weight: 'bold', wrap: true, margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '14px',
+        contents: [
+          infoRow('狀態', s.status, statusColor(s.status)),
+          infoRow('負責人', s.assignee || '-'),
+          infoRow('截止日', s.due_date || '無'),
+          ...(s.confirmed ? [infoRow('確認', `✅ ${s.confirmed_by || ''}`, C.salary.accent)] : []),
+        ],
+      },
+      ...(footerBtns.length > 0 ? {
+        footer: {
+          type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+          contents: footerBtns,
+        },
+      } : {}),
+    }
+  })
+
+  await reply(replyToken, {
+    type: 'flex', altText: `${inst?.template_name || '流程'} — ${steps.length} 個步驟`,
+    contents: bubbles.length === 1 ? bubbles[0] : { type: 'carousel', contents: bubbles },
+  })
+}
+
+// 步驟詳情 + Checklist
+async function handleStepDetail(replyToken, stepId) {
+  const { data: step } = await supabase.from('workflow_steps')
+    .select('*, workflow_instances(template_name, store)').eq('id', stepId).single()
+  if (!step) {
+    await reply(replyToken, { type: 'text', text: '找不到此步驟' })
+    return
+  }
+
+  const { data: clItems } = await supabase.from('workflow_step_checklist_items')
+    .select('*').eq('step_id', stepId).order('sort_order')
+
+  const inst = step.workflow_instances
+  const checkedCount = (clItems || []).filter(i => i.checked).length
+  const totalCl = (clItems || []).length
+
+  const bodyContents = [
+    infoRow('流程', inst?.template_name || '-'),
+    infoRow('門市', inst?.store || '-'),
+    infoRow('狀態', step.status, statusColor(step.status)),
+    infoRow('負責人', step.assignee || '-'),
+    infoRow('截止日', step.due_date || '無'),
+    ...(step.notes ? [{ type: 'text', text: `📝 ${step.notes}`, size: 'xs', color: '#64748B', wrap: true, margin: 'lg' }] : []),
+    ...(step.confirmed ? [infoRow('確認', `✅ ${step.confirmed_by || ''} (${step.confirmed_at?.slice(0, 10) || ''})`, C.salary.accent)] : []),
+  ]
+
+  // Checklist section
+  if (totalCl > 0) {
+    bodyContents.push({ type: 'separator', margin: 'lg' })
+    bodyContents.push({ type: 'text', text: `📋 查核清單 (${checkedCount}/${totalCl})`, size: 'sm', weight: 'bold', color: C.task.text, margin: 'lg' })
+    const displayItems = (clItems || []).slice(0, 8)
+    for (const item of displayItems) {
+      bodyContents.push(checklistRow(item))
+    }
+    if (totalCl > 8) {
+      bodyContents.push({ type: 'text', text: `...還有 ${totalCl - 8} 項`, size: 'xs', color: '#94A3B8', margin: 'sm' })
+    }
+  }
+
+  // Footer buttons based on status
+  const footerBtns = []
+  if (step.status === '進行中') {
+    if (!step.confirmed) {
+      footerBtns.push({ type: 'button', action: { type: 'postback', label: '🔏 請求確認', data: `wfstep_reqconfirm_${step.id}` }, style: 'secondary', height: 'sm', flex: 1 })
+    }
+    footerBtns.push({ type: 'button', action: { type: 'postback', label: '✅ 完成', data: `wfstep_update_${step.id}_已完成` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 })
+  } else if (step.status === '待處理') {
+    footerBtns.push({ type: 'button', action: { type: 'postback', label: '▶️ 開始', data: `wfstep_update_${step.id}_進行中` }, style: 'primary', color: C.leave.accent, height: 'sm' })
+  }
+
+  await reply(replyToken, {
+    type: 'flex', altText: `步驟詳情：${step.title}`,
+    contents: {
+      type: 'bubble', size: 'mega',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: C.task.bg, paddingAll: '16px',
+        contents: [
+          { type: 'text', text: `步驟 ${step.step_order}`, color: C.task.sub, size: 'xs', weight: 'bold' },
+          { type: 'text', text: step.title, color: C.task.text, size: 'lg', weight: 'bold', wrap: true, margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px',
+        contents: bodyContents,
+      },
+      ...(footerBtns.length > 0 ? {
+        footer: {
+          type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+          contents: footerBtns,
+        },
+      } : {}),
+    },
+  })
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  CHECKLIST TOGGLE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async function handleChecklistToggle(replyToken, itemId) {
+  // 讀取 → toggle → 更新
+  const { data: item } = await supabase.from('workflow_step_checklist_items')
+    .select('*').eq('id', itemId).single()
+  if (!item) {
+    await reply(replyToken, { type: 'text', text: '找不到此清單項目' })
+    return
+  }
+
+  await supabase.from('workflow_step_checklist_items')
+    .update({ checked: !item.checked }).eq('id', itemId)
+
+  // Re-render 完整 step detail
+  await handleStepDetail(replyToken, item.step_id)
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  CONFIRMATION / APPROVAL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// 員工請求主管確認
+async function handleRequestConfirmation(replyToken, stepId, requesterEmp) {
+  const { data: step } = await supabase.from('workflow_steps')
+    .select('*, workflow_instances(template_name, store)').eq('id', stepId).single()
+  if (!step) {
+    await reply(replyToken, { type: 'text', text: '找不到此步驟' })
+    return
+  }
+
+  // 找直屬主管
+  const { data: reqEmp } = await supabase.from('employees')
+    .select('supervisor').eq('name', requesterEmp.name).maybeSingle()
+  if (!reqEmp?.supervisor) {
+    await reply(replyToken, { type: 'text', text: '找不到您的直屬主管，無法送出確認請求' })
+    return
+  }
+
+  const { data: supervisor } = await supabase.from('employees')
+    .select('name, line_user_id').eq('name', reqEmp.supervisor).maybeSingle()
+  if (!supervisor?.line_user_id) {
+    await reply(replyToken, { type: 'text', text: `主管（${reqEmp.supervisor}）尚未綁定 LINE，無法推播` })
+    return
+  }
+
+  const inst = step.workflow_instances
+
+  // Push 給主管
+  await pushToUser(supervisor.line_user_id, {
+    type: 'flex', altText: `🔏 任務確認請求：${step.title}`,
+    contents: {
+      type: 'bubble', size: 'kilo',
+      header: {
+        type: 'box', layout: 'vertical', backgroundColor: C.task.bg, paddingAll: '16px',
+        contents: [
+          { type: 'text', text: '🔏 任務確認請求', color: C.task.text, size: 'lg', weight: 'bold' },
+          { type: 'text', text: '員工請求您確認以下任務', color: C.task.sub, size: 'xs', margin: 'sm' },
+        ],
+      },
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '16px',
+        contents: [
+          infoRow('任務', step.title),
+          infoRow('流程', inst?.template_name || '-'),
+          infoRow('門市', inst?.store || '-'),
+          infoRow('請求人', requesterEmp.name),
+          infoRow('負責人', step.assignee || '-'),
+        ],
+      },
+      footer: {
+        type: 'box', layout: 'horizontal', paddingAll: '10px', spacing: 'sm',
+        contents: [
+          { type: 'button', action: { type: 'postback', label: '✅ 確認', data: `wfstep_confirm_${step.id}` }, style: 'primary', color: C.salary.accent, height: 'sm', flex: 1 },
+          { type: 'button', action: { type: 'postback', label: '❌ 退回', data: `wfstep_reject_${step.id}` }, style: 'secondary', height: 'sm', flex: 1 },
+        ],
+      },
+    },
+  })
+
+  // Reply 給請求者
+  await reply(replyToken, {
+    type: 'flex', altText: '已送出確認請求',
+    contents: {
+      type: 'bubble', size: 'kilo',
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '20px', justifyContent: 'center', alignItems: 'center',
+        contents: [
+          { type: 'text', text: '📨', size: '3xl', align: 'center' },
+          { type: 'text', text: '確認請求已送出', size: 'md', weight: 'bold', align: 'center', margin: 'lg' },
+          { type: 'text', text: `已推播給 ${supervisor.name}`, size: 'xs', color: '#94A3B8', align: 'center', margin: 'sm' },
+        ],
+      },
+    },
+  })
+}
+
+// 主管確認/退回步驟
+async function handleStepConfirmation(replyToken, stepId, action, approverEmp) {
+  const isApprove = action === 'confirm'
+  const { data: step } = await supabase.from('workflow_steps')
+    .select('*, workflow_instances(template_name, store)').eq('id', stepId).single()
+  if (!step) {
+    await reply(replyToken, { type: 'text', text: '找不到此步驟' })
+    return
+  }
+
+  // 更新 step
+  await supabase.from('workflow_steps').update({
+    confirmed: isApprove,
+    confirmed_by: approverEmp.name,
+    confirmed_at: new Date().toISOString(),
+  }).eq('id', stepId)
+
+  // 寫入 comment 作為 audit trail
+  await supabase.from('workflow_step_comments').insert({
+    step_id: stepId,
+    author: approverEmp.name,
+    text: isApprove ? '✅ 已確認' : '❌ 已退回',
+  })
+
+  // 通知 assignee
+  if (step.assignee) {
+    const { data: assigneeEmp } = await supabase.from('employees')
+      .select('line_user_id').eq('name', step.assignee).maybeSingle()
+    if (assigneeEmp?.line_user_id) {
+      const inst = step.workflow_instances
+      await pushToUser(assigneeEmp.line_user_id, {
+        type: 'flex', altText: `任務${isApprove ? '已確認' : '已退回'}：${step.title}`,
+        contents: {
+          type: 'bubble', size: 'kilo',
+          header: {
+            type: 'box', layout: 'vertical', backgroundColor: isApprove ? C.salary.bg : '#FEF2F2', paddingAll: '16px',
+            contents: [
+              { type: 'text', text: isApprove ? '✅ 任務已確認' : '❌ 任務已退回', color: isApprove ? C.salary.text : '#991B1B', size: 'lg', weight: 'bold' },
+            ],
+          },
+          body: {
+            type: 'box', layout: 'vertical', paddingAll: '16px',
+            contents: [
+              infoRow('任務', step.title),
+              infoRow('流程', inst?.template_name || '-'),
+              infoRow('審核者', approverEmp.name),
+            ],
+          },
+          ...(step.status === '進行中' ? {
+            footer: {
+              type: 'box', layout: 'vertical', paddingAll: '10px',
+              contents: [
+                { type: 'button', action: { type: 'postback', label: '📋 查看詳情', data: `wfstep_detail_${step.id}` }, style: 'secondary', height: 'sm' },
+              ],
+            },
+          } : {}),
+        },
+      })
+    }
+  }
+
+  // Reply 給審核者
+  await reply(replyToken, {
+    type: 'flex', altText: isApprove ? '已確認' : '已退回',
+    contents: {
+      type: 'bubble', size: 'kilo',
+      body: {
+        type: 'box', layout: 'vertical', paddingAll: '20px', justifyContent: 'center', alignItems: 'center',
+        contents: [
+          { type: 'text', text: isApprove ? '✅' : '❌', size: '3xl', align: 'center' },
+          { type: 'text', text: `「${step.title}」${isApprove ? '已確認' : '已退回'}`, size: 'md', weight: 'bold', align: 'center', margin: 'lg', wrap: true },
+        ],
+      },
+    },
+  })
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━
 //  HANDLERS
 // ━━━━━━━━━━━━━━━━━━━━━
@@ -318,33 +855,88 @@ async function handleInventory(replyToken, keyword) {
 
 // Postback handler: workflow steps, tasks, leave approval, PR approval
 async function handlePostback(replyToken, data, emp) {
-  // Workflow step update
+
+  // ── Workflow step update (with cascade) ──
   const wfMatch = data.match(/^wfstep_update_(\d+)_(.+)$/)
   if (wfMatch) {
-    const [, id, status] = wfMatch
-    const completedAt = status === '已完成' ? new Date().toISOString() : null
+    const [, id, newStatus] = wfMatch
+    const completedAt = newStatus === '已完成' ? new Date().toISOString() : null
     const { data: updated } = await supabase.from('workflow_steps')
-      .update({ status, completed_at: completedAt }).eq('id', Number(id)).select().single()
-    if (updated) {
-      await reply(replyToken, {
-        type: 'flex', altText: '流程任務已更新',
-        contents: {
-          type: 'bubble', size: 'kilo',
-          body: {
-            type: 'box', layout: 'vertical', paddingAll: '20px', justifyContent: 'center', alignItems: 'center',
-            contents: [
-              { type: 'text', text: status === '已完成' ? '✅' : '📝', size: '3xl', align: 'center' },
-              { type: 'text', text: `「${updated.title}」`, size: 'md', weight: 'bold', align: 'center', margin: 'lg', wrap: true },
-              { type: 'text', text: `已更新為 ${status}`, size: 'sm', color: '#94A3B8', align: 'center', margin: 'sm' },
-            ],
-          },
+      .update({ status: newStatus, completed_at: completedAt }).eq('id', Number(id)).select().single()
+    if (!updated) return
+
+    // 先 reply（避免 token 過期）
+    await reply(replyToken, {
+      type: 'flex', altText: '流程任務已更新',
+      contents: {
+        type: 'bubble', size: 'kilo',
+        body: {
+          type: 'box', layout: 'vertical', paddingAll: '20px', justifyContent: 'center', alignItems: 'center',
+          contents: [
+            { type: 'text', text: newStatus === '已完成' ? '✅' : '📝', size: '3xl', align: 'center' },
+            { type: 'text', text: `「${updated.title}」`, size: 'md', weight: 'bold', align: 'center', margin: 'lg', wrap: true },
+            { type: 'text', text: `已更新為 ${newStatus}`, size: 'sm', color: '#94A3B8', align: 'center', margin: 'sm' },
+          ],
         },
-      })
+      },
+    })
+
+    // Cascade：完成時自動推進依賴步驟
+    if (newStatus === '已完成' && updated.instance_id) {
+      try {
+        const result = await cascadeOnStepComplete(Number(id), updated.instance_id)
+        const instName = result.instance?.store || result.instance?.template_name || ''
+
+        // 推播給自動啟動的步驟 assignee
+        for (const step of result.progressedSteps) {
+          await notifyStepAutoStarted(step, instName)
+        }
+
+        // 流程全部完成 → 通知發起者
+        if (result.instanceCompleted && result.instance) {
+          await notifyWorkflowCompleted(result.instance)
+        }
+      } catch (e) { /* cascade 失敗不影響主回覆 */ }
     }
     return
   }
 
-  // Legacy task update
+  // ── Instance 步驟列表 ──
+  const instStepsMatch = data.match(/^wfinst_steps_(\d+)$/)
+  if (instStepsMatch) {
+    await handleInstanceSteps(replyToken, Number(instStepsMatch[1]))
+    return
+  }
+
+  // ── 步驟詳情 ──
+  const stepDetailMatch = data.match(/^wfstep_detail_(\d+)$/)
+  if (stepDetailMatch) {
+    await handleStepDetail(replyToken, Number(stepDetailMatch[1]))
+    return
+  }
+
+  // ── Checklist toggle ──
+  const clToggleMatch = data.match(/^wfcl_toggle_(\d+)$/)
+  if (clToggleMatch) {
+    await handleChecklistToggle(replyToken, Number(clToggleMatch[1]))
+    return
+  }
+
+  // ── 請求確認 ──
+  const reqConfirmMatch = data.match(/^wfstep_reqconfirm_(\d+)$/)
+  if (reqConfirmMatch) {
+    await handleRequestConfirmation(replyToken, Number(reqConfirmMatch[1]), emp)
+    return
+  }
+
+  // ── 確認/退回 ──
+  const confirmMatch = data.match(/^wfstep_(confirm|reject)_(\d+)$/)
+  if (confirmMatch) {
+    await handleStepConfirmation(replyToken, Number(confirmMatch[2]), confirmMatch[1], emp)
+    return
+  }
+
+  // ── Legacy task update ──
   const taskMatch = data.match(/^task_update_(\d+)_(.+)$/)
   if (taskMatch) {
     const [, id, status] = taskMatch
@@ -574,6 +1166,7 @@ async function handleMenu(replyToken) {
           { type: 'button', action: { type: 'message', label: '💰 查薪資', text: '薪資' }, style: 'secondary', height: 'sm' },
           { type: 'button', action: { type: 'message', label: '📋 假期餘額', text: '假期' }, style: 'secondary', height: 'sm' },
           { type: 'button', action: { type: 'message', label: '⚙️ 我的任務', text: '任務' }, style: 'secondary', height: 'sm' },
+          { type: 'button', action: { type: 'message', label: '📊 流程進度', text: '流程' }, style: 'secondary', height: 'sm' },
           { type: 'button', action: { type: 'message', label: '📅 排休申請', text: '排休' }, style: 'secondary', height: 'sm' },
           { type: 'separator', margin: 'lg' },
           { type: 'button', action: { type: 'uri', label: '📱 開啟完整平台', uri: `https://liff.line.me/${LIFF_ID}` }, style: 'primary', color: C.brand.accent, height: 'sm', margin: 'md' },
@@ -643,8 +1236,10 @@ export default async function handler(req, res) {
       await handleSalary(replyToken, emp)
     } else if (text === '假期' || text === '/假期' || text === '假期餘額' || text === '/假期餘額') {
       await handleLeaveBalance(replyToken, emp)
-    } else if (text === '任務' || text === '/任務' || text === '流程' || text === '/流程') {
+    } else if (text === '任務' || text === '/任務') {
       await handleTasks(replyToken, emp)
+    } else if (text === '流程' || text === '/流程') {
+      await handleWorkflows(replyToken, emp)
     } else if (text.startsWith('庫存') || text.startsWith('/庫存')) {
       const keyword = text.replace(/^[\/]?庫存\s*/, '')
       if (keyword) {

@@ -235,10 +235,73 @@ async function sendTaskDueReminder() {
   return { sent }
 }
 
+// ── Workflow Overdue: notify assignees of past-due steps ──
+async function sendWorkflowOverdue() {
+  const today = new Date().toISOString().slice(0, 10)
+
+  const { data: steps } = await supabase.from('workflow_steps')
+    .select('*, workflow_instances(template_name, store)')
+    .lt('due_date', today)
+    .in('status', ['待處理', '進行中'])
+
+  if (!steps?.length) return { sent: 0, items: 0 }
+
+  let sent = 0
+  for (const step of steps) {
+    if (!step.assignee) continue
+    const { data: emp } = await supabase
+      .from('employees').select('line_user_id').eq('name', step.assignee).maybeSingle()
+    if (!emp?.line_user_id) continue
+
+    const inst = step.workflow_instances
+    const label = inst?.store || inst?.template_name || '流程'
+
+    await pushMessage(emp.line_user_id, {
+      type: 'flex', altText: `⚠️ 逾期任務：${step.title}`,
+      contents: {
+        type: 'bubble', size: 'kilo',
+        header: {
+          type: 'box', layout: 'vertical', backgroundColor: '#FEF2F2', paddingAll: '16px',
+          contents: [
+            { type: 'text', text: '⚠️ 逾期任務提醒', color: '#991B1B', size: 'lg', weight: 'bold' },
+            { type: 'text', text: '此任務已超過截止日', color: '#B91C1C', size: 'xs', margin: 'sm' },
+          ],
+        },
+        body: {
+          type: 'box', layout: 'vertical', paddingAll: '16px',
+          contents: [
+            { type: 'text', text: step.title, size: 'md', weight: 'bold', wrap: true },
+            { type: 'box', layout: 'horizontal', margin: 'md', contents: [
+              { type: 'text', text: '流程', color: '#94A3B8', size: 'sm', flex: 2 },
+              { type: 'text', text: label, color: '#334155', size: 'sm', flex: 3, weight: 'bold' },
+            ]},
+            { type: 'box', layout: 'horizontal', margin: 'md', contents: [
+              { type: 'text', text: '截止日', color: '#94A3B8', size: 'sm', flex: 2 },
+              { type: 'text', text: step.due_date, color: '#DC2626', size: 'sm', flex: 3, weight: 'bold' },
+            ]},
+            { type: 'box', layout: 'horizontal', margin: 'md', contents: [
+              { type: 'text', text: '狀態', color: '#94A3B8', size: 'sm', flex: 2 },
+              { type: 'text', text: step.status, color: '#334155', size: 'sm', flex: 3, weight: 'bold' },
+            ]},
+          ],
+        },
+        footer: {
+          type: 'box', layout: 'vertical', paddingAll: '10px',
+          contents: [
+            { type: 'button', action: { type: 'uri', label: '查看任務', uri: `https://liff.line.me/${LIFF_ID}/tasks` }, style: 'primary', color: '#DC2626', height: 'sm' },
+          ],
+        },
+      },
+    })
+    sent++
+  }
+  return { sent, items: steps.length }
+}
+
 // ── API Handler ──
 export default async function handler(req, res) {
   if (req.method === 'GET') {
-    return res.status(200).json({ status: 'ok', endpoints: ['schedule_reminder', 'low_inventory', 'salary_released', 'task_due_reminder'] })
+    return res.status(200).json({ status: 'ok', endpoints: ['schedule_reminder', 'low_inventory', 'salary_released', 'task_due_reminder', 'workflow_overdue'] })
   }
 
   if (req.method !== 'POST') return res.status(405).end()
@@ -265,6 +328,9 @@ export default async function handler(req, res) {
         break
       case 'task_due_reminder':
         result = await sendTaskDueReminder()
+        break
+      case 'workflow_overdue':
+        result = await sendWorkflowOverdue()
         break
       default:
         return res.status(400).json({ error: `Unknown type: ${type}` })
