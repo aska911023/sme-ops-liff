@@ -1,14 +1,19 @@
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
-import { Clock, CalendarDays, Package, LayoutGrid } from 'lucide-react'
-import Home from './pages/Home'
+import { ClipboardList, Users, Package, DollarSign } from 'lucide-react'
+
+// Hub pages (4 tabs)
+import HRHub from './pages/HRHub'
+import CRMHub from './pages/CRMHub'
+import WMSHub from './pages/WMSHub'
+import SalesHub from './pages/SalesHub'
+
+// HR pages
 import ClockPage from './pages/Clock'
 import Salary from './pages/Salary'
 import Leave from './pages/Leave'
-import InventoryPage from './pages/Inventory'
 import Tasks from './pages/Tasks'
 import Expenses from './pages/Expenses'
-import NewCustomer from './pages/NewCustomer'
 import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
 import Overtime from './pages/Overtime'
@@ -17,21 +22,29 @@ import ClockCorrection from './pages/ClockCorrection'
 import MySchedule from './pages/MySchedule'
 import ApprovalStatus from './pages/ApprovalStatus'
 
+// CRM pages
+import NewCustomer from './pages/NewCustomer'
+import InventoryPage from './pages/Inventory'
+
 function TabBar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
+
   const tabs = [
-    { path: '/', icon: <LayoutGrid />, label: '首頁' },
-    { path: '/clock', icon: <Clock />, label: '打卡' },
-    { path: '/leave', icon: <CalendarDays />, label: '請假' },
-    { path: '/inventory', icon: <Package />, label: '庫存' },
+    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/clock-correction', '/my-schedule', '/approval-status'] },
+    { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer/new'] },
+    { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
+    { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
   ]
+
+  const activeTab = tabs.find(t => t.match.some(m => pathname === m || (m !== '/' && pathname.startsWith(m))))
+
   return (
     <div className="tab-bar">
       {tabs.map(t => (
         <button
           key={t.path}
-          className={`tab-item ${pathname === t.path ? 'active' : ''}`}
+          className={`tab-item ${activeTab?.path === t.path ? 'active' : ''}`}
           onClick={() => navigate(t.path)}
         >
           {t.icon}
@@ -43,7 +56,7 @@ function TabBar() {
 }
 
 export default function App() {
-  const { loading, error, employee } = useAuth()
+  const { loading, error, employee, lineProfile } = useAuth()
 
   if (loading) {
     return (
@@ -99,14 +112,13 @@ export default function App() {
   return (
     <div className="app">
       <Routes>
-        <Route path="/" element={<Home />} />
+        {/* HR Hub + pages */}
+        <Route path="/" element={<HRHub />} />
         <Route path="/clock" element={<ClockPage />} />
         <Route path="/salary" element={<Salary />} />
         <Route path="/leave" element={<Leave />} />
-        <Route path="/inventory" element={<InventoryPage />} />
         <Route path="/tasks" element={<Tasks />} />
         <Route path="/expenses" element={<Expenses />} />
-        <Route path="/customer/new" element={<NewCustomer />} />
         <Route path="/off-request" element={<OffRequest />} />
         <Route path="/business-trip" element={<BusinessTrip />} />
         <Route path="/overtime" element={<Overtime />} />
@@ -114,6 +126,21 @@ export default function App() {
         <Route path="/clock-correction" element={<ClockCorrection />} />
         <Route path="/my-schedule" element={<MySchedule />} />
         <Route path="/approval-status" element={<ApprovalStatus />} />
+
+        {/* CRM Hub + pages */}
+        <Route path="/crm" element={<CRMHub />} />
+        <Route path="/customer/new" element={<NewCustomer />} />
+        <Route path="/crm/*" element={<CRMHub />} />
+
+        {/* WMS Hub + pages */}
+        <Route path="/wms" element={<WMSHub />} />
+        <Route path="/inventory" element={<InventoryPage />} />
+        <Route path="/wms/*" element={<WMSHub />} />
+
+        {/* Sales Hub + pages */}
+        <Route path="/sales" element={<SalesHub />} />
+        <Route path="/sales/*" element={<SalesHub />} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <TabBar />
