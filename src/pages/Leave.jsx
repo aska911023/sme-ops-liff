@@ -41,6 +41,15 @@ const LEAVE_LIMITS = Object.fromEntries(
   Object.entries(LEAVE_INFO).filter(([, v]) => v.max).map(([k, v]) => [k, v.max])
 )
 
+// benefit_policies code → LIFF 假別名稱對照
+const LEAVE_CODE_MAP = {
+  annual: '特休', sick: '病假', personal: '事假', official: '公假',
+  maternity: '產假', paternity: '陪產假', parental: '育嬰假',
+  menstrual: '生理假', marriage: '婚假', bereavement: '喪假',
+  family_care: '家庭照顧假', mental_health: '心理假',
+  occupational: '公傷病假', nursing: '哺乳時間', prenatal: '產檢假',
+}
+
 // 取得特休年度區間（到職週年制）
 function getAnnualLeaveRange(joinDate) {
   const join = new Date(joinDate)
@@ -93,16 +102,51 @@ export default function Leave() {
   const [attachFiles, setAttachFiles] = useState([]) // new files: { file, preview }
   const [existingAttach, setExistingAttach] = useState([]) // existing URLs from DB
   const [uploading, setUploading] = useState(false)
+  const [benefitExtras, setBenefitExtras] = useState({}) // code → extra_days from benefit_policies
 
   useEffect(() => {
     if (!employee) return
+    // 查門市 ID
+    const loadStoreId = employee.store
+      ? supabase.from('stores').select('id').eq('name', employee.store).single()
+      : Promise.resolve({ data: null })
+
     Promise.all([
       supabase.from('leave_requests').select('*').eq('employee', employee.name).order('start_date', { ascending: false }),
       supabase.from('holidays').select('date'),
-    ]).then(([lr, hd]) => {
+      loadStoreId,
+    ]).then(([lr, hd, storeRes]) => {
       setRecords(lr.data || [])
       setHolidays((hd.data || []).map(h => h.date))
-      setLoading(false)
+
+      // 查福利政策：員工級 + 門市級 + 全公司
+      const storeId = storeRes.data?.id
+      const policyFilters = [
+        supabase.from('benefit_policies').select('*').eq('category', 'leave').eq('is_active', true).is('store_id', null).is('employee_id', null),
+      ]
+      if (storeId) {
+        policyFilters.push(supabase.from('benefit_policies').select('*').eq('category', 'leave').eq('is_active', true).eq('store_id', storeId).is('employee_id', null))
+      }
+      if (employee.id) {
+        policyFilters.push(supabase.from('benefit_policies').select('*').eq('category', 'leave').eq('is_active', true).eq('employee_id', employee.id))
+      }
+
+      Promise.all(policyFilters).then(results => {
+        const allPolicies = results.flatMap(r => r.data || [])
+        // 解析優先序：employee_id > store_id > global
+        const extras = {}
+        for (const p of allPolicies) {
+          const specificity = (p.employee_id ? 2 : 0) + (p.store_id ? 1 : 0)
+          const leaveCode = LEAVE_CODE_MAP[p.code] || p.code
+          if (!extras[leaveCode] || specificity > (extras[leaveCode]._s || 0)) {
+            extras[leaveCode] = { extra_days: p.config?.extra_days || 0, _s: specificity }
+          }
+        }
+        // 清除內部欄位
+        for (const k of Object.keys(extras)) delete extras[k]._s
+        setBenefitExtras(extras)
+        setLoading(false)
+      })
     })
   }, [employee])
 
@@ -494,7 +538,9 @@ export default function Leave() {
 
       {/* Leave Balance */}
       {employee?.join_date && (() => {
-        const annualTotal = calcAnnualLeave(employee.join_date)
+        const annualLegal = calcAnnualLeave(employee.join_date)
+        const annualExtra = benefitExtras['特休']?.extra_days || 0
+        const annualTotal = annualLegal + annualExtra
         const approved = records.filter(r => r.status !== '已拒絕')
 
         // 特休：到職週年制
@@ -503,16 +549,17 @@ export default function Leave() {
           .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
           .reduce((s, r) => s + (r.days || 0), 0)
 
-        // 其他假別：曆年制
+        // 其他假別：曆年制（法定 + 加給）
         const calRange = getCalendarYearRange()
         const usedByType = (type) => approved
           .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
           .reduce((s, r) => s + (r.days || 0), 0)
         const allBalances = [
-          { label: '特休', total: annualTotal, used: annualUsed },
-          ...Object.entries(LEAVE_LIMITS).map(([type, total]) => ({
-            label: type, total, used: usedByType(type),
-          })),
+          { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtra },
+          ...Object.entries(LEAVE_LIMITS).map(([type, legalMax]) => {
+            const extra = benefitExtras[type]?.extra_days || 0
+            return { label: type, total: legalMax + extra, used: usedByType(type), extra }
+          }),
         ]
         const mainBalances = allBalances.filter(b => ['特休', '事假', '病假', '心理假'].includes(b.label))
         const otherBalances = allBalances.filter(b => !['特休', '事假', '病假', '心理假'].includes(b.label))
@@ -535,6 +582,7 @@ export default function Leave() {
                     </span>
                     <span style={{ color: remaining <= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
                       剩 {remaining} / {b.total} 天
+                      {b.extra > 0 && <span style={{ color: 'var(--cyan)', fontSize: 10, fontWeight: 500 }}> (+{b.extra})</span>}
                     </span>
                   </div>
                   <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
