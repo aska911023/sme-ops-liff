@@ -21,7 +21,8 @@ export default function ExpenseRequest() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('list') // list / new / settle / detail
-  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', is_expense: true })
+  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true })
+  const [lineItems, setLineItems] = useState([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
   const [settleForm, setSettleForm] = useState({ actual_amount: '', notes: '' })
   const [files, setFiles] = useState([])
   const [settleFiles, setSettleFiles] = useState([])
@@ -30,6 +31,13 @@ export default function ExpenseRequest() {
   const [detailAtts, setDetailAtts] = useState([])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const updateItem = (i, k, v) => setLineItems(items => {
+    const n = [...items]
+    n[i] = { ...n[i], [k]: v }
+    if (k === 'qty' || k === 'unit_price') n[i].subtotal = (Number(n[i].qty) || 0) * (Number(n[i].unit_price) || 0)
+    return n
+  })
+  const lineTotal = lineItems.reduce((s, li) => s + (li.subtotal || 0), 0)
 
   useEffect(() => {
     if (!employee) return
@@ -74,7 +82,9 @@ export default function ExpenseRequest() {
 
   // Submit new request
   const handleSubmit = async () => {
-    if (!form.account_code || !form.title || !form.estimated_amount) return
+    const validItems = lineItems.filter(li => li.name && li.qty > 0)
+    const total = validItems.length > 0 ? validItems.reduce((s, li) => s + (li.subtotal || 0), 0) : Number(form.estimated_amount)
+    if (!form.account_code || !form.title || !total) return
     setSubmitting(true)
     const acc = accounts.find(a => a.code === form.account_code)
     const { data, error } = await supabase.from('expense_requests').insert({
@@ -85,7 +95,9 @@ export default function ExpenseRequest() {
       account_name: acc?.name || '',
       title: form.title,
       description: form.description || null,
-      estimated_amount: Number(form.estimated_amount),
+      estimated_amount: total,
+      supplier: form.supplier || null,
+      items: validItems,
       store: form.store || null,
       status: '申請中',
       organization_id: 1,
@@ -109,7 +121,8 @@ export default function ExpenseRequest() {
     setSubmitting(false)
     if (!error && data) {
       setRequests(prev => [data, ...prev])
-      setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '' })
+      setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true })
+      setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
       setFiles([])
       setTab('list')
     }
@@ -286,9 +299,8 @@ export default function ExpenseRequest() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div className="form-group">
-              <label className="form-label">預估金額 *</label>
-              <input className="form-input" type="number" value={form.estimated_amount}
-                onChange={e => set('estimated_amount', e.target.value)} placeholder="0" />
+              <label className="form-label">供應商/廠商</label>
+              <input className="form-input" value={form.supplier} onChange={e => set('supplier', e.target.value)} placeholder="選填" />
             </div>
             <div className="form-group">
               <label className="form-label">門市</label>
@@ -297,10 +309,43 @@ export default function ExpenseRequest() {
             </div>
           </div>
 
+          {/* Line items */}
+          <div className="form-group">
+            <label className="form-label">品項明細 *</label>
+            {lineItems.map((li, i) => (
+              <div key={i} style={{ background: 'var(--glass)', borderRadius: 10, padding: 10, marginBottom: 8, border: '1px solid var(--border)' }}>
+                <input className="form-input" value={li.name} onChange={e => updateItem(i, 'name', e.target.value)}
+                  placeholder="品名" style={{ marginBottom: 6 }} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
+                  <input className="form-input" type="number" value={li.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
+                    placeholder="數量" style={{ textAlign: 'right' }} />
+                  <input className="form-input" type="number" value={li.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                    placeholder="單價" style={{ textAlign: 'right' }} />
+                  <div style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', fontSize: 13, color: 'var(--cyan)' }}>
+                    {li.subtotal ? fmt(li.subtotal) : '$0'}
+                  </div>
+                </div>
+                {lineItems.length > 1 && (
+                  <button style={{ background: 'none', border: 'none', color: 'var(--red)', fontSize: 11, cursor: 'pointer', marginTop: 4, padding: 0 }}
+                    onClick={() => setLineItems(items => items.filter((_, j) => j !== i))}>
+                    <X size={12} /> 刪除此品項
+                  </button>
+                )}
+              </div>
+            ))}
+            <button className="btn" style={{ width: '100%', padding: '8px 0', borderRadius: 8, fontSize: 12, background: 'var(--glass)', border: '1px dashed var(--border)', cursor: 'pointer', color: 'var(--t2)' }}
+              onClick={() => setLineItems(items => [...items, { name: '', qty: '', unit_price: '', subtotal: 0 }])}>
+              <Plus size={14} /> 新增品項
+            </button>
+            <div style={{ textAlign: 'right', marginTop: 8, fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
+              合計：{fmt(lineTotal)}
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label">說明</label>
             <textarea className="form-input" value={form.description} onChange={e => set('description', e.target.value)}
-              placeholder="用途、規格、供應商..." style={{ minHeight: 60, resize: 'vertical' }} />
+              placeholder="用途、規格..." style={{ minHeight: 50, resize: 'vertical' }} />
           </div>
 
           {/* File Upload */}
@@ -402,8 +447,25 @@ export default function ExpenseRequest() {
 
           <div className="info-row"><span>科目</span><span>{detail.account_code} {detail.account_name}</span></div>
           <div className="info-row"><span>部門</span><span>{detail.department || '-'}</span></div>
+          {detail.supplier && <div className="info-row"><span>供應商</span><span>{detail.supplier}</span></div>}
           {detail.store && <div className="info-row"><span>門市</span><span>{detail.store}</span></div>}
           {detail.description && <div className="info-row"><span>說明</span><span style={{ textAlign: 'right', maxWidth: '60%' }}>{detail.description}</span></div>}
+
+          {/* Line items */}
+          {detail.items?.length > 0 && (
+            <div style={{ margin: '8px 0' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>品項明細</div>
+              {detail.items.map((li, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{li.name}</div>
+                    <div style={{ color: 'var(--t3)', fontSize: 11 }}>{li.qty} x {fmt(li.unit_price)}</div>
+                  </div>
+                  <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{fmt(li.subtotal)}</div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '12px 0', background: 'var(--glass)', padding: 12, borderRadius: 10 }}>
             <div style={{ textAlign: 'center' }}>
