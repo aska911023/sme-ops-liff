@@ -21,7 +21,7 @@ export default function ExpenseRequest() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('list') // list / new / settle / detail
-  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '' })
+  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', is_expense: true })
   const [settleForm, setSettleForm] = useState({ actual_amount: '', notes: '' })
   const [files, setFiles] = useState([])
   const [settleFiles, setSettleFiles] = useState([])
@@ -33,17 +33,24 @@ export default function ExpenseRequest() {
 
   useEffect(() => {
     if (!employee) return
+    // Auto-fill store/dept from employee
+    setForm(f => ({ ...f, store: employee.store || '' }))
     Promise.all([
       supabase.from('expense_requests').select('*')
         .eq('employee', employee.name)
         .order('created_at', { ascending: false }),
-      supabase.from('accounts').select('code, name').eq('type', '費用').order('code'),
+      supabase.from('accounts').select('code, name, type').order('code'),
     ]).then(([r, a]) => {
       setRequests(r.data || [])
       setAccounts(a.data || [])
       setLoading(false)
     })
   }, [employee])
+
+  // Filter accounts by expense toggle
+  const filteredAccounts = accounts.filter(a =>
+    form.is_expense ? a.type === '費用' : a.type !== '費用'
+  )
 
   // Upload files to Supabase Storage
   const uploadFiles = async (requestId, fileList, stage) => {
@@ -210,11 +217,30 @@ export default function ExpenseRequest() {
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>新增費用申請</div>
 
+          {/* Expense / Non-expense toggle */}
+          <div className="form-group">
+            <label className="form-label">申請類型</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[{ val: true, label: '費用' }, { val: false, label: '非費用' }].map(opt => (
+                <button key={String(opt.val)} type="button"
+                  onClick={() => { set('is_expense', opt.val); set('account_code', '') }}
+                  style={{
+                    flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    background: form.is_expense === opt.val ? 'var(--cyan)' : 'var(--glass)',
+                    color: form.is_expense === opt.val ? '#fff' : 'var(--t3)',
+                    border: form.is_expense === opt.val ? 'none' : '1px solid var(--border)',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label">會計科目 *</label>
             <select className="form-input" value={form.account_code} onChange={e => set('account_code', e.target.value)}>
               <option value="">請選擇</option>
-              {accounts.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
+              {filteredAccounts.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
             </select>
           </div>
 
@@ -222,6 +248,13 @@ export default function ExpenseRequest() {
             <label className="form-label">項目名稱 *</label>
             <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)}
               placeholder="例：採購辦公椅 x5" />
+          </div>
+
+          {/* Auto-detected info */}
+          <div style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--t3)', background: 'var(--glass)', padding: '8px 12px', borderRadius: 8 }}>
+            <span>👤 {employee.name}</span>
+            {employee.dept && <span>· 📁 {employee.dept}</span>}
+            {employee.store && <span>· 🏪 {employee.store}</span>}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -232,7 +265,8 @@ export default function ExpenseRequest() {
             </div>
             <div className="form-group">
               <label className="form-label">門市</label>
-              <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)} placeholder="選填" />
+              <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)}
+                placeholder={employee.store || '選填'} />
             </div>
           </div>
 
