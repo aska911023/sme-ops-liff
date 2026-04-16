@@ -95,6 +95,17 @@ export default function ExpenseRequest() {
       await uploadFiles(data.id, files, 'request')
     }
 
+    // Create workflow instance for approval tracking
+    if (data) {
+      await supabase.from('workflow_instances').insert({
+        template_name: '費用申請簽核',
+        status: '進行中',
+        started_by: employee.name,
+        store: form.store || employee.store || null,
+        started_at: new Date().toISOString(),
+      }).catch(() => {})
+    }
+
     setSubmitting(false)
     if (!error && data) {
       setRequests(prev => [data, ...prev])
