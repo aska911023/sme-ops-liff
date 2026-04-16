@@ -39,7 +39,7 @@ export default function ExpenseRequest() {
       supabase.from('expense_requests').select('*')
         .eq('employee', employee.name)
         .order('created_at', { ascending: false }),
-      supabase.from('accounts').select('code, name, type').order('code'),
+      supabase.from('accounts').select('code, name, type, parent_code').order('code'),
     ]).then(([r, a]) => {
       setRequests(r.data || [])
       setAccounts(a.data || [])
@@ -240,7 +240,23 @@ export default function ExpenseRequest() {
             <label className="form-label">會計科目 *</label>
             <select className="form-input" value={form.account_code} onChange={e => set('account_code', e.target.value)}>
               <option value="">請選擇</option>
-              {filteredAccounts.map(a => <option key={a.code} value={a.code}>{a.code} — {a.name}</option>)}
+              {Object.entries(
+                filteredAccounts.reduce((groups, a) => {
+                  // Group by: parent accounts vs sub-accounts, and by type
+                  const group = a.parent_code ? `${a.type} ─ 子科目` : a.type || '其他'
+                  if (!groups[group]) groups[group] = []
+                  groups[group].push(a)
+                  return groups
+                }, {})
+              ).map(([group, items]) => (
+                <optgroup key={group} label={`── ${group} ──`}>
+                  {items.map(a => (
+                    <option key={a.code} value={a.code}>
+                      {a.parent_code ? '  └ ' : ''}{a.code}  {a.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
           </div>
 
