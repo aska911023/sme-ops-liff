@@ -11,6 +11,7 @@ const MENUS = [
   { path: '/salary', icon: '💰', label: '查薪水', color: 'var(--green)', dim: 'var(--green-dim)' },
   { path: '/approval-status', icon: '🛡️', label: '簽核狀態', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
   { path: '/expenses', icon: '🧾', label: '報帳', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
+  { path: '/expense-request', icon: '📝', label: '費用申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
   { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)' },
   { path: '/tasks', icon: '⚙️', label: '流程回報', color: 'var(--purple)', dim: 'var(--purple-dim)' },
 ]
