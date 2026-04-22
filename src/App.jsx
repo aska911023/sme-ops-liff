@@ -114,25 +114,42 @@ export default function App() {
     return (
       <div className="loading-screen">
         <div style={{ fontSize: 48 }}>🔗</div>
-        <div style={{ color: 'var(--t2)', fontSize: 14, textAlign: 'center', padding: '0 32px', marginBottom: 20 }}>
-          尚未綁定員工帳號<br />請將下方 ID 提供給管理員
+        <div style={{ color: 'var(--t2)', fontSize: 15, textAlign: 'center', padding: '0 32px', marginBottom: 20, fontWeight: 600 }}>
+          尚未綁定員工帳號
+        </div>
+        <div style={{
+          padding: '14px 18px', margin: '0 24px 20px', borderRadius: 12,
+          background: 'var(--cyan-dim)', border: '1px solid rgba(34,211,238,0.3)',
+          maxWidth: 360,
+        }}>
+          <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 6 }}>
+            🚀 推薦：自助綁定
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--t2)', lineHeight: 1.6 }}>
+            回 LINE 對話框傳訊給機器人：<br />
+            <code style={{ background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}>
+              /註冊 你的姓名
+            </code>
+            <br />
+            （例：<code>/註冊 張小明</code>），完成後重開此頁。
+          </div>
         </div>
         {uid && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-            <div style={{ fontSize: 11, color: 'var(--t3)' }}>你的 LINE User ID：</div>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 11, color: 'var(--t3)' }}>無法自助？把這串 ID 給管理員：</div>
             <div
               onClick={() => { navigator.clipboard?.writeText(uid); alert('已複製！') }}
               style={{
-                padding: '10px 20px', borderRadius: 10,
-                background: 'var(--cyan-dim)', border: '1px solid rgba(34,211,238,0.3)',
-                color: 'var(--cyan)', fontSize: 13, fontWeight: 700,
+                padding: '8px 16px', borderRadius: 8,
+                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+                color: 'var(--t2)', fontSize: 11,
                 fontFamily: 'monospace', wordBreak: 'break-all',
-                cursor: 'pointer', textAlign: 'center',
+                cursor: 'pointer', textAlign: 'center', maxWidth: 320,
               }}
             >
               {uid}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--t3)' }}>點擊上方可複製</div>
+            <div style={{ fontSize: 10, color: 'var(--t3)' }}>點擊複製</div>
           </div>
         )}
       </div>
