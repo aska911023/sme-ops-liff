@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { ClipboardList, Users, Package, DollarSign } from 'lucide-react'
@@ -42,6 +43,18 @@ import SalesOrders from './pages/sales/Orders'
 import SalesQuotations from './pages/sales/Quotations'
 import SalesReturns from './pages/sales/Returns'
 import SalesCommission from './pages/sales/Commission'
+
+// LINE rejects LIFF URIs with sub-paths, so the BOT links us with ?to=/route.
+// Redirect once on mount, then strip the query so refresh doesn't re-trigger.
+function LiffDeepLinkRedirect() {
+  const navigate = useNavigate()
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const to = params.get('to')
+    if (to && to.startsWith('/')) navigate(to, { replace: true })
+  }, [])
+  return null
+}
 
 function TabBar() {
   const navigate = useNavigate()
@@ -128,6 +141,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <LiffDeepLinkRedirect />
       <Routes>
         {/* HR Hub + pages */}
         <Route path="/" element={<HRHub />} />
