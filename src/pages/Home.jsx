@@ -39,24 +39,14 @@ export default function Home() {
   const dateStr = today.toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' })
 
   useEffect(() => {
-    if (!employee) return
-    const todayISO = today.toISOString().slice(0, 10)
+    if (!lineProfile?.lineUserId) return
 
-    supabase
-      .from('attendance_records')
-      .select('clock_in, clock_out')
-      .eq('employee', employee.name)
-      .eq('date', todayISO)
-      .maybeSingle()
-      .then(({ data }) => setTodayAttendance(data))
+    supabase.rpc('liff_get_attendance_today', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => setTodayAttendance(data || null))
 
-    supabase
-      .from('tasks')
-      .select('id', { count: 'exact', head: true })
-      .eq('assignee', employee.name)
-      .in('status', ['未開始', '進行中'])
-      .then(({ count }) => setPendingTasks(count || 0))
-  }, [employee])
+    supabase.rpc('liff_list_my_tasks', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => setPendingTasks(Array.isArray(data) ? data.length : 0))
+  }, [lineProfile])
 
   const clockStatus = todayAttendance
     ? todayAttendance.clock_out ? '已下班' : '已上班'

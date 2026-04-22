@@ -5,28 +5,28 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export default function ClockCorrection() {
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState({ date: '', corrected_clock_in: '', corrected_clock_out: '', reason: '' })
+  // clock_corrections 實際欄位：type (上班打卡/下班打卡) + correction_time
+  const [form, setForm] = useState({ date: '', type: '上班打卡', correction_time: '', reason: '' })
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    if (!employee) return
-    supabase.from('clock_corrections')
-      .select('*')
-      .eq('employee', employee.name)
-      .order('date', { ascending: false })
-      .then(({ data }) => { setRecords(data || []); setLoading(false) })
-  }, [employee])
+  const reload = () => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_list_clock_corrections', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => { setRecords(Array.isArray(data) ? data : []); setLoading(false) })
+  }
+
+  useEffect(() => { reload() }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', corrected_clock_in: '', corrected_clock_out: '', reason: '' })
+    setForm({ date: '', type: '上班打卡', correction_time: '', reason: '' })
     setEditingId(null)
     setShowForm(false)
   }
@@ -34,8 +34,8 @@ export default function ClockCorrection() {
   const handleEdit = (r) => {
     setForm({
       date: r.date,
-      corrected_clock_in: r.corrected_clock_in || '',
-      corrected_clock_out: r.corrected_clock_out || '',
+      type: r.type || '上班打卡',
+      correction_time: r.correction_time || '',
       reason: r.reason || '',
     })
     setEditingId(r.id)
@@ -43,42 +43,29 @@ export default function ClockCorrection() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const handleDelete = async (r) => {
-    if (!confirm('確定要撤回這筆補打卡申請嗎？')) return
-    const { error } = await supabase.from('clock_corrections').delete().eq('id', r.id)
-    if (error) { alert('撤回失敗: ' + error.message); return }
-    setRecords(prev => prev.filter(x => x.id !== r.id))
+  const handleDelete = async (_r) => {
+    // 刪除補打卡尚未做 RPC；暫時只支援新建
+    alert('目前不支援撤回，請聯繫管理員')
   }
 
   const handleSubmit = async () => {
     if (!form.date || !form.reason) { alert('請填寫日期和原因'); return }
-    if (!form.corrected_clock_in && !form.corrected_clock_out) { alert('請填寫補正的上班或下班時間'); return }
+    if (!form.correction_time) { alert('請填寫補正的時間'); return }
+    if (editingId) { alert('目前不支援編輯；請刪除後重新申請'); return }
     setSubmitting(true)
 
-    const payload = {
-      employee: employee.name,
-      date: form.date,
-      corrected_clock_in: form.corrected_clock_in || null,
-      corrected_clock_out: form.corrected_clock_out || null,
-      reason: form.reason,
-      status: '待審核',
-    }
-
-    let result, error
-    if (editingId) {
-      ;({ data: result, error } = await supabase.from('clock_corrections').update(payload).eq('id', editingId).select().single())
-    } else {
-      ;({ data: result, error } = await supabase.from('clock_corrections').insert(payload).select().single())
-    }
+    const { error } = await supabase.rpc('liff_insert_clock_correction', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_payload: {
+        date: form.date,
+        type: form.type,
+        correction_time: form.correction_time,
+        reason: form.reason,
+      },
+    })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
-    if (result) {
-      if (editingId) {
-        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
-      } else {
-        setRecords(prev => [result, ...prev])
-      }
-      resetForm()
-    }
+    reload()
+    resetForm()
     setSubmitting(false)
   }
 
@@ -102,16 +89,19 @@ export default function ClockCorrection() {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div className="form-group">
-              <label className="form-label">補正上班時間</label>
-              <input className="form-input" type="time" value={form.corrected_clock_in} onChange={e => set('corrected_clock_in', e.target.value)} />
+              <label className="form-label">類型</label>
+              <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+                <option>上班打卡</option>
+                <option>下班打卡</option>
+              </select>
             </div>
             <div className="form-group">
-              <label className="form-label">補正下班時間</label>
-              <input className="form-input" type="time" value={form.corrected_clock_out} onChange={e => set('corrected_clock_out', e.target.value)} />
+              <label className="form-label">補正時間</label>
+              <input className="form-input" type="time" value={form.correction_time} onChange={e => set('correction_time', e.target.value)} />
             </div>
           </div>
           <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 8 }}>
-            只填需要補正的時間，不需要補正的留空
+            一次補正一個時段；如要補上班+下班兩個，請分兩筆送出
           </div>
           <div className="form-group">
             <label className="form-label">補打卡原因 *</label>
@@ -168,8 +158,7 @@ export default function ClockCorrection() {
             </div>
           </div>
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
-            {r.corrected_clock_in && <span>上班：{r.corrected_clock_in} </span>}
-            {r.corrected_clock_out && <span>下班：{r.corrected_clock_out}</span>}
+            {r.type}：{r.correction_time}
           </div>
           <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>原因：{r.reason}</div>
           {r.reject_reason && (

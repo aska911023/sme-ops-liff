@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export default function Overtime() {
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -14,14 +14,13 @@ export default function Overtime() {
   const [form, setForm] = useState({ date: '', hours: 1, reason: '' })
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    if (!employee) return
-    supabase.from('overtime_requests')
-      .select('*')
-      .eq('employee', employee.name)
-      .order('date', { ascending: false })
-      .then(({ data }) => { setRecords(data || []); setLoading(false) })
-  }, [employee])
+  const reload = () => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_list_overtime_requests', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => { setRecords(Array.isArray(data) ? data : []); setLoading(false) })
+  }
+
+  useEffect(() => { reload() }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -40,7 +39,10 @@ export default function Overtime() {
 
   const handleDelete = async (r) => {
     if (!confirm('確定要撤回這筆加班申請嗎？')) return
-    const { error } = await supabase.from('overtime_requests').delete().eq('id', r.id)
+    const { error } = await supabase.rpc('liff_delete_overtime_request', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: r.id,
+    })
     if (error) { alert('撤回失敗: ' + error.message); return }
     setRecords(prev => prev.filter(x => x.id !== r.id))
   }
@@ -56,29 +58,28 @@ export default function Overtime() {
     setSubmitting(true)
 
     const payload = {
-      employee: employee.name,
       date: form.date,
       hours: parseFloat(form.hours),
       reason: form.reason,
-      status: '待審核',
     }
 
-    let result, error
+    let error
     if (editingId) {
-      ;({ data: result, error } = await supabase.from('overtime_requests').update(payload).eq('id', editingId).select().single())
+      ;({ error } = await supabase.rpc('liff_update_overtime_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_id: editingId,
+        p_payload: payload,
+      }))
     } else {
-      ;({ data: result, error } = await supabase.from('overtime_requests').insert(payload).select().single())
+      ;({ error } = await supabase.rpc('liff_insert_overtime_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_payload: { ...payload, status: '待審核' },
+      }))
     }
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
-    if (result) {
-      if (editingId) {
-        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
-      } else {
-        setRecords(prev => [result, ...prev])
-      }
-      resetForm()
-    }
+    reload()
+    resetForm()
     setSubmitting(false)
   }
 

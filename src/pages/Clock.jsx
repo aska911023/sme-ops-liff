@@ -119,13 +119,10 @@ export default function ClockPage() {
       .maybeSingle()
       .then(({ data }) => setTodayRecord(data))
 
-    // Get store GPS info
-    if (employee.store) {
+    // Get store GPS info via LIFF RPC (bypasses stores RLS for anon key)
+    if (employee.id) {
       supabase
-        .from('stores')
-        .select('name, lat, lng, clock_radius, allowed_wifi')
-        .eq('name', employee.store)
-        .maybeSingle()
+        .rpc('liff_get_store_for_employee', { p_employee_id: employee.id })
         .then(({ data }) => {
           if (data) setStore(data)
         })

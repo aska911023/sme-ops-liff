@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export default function BusinessTrip() {
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -14,14 +14,13 @@ export default function BusinessTrip() {
   const [form, setForm] = useState({ destination: '', start_date: '', end_date: '', purpose: '', budget: '' })
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    if (!employee) return
-    supabase.from('business_trips')
-      .select('*')
-      .eq('employee', employee.name)
-      .order('start_date', { ascending: false })
-      .then(({ data }) => { setRecords(data || []); setLoading(false) })
-  }, [employee])
+  const reload = () => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_list_business_trips', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => { setRecords(Array.isArray(data) ? data : []); setLoading(false) })
+  }
+
+  useEffect(() => { reload() }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -40,7 +39,10 @@ export default function BusinessTrip() {
 
   const handleDelete = async (r) => {
     if (!confirm('確定要撤回這筆出差申請嗎？')) return
-    const { error } = await supabase.from('business_trips').delete().eq('id', r.id)
+    const { error } = await supabase.rpc('liff_delete_business_trip', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: r.id,
+    })
     if (error) { alert('撤回失敗: ' + error.message); return }
     setRecords(prev => prev.filter(x => x.id !== r.id))
   }
@@ -50,30 +52,20 @@ export default function BusinessTrip() {
     setSubmitting(true)
 
     const payload = {
-      employee: employee.name,
       destination: form.destination,
       start_date: form.start_date,
       end_date: form.end_date,
       purpose: form.purpose,
-      budget: Number(form.budget) || 0,
-      status: '待審核',
     }
 
-    let result, error
-    if (editingId) {
-      ;({ data: result, error } = await supabase.from('business_trips').update(payload).eq('id', editingId).select().single())
-    } else {
-      ;({ data: result, error } = await supabase.from('business_trips').insert(payload).select().single())
-    }
+    const { error } = await supabase.rpc('liff_upsert_business_trip', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: editingId,
+      p_payload: payload,
+    })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
-    if (result) {
-      if (editingId) {
-        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
-      } else {
-        setRecords(prev => [result, ...prev])
-      }
-      resetForm()
-    }
+    reload()
+    resetForm()
     setSubmitting(false)
   }
 

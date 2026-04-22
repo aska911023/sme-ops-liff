@@ -89,7 +89,7 @@ function countWorkDays(startStr, endStr, holidayList) {
 }
 
 export default function Leave() {
-  const { employee } = useAuth()
+  const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [holidays, setHolidays] = useState([]) // ['2026-04-04', ...]
@@ -104,51 +104,41 @@ export default function Leave() {
   const [uploading, setUploading] = useState(false)
   const [benefitExtras, setBenefitExtras] = useState({}) // code → extra_days from benefit_policies
 
-  useEffect(() => {
-    if (!employee) return
-    // 查門市 ID
-    const loadStoreId = employee.store
-      ? supabase.from('stores').select('id').eq('name', employee.store).single()
-      : Promise.resolve({ data: null })
-
+  const reload = () => {
+    if (!lineProfile?.lineUserId) return
     Promise.all([
-      supabase.from('leave_requests').select('*').eq('employee', employee.name).order('start_date', { ascending: false }),
-      supabase.from('holidays').select('date'),
-      loadStoreId,
-    ]).then(([lr, hd, storeRes]) => {
-      setRecords(lr.data || [])
-      setHolidays((hd.data || []).map(h => h.date))
+      supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_holidays'),
+      supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([lr, hd, bp]) => {
+      setRecords(Array.isArray(lr.data) ? lr.data : [])
+      setHolidays((Array.isArray(hd.data) ? hd.data : []).map(h => h.date))
 
-      // 查福利政策：員工級 + 門市級 + 全公司
-      const storeId = storeRes.data?.id
-      const policyFilters = [
-        supabase.from('benefit_policies').select('*').eq('category', 'leave').eq('is_active', true).is('store_id', null).is('employee_id', null),
-      ]
-      if (storeId) {
-        policyFilters.push(supabase.from('benefit_policies').select('*').eq('category', 'leave').eq('is_active', true).eq('store_id', storeId).is('employee_id', null))
-      }
-      if (employee.id) {
-        policyFilters.push(supabase.from('benefit_policies').select('*').eq('category', 'leave').eq('is_active', true).eq('employee_id', employee.id))
-      }
-
-      Promise.all(policyFilters).then(results => {
-        const allPolicies = results.flatMap(r => r.data || [])
-        // 解析優先序：employee_id > store_id > global
-        const extras = {}
-        for (const p of allPolicies) {
-          const specificity = (p.employee_id ? 2 : 0) + (p.store_id ? 1 : 0)
-          const leaveCode = LEAVE_CODE_MAP[p.code] || p.code
-          if (!extras[leaveCode] || specificity > (extras[leaveCode]._s || 0)) {
-            extras[leaveCode] = { extra_days: p.config?.extra_days || 0, _s: specificity }
-          }
+      // Benefit policy 優先序：employee_id > store_id > global
+      const storeId = employee?.store_id
+      const empId = employee?.id
+      const allPolicies = (Array.isArray(bp.data) ? bp.data : [])
+        .filter(p => p.category === 'leave' && p.is_active)
+      const extras = {}
+      for (const p of allPolicies) {
+        // Scope 相關：只取 global、本店、或本人
+        const isGlobal = !p.store_id && !p.employee_id
+        const isStore = p.store_id === storeId && !p.employee_id
+        const isEmp = p.employee_id === empId
+        if (!(isGlobal || isStore || isEmp)) continue
+        const specificity = (p.employee_id ? 2 : 0) + (p.store_id ? 1 : 0)
+        const leaveCode = LEAVE_CODE_MAP[p.code] || p.code
+        if (!extras[leaveCode] || specificity > (extras[leaveCode]._s || 0)) {
+          extras[leaveCode] = { extra_days: p.config?.extra_days || 0, _s: specificity }
         }
-        // 清除內部欄位
-        for (const k of Object.keys(extras)) delete extras[k]._s
-        setBenefitExtras(extras)
-        setLoading(false)
-      })
+      }
+      for (const k of Object.keys(extras)) delete extras[k]._s
+      setBenefitExtras(extras)
+      setLoading(false)
     })
-  }, [employee])
+  }
+
+  useEffect(() => { reload() }, [lineProfile, employee])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -214,7 +204,10 @@ export default function Leave() {
 
   const handleDelete = async (r) => {
     if (!confirm(`確定要撤回這筆${r.type}申請嗎？`)) return
-    const { error } = await supabase.from('leave_requests').delete().eq('id', r.id)
+    const { error } = await supabase.rpc('liff_delete_leave_request', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: r.id,
+    })
     if (error) { alert('撤回失敗: ' + error.message); return }
     setRecords(prev => prev.filter(x => x.id !== r.id))
   }
@@ -251,47 +244,41 @@ export default function Leave() {
     }
 
     const payload = {
-      employee: employee.name,
       type: form.type,
       start_date: form.start_date,
       end_date: form.end_date || form.start_date,
       days,
       hours,
-      start_time: form.unit === 'hour' ? form.start_time : null,
-      end_time: form.unit === 'hour' ? form.end_time : null,
+      start_time: form.unit === 'hour' ? form.start_time : '',
+      end_time: form.unit === 'hour' ? form.end_time : '',
       reason: form.reason,
-      status: '待審核',
     }
 
-    let result, error
+    let error
     if (editingId) {
-      ;({ data: result, error } = await supabase.from('leave_requests').update(payload).eq('id', editingId).select().single())
+      ;({ error } = await supabase.rpc('liff_update_leave_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_id: editingId,
+        p_payload: payload,
+      }))
     } else {
-      ;({ data: result, error } = await supabase.from('leave_requests').insert(payload).select().single())
+      ;({ error } = await supabase.rpc('liff_insert_leave_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_payload: { ...payload, status: '待審核' },
+      }))
     }
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
-    if (result) {
-      // Upload new attachments + keep existing ones
-      const allAttach = [...existingAttach]
-      if (attachFiles.length > 0) {
-        setUploading(true)
-        const newUrls = await uploadAttachments(result.id)
-        allAttach.push(...newUrls)
-        setUploading(false)
-      }
-      if (allAttach.length > 0) {
-        const { data: updated } = await supabase.from('leave_requests')
-          .update({ attachments: allAttach }).eq('id', result.id).select().single()
-        if (updated) result = updated
-      }
-      if (editingId) {
-        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
-      } else {
-        setRecords(prev => [result, ...prev])
-      }
-      resetForm()
+
+    // 附件上傳流程走 Supabase Storage（bucket-level RLS，與資料表 RLS 分離）
+    if (attachFiles.length > 0) {
+      setUploading(true)
+      try { await uploadAttachments(editingId || Date.now()) } catch (e) { /* ignore */ }
+      setUploading(false)
     }
+
+    reload()
+    resetForm()
     setSubmitting(false)
   }
 

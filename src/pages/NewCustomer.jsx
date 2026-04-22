@@ -4,10 +4,17 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
+// stores 表對 anon 走 RLS 會回空；LIFF 改走 liff_list_stores_for_line_user RPC
+async function loadStoresForLineUser(lineUserId) {
+  if (!lineUserId) return []
+  const { data } = await supabase.rpc('liff_list_stores_for_line_user', { p_line_user_id: lineUserId })
+  return Array.isArray(data) ? data : []
+}
+
 const TAGS = ['潛在客戶', 'VIP', '一般', '經銷商', '大客戶']
 
 export default function NewCustomer() {
-  const { employee } = useAuth()
+  const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
   const [locations, setLocations] = useState([])
   const [submitting, setSubmitting] = useState(false)
@@ -19,9 +26,11 @@ export default function NewCustomer() {
   })
 
   useEffect(() => {
-    supabase.from('stores').select('*').order('name').then(({ data }) => setLocations(data || []))
+    if (lineProfile?.lineUserId) {
+      loadStoresForLineUser(lineProfile.lineUserId).then(setLocations)
+    }
     if (employee) setForm(f => ({ ...f, assigned_to: employee.name }))
-  }, [employee])
+  }, [employee, lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 

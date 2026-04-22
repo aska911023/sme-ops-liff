@@ -15,7 +15,7 @@ const STATUS_COLORS = {
 const fmt = (n) => n != null ? `NT$ ${Number(n).toLocaleString()}` : '-'
 
 export default function ExpenseRequest() {
-  const { employee } = useAuth()
+  const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
   const [requests, setRequests] = useState([])
   const [accounts, setAccounts] = useState([])
@@ -39,42 +39,45 @@ export default function ExpenseRequest() {
   })
   const lineTotal = lineItems.reduce((s, li) => s + (li.subtotal || 0), 0)
 
-  useEffect(() => {
-    if (!employee) return
-    // Auto-fill store/dept from employee
-    setForm(f => ({ ...f, store: employee.store || '' }))
+  const reload = () => {
+    if (!lineProfile?.lineUserId) return
     Promise.all([
-      supabase.from('expense_requests').select('*')
-        .eq('employee', employee.name)
-        .order('created_at', { ascending: false }),
-      supabase.from('accounts').select('code, name, type, parent_code').order('code'),
+      supabase.rpc('liff_list_expense_requests', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_accounts'),
     ]).then(([r, a]) => {
-      setRequests(r.data || [])
-      setAccounts(a.data || [])
+      setRequests(Array.isArray(r.data) ? r.data : [])
+      setAccounts(Array.isArray(a.data) ? a.data : [])
       setLoading(false)
     })
-  }, [employee])
+  }
+
+  useEffect(() => {
+    if (employee) setForm(f => ({ ...f, store: employee.store || '' }))
+    reload()
+  }, [employee, lineProfile])
 
   // Filter accounts by expense toggle
   const filteredAccounts = accounts.filter(a =>
     form.is_expense ? a.type === '費用' : a.type !== '費用'
   )
 
-  // Upload files to Supabase Storage
+  // Upload files to Supabase Storage + 透過 RPC 寫 attachment row
   const uploadFiles = async (requestId, fileList, stage) => {
     for (const { file } of fileList) {
       const ext = file.name.split('.').pop()
       const path = `expense-requests/${requestId}/${stage}/${Date.now()}.${ext}`
       const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: true })
       if (!error) {
-        await supabase.from('expense_request_attachments').insert({
-          request_id: requestId,
-          file_name: file.name,
-          storage_path: path,
-          file_size: file.size,
-          file_type: file.type,
-          stage,
-          uploaded_by: employee.name,
+        await supabase.rpc('liff_insert_expense_request_attachment', {
+          p_line_user_id: lineProfile.lineUserId,
+          p_payload: {
+            request_id: requestId,
+            file_name: file.name,
+            storage_path: path,
+            file_size: file.size,
+            file_type: file.type,
+            stage,
+          },
         })
       }
     }
@@ -87,40 +90,25 @@ export default function ExpenseRequest() {
     if (!form.account_code || !form.title || !total) return
     setSubmitting(true)
     const acc = accounts.find(a => a.code === form.account_code)
-    const { data, error } = await supabase.from('expense_requests').insert({
-      employee: employee.name,
-      employee_id: employee.id,
-      department: employee.dept || null,
-      account_code: form.account_code,
-      account_name: acc?.name || '',
-      title: form.title,
-      description: form.description || null,
-      estimated_amount: total,
-      supplier: form.supplier || null,
-      items: validItems,
-      store: form.store || null,
-      status: '申請中',
-      organization_id: 1,
-    }).select().single()
+    const { data, error } = await supabase.rpc('liff_insert_expense_request', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_payload: {
+        account_code: form.account_code,
+        account_name: acc?.name || '',
+        title: form.title,
+        description: form.description || null,
+        estimated_amount: total,
+        store: form.store || null,
+      },
+    })
 
-    if (data && files.length > 0) {
+    if (data?.id && files.length > 0) {
       await uploadFiles(data.id, files, 'request')
     }
 
-    // Create workflow instance for approval tracking
-    if (data) {
-      await supabase.from('workflow_instances').insert({
-        template_name: '費用申請簽核',
-        status: '進行中',
-        started_by: employee.name,
-        store: form.store || employee.store || null,
-        started_at: new Date().toISOString(),
-      }).catch(() => {})
-    }
-
     setSubmitting(false)
-    if (!error && data) {
-      setRequests(prev => [data, ...prev])
+    if (!error) {
+      reload()
       setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true })
       setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
       setFiles([])
@@ -132,12 +120,14 @@ export default function ExpenseRequest() {
   const handleSettle = async () => {
     if (!settleForm.actual_amount || !detail) return
     setSubmitting(true)
-    const { error } = await supabase.from('expense_requests')
-      .update({
+    const { error } = await supabase.rpc('liff_settle_expense_request', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: detail.id,
+      p_payload: {
         actual_amount: Number(settleForm.actual_amount),
         notes: settleForm.notes || null,
-        status: '待核銷',
-      }).eq('id', detail.id)
+      },
+    })
 
     if (settleFiles.length > 0) {
       await uploadFiles(detail.id, settleFiles, 'settlement')
@@ -145,7 +135,7 @@ export default function ExpenseRequest() {
 
     setSubmitting(false)
     if (!error) {
-      setRequests(prev => prev.map(r => r.id === detail.id ? { ...r, actual_amount: Number(settleForm.actual_amount), status: '待核銷' } : r))
+      reload()
       setTab('list')
       setDetail(null)
     }
@@ -154,9 +144,11 @@ export default function ExpenseRequest() {
   // Load detail + attachments
   const openDetail = async (req) => {
     setDetail(req)
-    const { data } = await supabase.from('expense_request_attachments')
-      .select('*').eq('request_id', req.id).order('created_at')
-    setDetailAtts(data || [])
+    const { data } = await supabase.rpc('liff_list_expense_request_attachments', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_request_id: req.id,
+    })
+    setDetailAtts(Array.isArray(data) ? data : [])
     setTab('detail')
   }
 

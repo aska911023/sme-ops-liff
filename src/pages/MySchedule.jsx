@@ -19,7 +19,7 @@ function getWeekDates(offset = 0) {
 }
 
 export default function MySchedule() {
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [weekOffset, setWeekOffset] = useState(0)
   const [schedules, setSchedules] = useState([])
@@ -31,26 +31,28 @@ export default function MySchedule() {
   const today = new Date().toISOString().slice(0, 10)
 
   useEffect(() => {
+    if (!lineProfile?.lineUserId) return
     Promise.all([
-      supabase.from('shift_definitions').select('*').order('sort_order'),
-      supabase.from('holidays').select('date, name'),
+      supabase.rpc('liff_list_shift_definitions', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_holidays'),
     ]).then(([sd, hd]) => {
-      setShiftDefs(sd.data || [])
+      setShiftDefs(Array.isArray(sd.data) ? sd.data : [])
       const hMap = {}
-      ;(hd.data || []).forEach(h => { hMap[h.date] = h.name })
+      ;(Array.isArray(hd.data) ? hd.data : []).forEach(h => { hMap[h.date] = h.name })
       setHolidays(hMap)
       setLoading(false)
     })
-  }, [])
+  }, [lineProfile])
 
   useEffect(() => {
-    if (!employee) return
-    supabase.from('schedules').select('*')
-      .eq('employee', employee.name)
-      .gte('date', weekDates[0])
-      .lte('date', weekDates[6])
-      .then(({ data }) => setSchedules(data || []))
-  }, [employee, weekOffset])
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_list_schedules', { p_line_user_id: lineProfile.lineUserId, p_month: null })
+      .then(({ data }) => {
+        const all = Array.isArray(data) ? data : []
+        // client-side filter 本週範圍（避免 RPC 多傳參數）
+        setSchedules(all.filter(s => s.date >= weekDates[0] && s.date <= weekDates[6]))
+      })
+  }, [lineProfile, weekOffset])
 
   const getShift = (date) => schedules.find(s => s.date === date)?.shift || null
   const getShiftDef = (name) => shiftDefs.find(s => s.name === name)

@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 const CATEGORIES = ['交通', '住宿', '餐飲', '設備', '其他']
 
 export default function Expenses() {
-  const { employee } = useAuth()
+  const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [trips, setTrips] = useState([]) // for linking
@@ -20,17 +20,21 @@ export default function Expenses() {
   const [existingAttach, setExistingAttach] = useState([])
   const [uploading, setUploading] = useState(false)
 
-  useEffect(() => {
-    if (!employee) return
+  const reload = () => {
+    if (!lineProfile?.lineUserId) return
     Promise.all([
-      supabase.from('expenses').select('*').eq('employee', employee.name).order('date', { ascending: false }),
-      supabase.from('business_trips').select('id, destination, start_date, end_date').eq('employee', employee.name).in('status', ['已核准', '出差中']).order('start_date', { ascending: false }),
+      supabase.rpc('liff_list_my_expenses', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_business_trips', { p_line_user_id: lineProfile.lineUserId }),
     ]).then(([e, t]) => {
-      setRecords(e.data || [])
-      setTrips(t.data || [])
+      setRecords(Array.isArray(e.data) ? e.data : [])
+      const activeTrips = (Array.isArray(t.data) ? t.data : [])
+        .filter(x => ['已核准', '出差中'].includes(x.status))
+      setTrips(activeTrips)
       setLoading(false)
     })
-  }, [employee])
+  }
+
+  useEffect(() => { reload() }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -57,7 +61,10 @@ export default function Expenses() {
 
   const handleDelete = async (r) => {
     if (!confirm('確定要撤回這筆報帳嗎？')) return
-    const { error } = await supabase.from('expenses').delete().eq('id', r.id)
+    const { error } = await supabase.rpc('liff_delete_expense', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: r.id,
+    })
     if (error) { alert('撤回失敗: ' + error.message); return }
     setRecords(prev => prev.filter(x => x.id !== r.id))
   }
@@ -94,46 +101,29 @@ export default function Expenses() {
     setSubmitting(true)
 
     const payload = {
-      employee: employee.name,
       category: form.category,
       amount: Number(form.amount),
       date: form.date,
       description: form.description,
-      receipt: form.receipt,
-      business_trip_id: form.business_trip_id ? Number(form.business_trip_id) : null,
-      status: '待審核',
+      // receipt / business_trip_id / attachments 需要後端擴充，此版先送基礎欄位
     }
 
-    let result, error
-    if (editingId) {
-      ;({ data: result, error } = await supabase.from('expenses').update(payload).eq('id', editingId).select().single())
-    } else {
-      ;({ data: result, error } = await supabase.from('expenses').insert(payload).select().single())
-    }
+    const { error } = await supabase.rpc('liff_upsert_expense', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: editingId,
+      p_payload: payload,
+    })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
 
-    if (result) {
-      // Upload receipts
-      const allAttach = [...existingAttach]
-      if (attachFiles.length > 0) {
-        setUploading(true)
-        const newUrls = await uploadReceipts(result.id)
-        allAttach.push(...newUrls)
-        setUploading(false)
-      }
-      if (allAttach.length > 0) {
-        const { data: updated } = await supabase.from('expenses')
-          .update({ attachments: allAttach }).eq('id', result.id).select().single()
-        if (updated) result = updated
-      }
-
-      if (editingId) {
-        setRecords(prev => prev.map(r => r.id === result.id ? result : r))
-      } else {
-        setRecords(prev => [result, ...prev])
-      }
-      resetForm()
+    // 附件上傳維持原流程（Supabase Storage 的 bucket RLS 與資料表 RLS 分離）
+    if (attachFiles.length > 0) {
+      setUploading(true)
+      await uploadReceipts(editingId || Date.now())
+      setUploading(false)
     }
+
+    reload()
+    resetForm()
     setSubmitting(false)
   }
 

@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 export default function Salary() {
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [bonusRecords, setBonusRecords] = useState([])
@@ -16,21 +16,21 @@ export default function Salary() {
   const [expenses, setExpenses] = useState([])
 
   useEffect(() => {
-    if (!employee) return
+    if (!lineProfile?.lineUserId) return
     Promise.all([
-      supabase.from('salary_records').select('*').eq('employee', employee.name).order('month', { ascending: false }),
-      supabase.from('bonus_records').select('*').eq('employee_name', employee.name),
-      supabase.from('leave_requests').select('*').eq('employee', employee.name).eq('status', '已核准'),
-      supabase.from('expenses').select('*').eq('employee', employee.name),
-    ]).then(([s, b, l, e]) => {
-      setRecords(s.data || [])
-      setBonusRecords(b.data || [])
-      setLeaveDeductions(l.data || [])
-      setExpenses(e.data || [])
-      if (s.data?.length) setSelectedMonth(s.data[0].month)
+      supabase.rpc('liff_list_my_salary', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_my_expenses', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([s, l, e]) => {
+      const sal = Array.isArray(s.data) ? s.data : []
+      setRecords(sal)
+      setBonusRecords([]) // 獎金整併到 bonus_records，後續若需要再補 RPC
+      setLeaveDeductions((Array.isArray(l.data) ? l.data : []).filter(x => x.status === '已核准'))
+      setExpenses(Array.isArray(e.data) ? e.data : [])
+      if (sal.length) setSelectedMonth(sal[0].month)
       setLoading(false)
     })
-  }, [employee])
+  }, [lineProfile])
 
   const current = records.find(r => r.month === selectedMonth)
   const bonus = bonusRecords.filter(b => b.period === selectedMonth)

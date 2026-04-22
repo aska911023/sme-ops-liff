@@ -38,7 +38,7 @@ function getMonthDates(year, month) {
 }
 
 export default function OffRequest() {
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
 
   const now = new Date()
@@ -47,7 +47,7 @@ export default function OffRequest() {
   const [myRequests, setMyRequests] = useState([])
   const [mySchedules, setMySchedules] = useState([])
   const [saving, setSaving] = useState(false)
-  const [msg, setMsg] = useState('')
+  const [msg] = useState('')
 
   const monthDates = getMonthDates(viewYear, viewMonth)
   const monthStart = monthDates[0].date
@@ -66,31 +66,40 @@ export default function OffRequest() {
   }
 
   useEffect(() => {
-    if (!employee) return
+    if (!lineProfile?.lineUserId) return
     Promise.all([
-      supabase.from('off_requests').select('*').eq('employee', employee.name).gte('date', monthStart).lte('date', monthEnd),
-      supabase.from('schedules').select('*').eq('employee', employee.name).gte('date', monthStart).lte('date', monthEnd),
+      supabase.rpc('liff_list_off_requests', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_from: monthStart,
+        p_to: monthEnd,
+      }),
+      supabase.rpc('liff_list_schedules', { p_line_user_id: lineProfile.lineUserId, p_month: null }),
     ]).then(([o, s]) => {
-      setMyRequests(o.data || [])
-      setMySchedules(s.data || [])
+      setMyRequests(Array.isArray(o.data) ? o.data : [])
+      const allSch = Array.isArray(s.data) ? s.data : []
+      setMySchedules(allSch.filter(x => x.date >= monthStart && x.date <= monthEnd))
     })
-  }, [employee, monthStart, monthEnd])
+  }, [lineProfile, monthStart, monthEnd])
 
   const isRequested = (date) => myRequests.some(r => r.date === date)
   const getSchedule = (date) => mySchedules.find(s => s.date === date)?.shift || ''
 
   const toggleDay = async (date) => {
+    if (!lineProfile?.lineUserId) return
     setSaving(true)
     if (isRequested(date)) {
-      await supabase.from('off_requests').delete().eq('employee', employee.name).eq('date', date)
+      await supabase.rpc('liff_delete_off_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_date: date,
+      })
       setMyRequests(prev => prev.filter(r => r.date !== date))
     } else {
-      const { data } = await supabase.from('off_requests').insert({
-        employee: employee.name,
-        date,
-        status: '待確認',
-      }).select().single()
-      if (data) setMyRequests(prev => [...prev, data])
+      const { data } = await supabase.rpc('liff_insert_off_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_date: date,
+        p_reason: null,
+      })
+      if (data?.id) setMyRequests(prev => [...prev, { id: data.id, date }])
     }
     setSaving(false)
   }
