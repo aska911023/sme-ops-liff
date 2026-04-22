@@ -43,18 +43,13 @@ export function AuthProvider({ children }) {
 
     setLineProfile(profile)
 
-    // Step 2: Find employee via employee_line_accounts (multi-OA schema)
+    // Step 2: Find employee via RPC (bypasses RLS via SECURITY DEFINER)
     try {
-      const { data: ela } = await supabase
-        .from('employee_line_accounts')
-        .select('employees:employee_id(*)')
-        .eq('line_user_id', profile.lineUserId)
-        .maybeSingle()
+      const { data: emp, error: rpcErr } = await supabase
+        .rpc('liff_get_employee_by_line_user', { p_line_user_id: profile.lineUserId })
 
-      const emp = ela?.employees
-      if (emp && emp.status === '在職') {
-        setEmployee(emp)
-      }
+      if (rpcErr) console.error('RPC error:', rpcErr)
+      if (emp) setEmployee(emp)
     } catch (e) {
       console.log('DB lookup error (ok):', e)
     }
