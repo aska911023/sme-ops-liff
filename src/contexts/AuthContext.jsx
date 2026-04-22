@@ -43,16 +43,16 @@ export function AuthProvider({ children }) {
 
     setLineProfile(profile)
 
-    // Step 2: Find employee
+    // Step 2: Find employee via employee_line_accounts (multi-OA schema)
     try {
-      const { data: emp, error: dbErr } = await supabase
-        .from('employees')
-        .select('*')
+      const { data: ela } = await supabase
+        .from('employee_line_accounts')
+        .select('employees:employee_id(*)')
         .eq('line_user_id', profile.lineUserId)
-        .eq('status', '在職')
         .maybeSingle()
 
-      if (emp) {
+      const emp = ela?.employees
+      if (emp && emp.status === '在職') {
         setEmployee(emp)
       }
     } catch (e) {
