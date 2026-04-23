@@ -44,7 +44,10 @@ export default function Home() {
     supabase.rpc('liff_get_attendance_today', { p_line_user_id: lineProfile.lineUserId })
       .then(({ data }) => setTodayAttendance(data || null))
 
-    supabase.rpc('liff_list_my_tasks', { p_line_user_id: lineProfile.lineUserId })
+    supabase.rpc('liff_list_my_tasks', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_scope: 'active',
+    })
       .then(({ data }) => setPendingTasks(Array.isArray(data) ? data.length : 0))
   }, [lineProfile])
 
