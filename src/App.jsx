@@ -16,6 +16,7 @@ import Leave from './pages/Leave'
 import Tasks from './pages/Tasks'
 import TaskNew from './pages/TaskNew'
 import Dashboard from './pages/Dashboard'
+import Todo from './pages/Todo'
 import Expenses from './pages/Expenses'
 import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
@@ -68,7 +69,7 @@ function TabBar() {
   const { pathname } = useLocation()
 
   const tabs = [
-    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard'] },
+    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo'] },
     { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer'] },
     { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
     { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
@@ -175,6 +176,7 @@ export default function App() {
         <Route path="/tasks" element={<Tasks />} />
         <Route path="/tasks/new" element={<TaskNew />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/todo" element={<Todo />} />
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/off-request" element={<OffRequest />} />
         <Route path="/business-trip" element={<BusinessTrip />} />
