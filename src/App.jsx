@@ -14,6 +14,8 @@ import ClockPage from './pages/Clock'
 import Salary from './pages/Salary'
 import Leave from './pages/Leave'
 import Tasks from './pages/Tasks'
+import TaskNew from './pages/TaskNew'
+import Dashboard from './pages/Dashboard'
 import Expenses from './pages/Expenses'
 import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
@@ -45,13 +47,18 @@ import SalesReturns from './pages/sales/Returns'
 import SalesCommission from './pages/sales/Commission'
 
 // LINE rejects LIFF URIs with sub-paths, so the BOT links us with ?to=/route.
-// Redirect once on mount, then strip the query so refresh doesn't re-trigger.
+// Other query params (e.g. ?to=/tasks&task=123&filter=all) must be forwarded
+// to the target route so BOT deep-links like 「更新任務」can pre-open the right task.
 function LiffDeepLinkRedirect() {
   const navigate = useNavigate()
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const to = params.get('to')
-    if (to && to.startsWith('/')) navigate(to, { replace: true })
+    if (!to || !to.startsWith('/')) return
+    params.delete('to')
+    const rest = params.toString()
+    const target = rest ? `${to}${to.includes('?') ? '&' : '?'}${rest}` : to
+    navigate(target, { replace: true })
   }, [])
   return null
 }
@@ -61,7 +68,7 @@ function TabBar() {
   const { pathname } = useLocation()
 
   const tabs = [
-    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request'] },
+    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard'] },
     { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer'] },
     { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
     { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
@@ -166,6 +173,8 @@ export default function App() {
         <Route path="/salary" element={<Salary />} />
         <Route path="/leave" element={<Leave />} />
         <Route path="/tasks" element={<Tasks />} />
+        <Route path="/tasks/new" element={<TaskNew />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/expenses" element={<Expenses />} />
         <Route path="/off-request" element={<OffRequest />} />
         <Route path="/business-trip" element={<BusinessTrip />} />

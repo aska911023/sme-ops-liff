@@ -1,11 +1,21 @@
-import { useState, useEffect } from 'react'
-import { ChevronLeft, Check, X, FileText, Paperclip } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ChevronLeft, Check, X, Paperclip, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
+// 把 RPC 錯誤碼轉人話
+const ERR_MSG = {
+  EMPLOYEE_NOT_FOUND: '找不到員工資料，請重新綁定 LINE',
+  FORBIDDEN: '你沒有權限審核這類單據',
+  INVALID_TYPE: '單據類型錯誤',
+  INVALID_ACTION: '動作無效',
+  REASON_REQUIRED: '請填寫駁回原因',
+  NOT_FOUND_OR_ALREADY_PROCESSED: '單據不存在或已被審過',
+}
+
 export default function Approve() {
-  const { employee } = useAuth()
+  const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
   const [tab, setTab] = useState('leave') // leave | overtime | trip | expense | correction
   const [leaves, setLeaves] = useState([])
@@ -13,141 +23,55 @@ export default function Approve() {
   const [trips, setTrips] = useState([])
   const [expenses, setExpenses] = useState([])
   const [corrections, setCorrections] = useState([])
+  const [can, setCan] = useState({ hr: false, finance: false })
   const [loading, setLoading] = useState(true)
-  const [processing, setProcessing] = useState(null) // id being processed
+  const [processing, setProcessing] = useState(null)
 
-  useEffect(() => {
-    if (!employee) return
-    Promise.all([
-      supabase.from('leave_requests').select('*').order('created_at', { ascending: false }),
-      supabase.from('overtime_requests').select('*').order('created_at', { ascending: false }),
-      supabase.from('business_trips').select('*').order('created_at', { ascending: false }),
-      supabase.from('expenses').select('*').order('created_at', { ascending: false }),
-      supabase.from('clock_corrections').select('*').order('created_at', { ascending: false }),
-    ]).then(([l, o, t, e, c]) => {
-      setLeaves(l.data || [])
-      setOvertimes(o.data || [])
-      setTrips(t.data || [])
-      setExpenses(e.data || [])
-      setCorrections(c.data || [])
-      setLoading(false)
+  const reload = useCallback(async () => {
+    if (!lineProfile?.lineUserId) return
+    const { data, error } = await supabase.rpc('liff_list_pending_approvals', {
+      p_line_user_id: lineProfile.lineUserId,
     })
-  }, [employee])
-
-  const handleLeave = async (id, action) => {
-    if (action === '已拒絕') {
-      const reason = prompt('請輸入拒絕原因：')
-      if (reason === null) return
-      if (!reason.trim()) { alert('請填寫拒絕原因'); return }
-      setProcessing(id)
-      const { data } = await supabase.from('leave_requests')
-        .update({ status: '已拒絕', approver: employee.name, reject_reason: reason.trim() })
-        .eq('id', id).select().single()
-      if (data) setLeaves(prev => prev.map(l => l.id === id ? data : l))
-    } else {
-      setProcessing(id)
-      const { data } = await supabase.from('leave_requests')
-        .update({ status: '已核准', approver: employee.name })
-        .eq('id', id).select().single()
-      if (data) setLeaves(prev => prev.map(l => l.id === id ? data : l))
+    if (error) {
+      console.error('load approvals', error)
+      setLoading(false)
+      return
     }
-    setProcessing(null)
-  }
+    setLeaves(data?.leaves || [])
+    setOvertimes(data?.overtimes || [])
+    setTrips(data?.trips || [])
+    setExpenses(data?.expenses || [])
+    setCorrections(data?.corrections || [])
+    setCan(data?.can || { hr: false, finance: false })
+    setLoading(false)
+  }, [lineProfile?.lineUserId])
 
-  const handleOvertime = async (id, action) => {
-    if (action === '已拒絕') {
-      const reason = prompt('請輸入駁回原因：')
-      if (reason === null) return
-      if (!reason.trim()) { alert('請填寫駁回原因'); return }
-      setProcessing(id)
-      const { data } = await supabase.from('overtime_requests')
-        .update({ status: '已拒絕', reject_reason: reason.trim() })
-        .eq('id', id).select().single()
-      if (data) setOvertimes(prev => prev.map(o => o.id === id ? data : o))
-    } else {
-      setProcessing(id)
-      const { data } = await supabase.from('overtime_requests')
-        .update({ status: '已核准', approver: employee.name })
-        .eq('id', id).select().single()
-      if (data) setOvertimes(prev => prev.map(o => o.id === id ? data : o))
-    }
-    setProcessing(null)
-  }
+  useEffect(() => { reload() }, [reload])
 
-  const handleTrip = async (id, action) => {
-    if (action === '已駁回') {
-      const reason = prompt('請輸入駁回原因：')
+  const handle = async (type, id, action) => {
+    let reason = null
+    if (action === 'reject') {
+      const label = type === 'trip' || type === 'expense' ? '駁回' : '拒絕'
+      reason = prompt(`請輸入${label}原因：`)
       if (reason === null) return
-      if (!reason.trim()) { alert('請填寫駁回原因'); return }
-      setProcessing(id)
-      const { data } = await supabase.from('business_trips')
-        .update({ status: '已駁回', reject_reason: reason.trim() })
-        .eq('id', id).select().single()
-      if (data) setTrips(prev => prev.map(t => t.id === id ? data : t))
-    } else {
-      setProcessing(id)
-      const { data } = await supabase.from('business_trips')
-        .update({ status: '已核准', approver: employee.name })
-        .eq('id', id).select().single()
-      if (data) setTrips(prev => prev.map(t => t.id === id ? data : t))
+      if (!reason.trim()) { alert(`請填寫${label}原因`); return }
     }
+    setProcessing(id)
+    const { data, error } = await supabase.rpc('liff_approve_request', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_type: type,
+      p_id: id,
+      p_action: action,
+      p_reason: reason,
+    })
     setProcessing(null)
-  }
-
-  const handleExpense = async (id, action) => {
-    if (action === '已駁回') {
-      const reason = prompt('請輸入駁回原因：')
-      if (reason === null) return
-      if (!reason.trim()) { alert('請填寫駁回原因'); return }
-      setProcessing(id)
-      const { data } = await supabase.from('expenses')
-        .update({ status: '已駁回', reject_reason: reason.trim() })
-        .eq('id', id).select().single()
-      if (data) setExpenses(prev => prev.map(e => e.id === id ? data : e))
-    } else {
-      setProcessing(id)
-      const { data } = await supabase.from('expenses')
-        .update({ status: '已核銷' })
-        .eq('id', id).select().single()
-      if (data) setExpenses(prev => prev.map(e => e.id === id ? data : e))
+    if (error) { alert('系統錯誤：' + error.message); return }
+    if (!data?.ok) {
+      alert(ERR_MSG[data?.error] || `審核失敗：${data?.error || 'unknown'}`)
+      return
     }
-    setProcessing(null)
-  }
-
-  const handleCorrection = async (id, action) => {
-    if (action === '已拒絕') {
-      const reason = prompt('請輸入駁回原因：')
-      if (reason === null) return
-      if (!reason.trim()) { alert('請填寫駁回原因'); return }
-      setProcessing(id)
-      const { data } = await supabase.from('clock_corrections')
-        .update({ status: '已拒絕', approver: employee.name, reject_reason: reason.trim() })
-        .eq('id', id).select().single()
-      if (data) setCorrections(prev => prev.map(c => c.id === id ? data : c))
-    } else {
-      setProcessing(id)
-      // Approve and update actual attendance record
-      const correction = corrections.find(c => c.id === id)
-      const { data } = await supabase.from('clock_corrections')
-        .update({ status: '已核准', approver: employee.name })
-        .eq('id', id).select().single()
-      if (data) {
-        setCorrections(prev => prev.map(c => c.id === id ? data : c))
-        // Apply correction to attendance_records
-        if (correction) {
-          const update = {}
-          if (correction.corrected_clock_in) update.clock_in = correction.corrected_clock_in
-          if (correction.corrected_clock_out) update.clock_out = correction.corrected_clock_out
-          if (Object.keys(update).length > 0) {
-            await supabase.from('attendance_records')
-              .update(update)
-              .eq('employee', correction.employee)
-              .eq('date', correction.date)
-          }
-        }
-      }
-    }
-    setProcessing(null)
+    // RPC 回 ok 之後重抓（狀態/reject_reason/attendance 都已寫入 DB）
+    reload()
   }
 
   const pendingLeaves = leaves.filter(l => l.status === '待審核')
@@ -158,6 +82,16 @@ export default function Approve() {
   const totalPending = pendingLeaves.length + pendingOTs.length + pendingTrips.length + pendingExps.length + pendingCorrs.length
 
   const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已拒絕' || s === '已駁回' ? 'badge-red' : 'badge-orange'
+
+  // tab 對應到「需要哪個權限」
+  const tabEnabled = {
+    leave: can.hr,
+    overtime: can.hr,
+    trip: can.hr,
+    correction: can.hr,
+    expense: can.finance,
+  }
+  const currentDisabled = !tabEnabled[tab]
 
   return (
     <div className="page">
@@ -182,30 +116,39 @@ export default function Approve() {
           { key: 'trip', label: '出差', count: pendingTrips.length },
           { key: 'expense', label: '報帳', count: pendingExps.length },
           { key: 'correction', label: '補打卡', count: pendingCorrs.length },
-        ].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, fontWeight: 700,
-            border: `1.5px solid ${tab === t.key ? 'var(--cyan)' : 'var(--border2)'}`,
-            background: tab === t.key ? 'var(--cyan-dim)' : 'var(--card)',
-            color: tab === t.key ? 'var(--cyan)' : 'var(--t2)',
-            cursor: 'pointer', position: 'relative',
-          }}>
-            {t.label}
-            {t.count > 0 && (
-              <span style={{
-                position: 'absolute', top: -6, right: -6,
-                width: 20, height: 20, borderRadius: '50%',
-                background: 'var(--orange)', color: '#fff',
-                fontSize: 11, fontWeight: 800,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>{t.count}</span>
-            )}
-          </button>
-        ))}
+        ].map(t => {
+          const enabled = tabEnabled[t.key]
+          return (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, fontWeight: 700,
+              border: `1.5px solid ${tab === t.key ? 'var(--cyan)' : 'var(--border2)'}`,
+              background: tab === t.key ? 'var(--cyan-dim)' : 'var(--card)',
+              color: tab === t.key ? 'var(--cyan)' : enabled ? 'var(--t2)' : 'var(--t3)',
+              cursor: 'pointer', position: 'relative', opacity: enabled ? 1 : 0.55,
+            }}>
+              {!enabled && <Lock size={10} style={{ marginRight: 4, verticalAlign: 'middle' }} />}
+              {t.label}
+              {enabled && t.count > 0 && (
+                <span style={{
+                  position: 'absolute', top: -6, right: -6,
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: 'var(--orange)', color: '#fff',
+                  fontSize: 11, fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>{t.count}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
       {loading ? (
         <div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div>
+      ) : currentDisabled ? (
+        <div className="empty">
+          <Lock size={20} style={{ marginBottom: 8, opacity: 0.6 }} />
+          <div>你的角色沒有權限審核這類單據</div>
+        </div>
       ) : tab === 'leave' ? (
         <>
           {leaves.length === 0 ? (
@@ -244,13 +187,13 @@ export default function Approve() {
               )}
               {l.status === '待審核' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button disabled={processing === l.id} onClick={() => handleLeave(l.id, '已核准')} style={{
+                  <button disabled={processing === l.id} onClick={() => handle('leave', l.id, 'approve')} style={{
                     flex: 3, padding: '10px', borderRadius: 10, border: 'none',
                     background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
                     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                     opacity: processing === l.id ? 0.5 : 1,
                   }}><Check size={16} /> 核准</button>
-                  <button disabled={processing === l.id} onClick={() => handleLeave(l.id, '已拒絕')} style={{
+                  <button disabled={processing === l.id} onClick={() => handle('leave', l.id, 'reject')} style={{
                     flex: 1, padding: '10px', borderRadius: 10,
                     border: '1.5px solid var(--red)', background: 'transparent',
                     color: 'var(--red)', fontSize: 14, fontWeight: 700,
@@ -281,13 +224,13 @@ export default function Approve() {
               )}
               {o.status === '待審核' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button disabled={processing === o.id} onClick={() => handleOvertime(o.id, '已核准')} style={{
+                  <button disabled={processing === o.id} onClick={() => handle('overtime', o.id, 'approve')} style={{
                     flex: 3, padding: '10px', borderRadius: 10, border: 'none',
                     background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
                     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                     opacity: processing === o.id ? 0.5 : 1,
                   }}><Check size={16} /> 核准</button>
-                  <button disabled={processing === o.id} onClick={() => handleOvertime(o.id, '已拒絕')} style={{
+                  <button disabled={processing === o.id} onClick={() => handle('overtime', o.id, 'reject')} style={{
                     flex: 1, padding: '10px', borderRadius: 10,
                     border: '1.5px solid var(--red)', background: 'transparent',
                     color: 'var(--red)', fontSize: 14, fontWeight: 700,
@@ -317,13 +260,13 @@ export default function Approve() {
               {t.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>駁回原因：{t.reject_reason}</div>}
               {t.status === '待審核' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button disabled={processing === t.id} onClick={() => handleTrip(t.id, '已核准')} style={{
+                  <button disabled={processing === t.id} onClick={() => handle('trip', t.id, 'approve')} style={{
                     flex: 3, padding: '10px', borderRadius: 10, border: 'none',
                     background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
                     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                     opacity: processing === t.id ? 0.5 : 1,
                   }}><Check size={16} /> 核准</button>
-                  <button disabled={processing === t.id} onClick={() => handleTrip(t.id, '已駁回')} style={{
+                  <button disabled={processing === t.id} onClick={() => handle('trip', t.id, 'reject')} style={{
                     flex: 1, padding: '10px', borderRadius: 10,
                     border: '1.5px solid var(--red)', background: 'transparent',
                     color: 'var(--red)', fontSize: 14, fontWeight: 700,
@@ -363,13 +306,13 @@ export default function Approve() {
               {e.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>駁回原因：{e.reject_reason}</div>}
               {e.status === '待審核' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button disabled={processing === e.id} onClick={() => handleExpense(e.id, '已核銷')} style={{
+                  <button disabled={processing === e.id} onClick={() => handle('expense', e.id, 'approve')} style={{
                     flex: 3, padding: '10px', borderRadius: 10, border: 'none',
                     background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
                     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                     opacity: processing === e.id ? 0.5 : 1,
                   }}><Check size={16} /> 核銷</button>
-                  <button disabled={processing === e.id} onClick={() => handleExpense(e.id, '已駁回')} style={{
+                  <button disabled={processing === e.id} onClick={() => handle('expense', e.id, 'reject')} style={{
                     flex: 1, padding: '10px', borderRadius: 10,
                     border: '1.5px solid var(--red)', background: 'transparent',
                     color: 'var(--red)', fontSize: 14, fontWeight: 700,
@@ -394,20 +337,19 @@ export default function Approve() {
                 <span className={`badge ${statusBadge(c.status)}`}>{c.status}</span>
               </div>
               <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 600 }}>
-                {c.corrected_clock_in && <span>上班：{c.corrected_clock_in} </span>}
-                {c.corrected_clock_out && <span>下班：{c.corrected_clock_out}</span>}
+                {c.type || '上班打卡'}：{c.correction_time || '未填'}
               </div>
               {c.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>原因：{c.reason}</div>}
               {c.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>駁回原因：{c.reject_reason}</div>}
               {c.status === '待審核' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button disabled={processing === c.id} onClick={() => handleCorrection(c.id, '已核准')} style={{
+                  <button disabled={processing === c.id} onClick={() => handle('correction', c.id, 'approve')} style={{
                     flex: 3, padding: '10px', borderRadius: 10, border: 'none',
                     background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
                     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                     opacity: processing === c.id ? 0.5 : 1,
                   }}><Check size={16} /> 核准並修正</button>
-                  <button disabled={processing === c.id} onClick={() => handleCorrection(c.id, '已拒絕')} style={{
+                  <button disabled={processing === c.id} onClick={() => handle('correction', c.id, 'reject')} style={{
                     flex: 1, padding: '10px', borderRadius: 10,
                     border: '1.5px solid var(--red)', background: 'transparent',
                     color: 'var(--red)', fontSize: 14, fontWeight: 700,

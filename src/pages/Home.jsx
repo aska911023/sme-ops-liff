@@ -134,8 +134,8 @@ export default function Home() {
         <div style={{ fontSize: 11, color: 'var(--t3)' }}>{MENUS.length} 項功能</div>
       </div>
 
-      {/* Manager Section */}
-      {employee?.role === 'manager' && (
+      {/* Manager Section — super_admin/admin/manager 都看得到；真正權限由 RPC 擋 */}
+      {['super_admin', 'admin', 'manager'].includes(employee?.role) && (
         <>
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',

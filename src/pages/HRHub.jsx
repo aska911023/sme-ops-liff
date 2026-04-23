@@ -18,17 +18,20 @@ const MENUS = [
 
 const MANAGER_MENUS = [
   { path: '/approve', icon: '✅', label: '審核中心', color: 'var(--green)', dim: 'var(--green-dim)' },
+  { path: '/dashboard', icon: '📊', label: '營運儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
 ]
 
 export default function HRHub() {
   const { employee } = useAuth()
-  const isManager = employee?.role === 'manager'
+  // UI 閘門：5 角色制下 super_admin/admin/manager 都看得到審核中心
+  // （真正的權限由 liff_approve_request RPC 依 role_permissions 把關）
+  const canApprove = ['super_admin', 'admin', 'manager'].includes(employee?.role)
 
   return (
     <div className="page">
       <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>📋 人事管理</div>
 
-      {isManager && (
+      {canApprove && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>主管功能</div>
           <div className="menu-grid" style={{ marginBottom: 20 }}>
