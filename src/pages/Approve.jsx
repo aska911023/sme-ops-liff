@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, Check, X, Paperclip, Lock } from 'lucide-react'
+import { ChevronLeft, Check, X, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -169,19 +169,6 @@ export default function Approve() {
                 </span>
               </div>
               {l.reason && <div style={{ fontSize: 12, color: 'var(--t3)' }}>{l.reason}</div>}
-              {l.attachments?.length > 0 && (
-                <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                  {l.attachments.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noreferrer" style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 3,
-                      padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600,
-                      background: 'var(--cyan-dim)', color: 'var(--cyan)', textDecoration: 'none',
-                    }}>
-                      <Paperclip size={10} /> 附件 {i + 1}
-                    </a>
-                  ))}
-                </div>
-              )}
               {l.reject_reason && (
                 <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>拒絕原因：{l.reject_reason}</div>
               )}
@@ -292,17 +279,6 @@ export default function Approve() {
                 <span className={`badge ${statusBadge(e.status)}`}>{e.status}</span>
               </div>
               <div style={{ fontSize: 13, color: 'var(--t2)' }}>{e.date}{e.description ? ` · ${e.description}` : ''}</div>
-              {e.attachments?.length > 0 && (
-                <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                  {e.attachments.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noreferrer" style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 8px',
-                      borderRadius: 6, fontSize: 10, fontWeight: 600,
-                      background: 'var(--cyan-dim)', color: 'var(--cyan)', textDecoration: 'none',
-                    }}><Paperclip size={10} /> 收據 {i + 1}</a>
-                  ))}
-                </div>
-              )}
               {e.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>駁回原因：{e.reject_reason}</div>}
               {e.status === '待審核' && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
