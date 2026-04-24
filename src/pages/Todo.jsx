@@ -5,11 +5,12 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 const APPROVAL_TYPE_LABEL = {
-  leaves:      { label: '請假',   emoji: '🏖' },
-  overtimes:   { label: '加班',   emoji: '⏰' },
-  trips:       { label: '出差',   emoji: '✈️' },
-  expenses:    { label: '報帳',   emoji: '💰' },
-  corrections: { label: '補打卡', emoji: '🔧' },
+  leaves:           { label: '請假',     emoji: '🏖' },
+  overtimes:        { label: '加班',     emoji: '⏰' },
+  trips:            { label: '出差',     emoji: '✈️' },
+  expenses:         { label: '報帳',     emoji: '💰' },
+  corrections:      { label: '補打卡',   emoji: '🔧' },
+  expense_requests: { label: '費用申請', emoji: '🧾' },
 }
 
 export default function Todo() {
@@ -37,9 +38,14 @@ export default function Todo() {
       const d = approvalsRes.data
       // 攤平 5 桶單據成一個清單，只留待審核
       const flat = []
+      // 不同單據的「待審」狀態用字不同：
+      //   leave/overtime/trip/correction: '待審核'
+      //   expense_requests: '申請中'
+      //   expenses: '待核銷'
+      const PENDING_STATUSES = new Set(['待審核', '申請中', '待核銷', '待審'])
       for (const key of Object.keys(APPROVAL_TYPE_LABEL)) {
         for (const item of (d?.[key] || [])) {
-          if (item.status !== '待審核') continue
+          if (!PENDING_STATUSES.has(item.status)) continue
           flat.push({ ...item, _kind: key })
         }
       }
@@ -197,6 +203,8 @@ function summarizeApproval(a) {
       return `${a.category || '報帳'} · NT$ ${Number(a.amount || 0).toLocaleString()} · ${a.date || ''}`
     case 'corrections':
       return `${a.date} · ${a.type || '上班打卡'}：${a.correction_time || '未填'}`
+    case 'expense_requests':
+      return `${a.title || ''} · NT$ ${Number(a.estimated_amount || 0).toLocaleString()}${a.chain_name ? ` · ${a.chain_name}` : ''}`
     default:
       return ''
   }

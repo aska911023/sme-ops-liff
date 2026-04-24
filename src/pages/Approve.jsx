@@ -17,12 +17,13 @@ const ERR_MSG = {
 export default function Approve() {
   const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('leave') // leave | overtime | trip | expense | correction
+  const [tab, setTab] = useState('leave') // leave | overtime | trip | expense | correction | expense_request
   const [leaves, setLeaves] = useState([])
   const [overtimes, setOvertimes] = useState([])
   const [trips, setTrips] = useState([])
   const [expenses, setExpenses] = useState([])
   const [corrections, setCorrections] = useState([])
+  const [expenseRequests, setExpenseRequests] = useState([])
   const [can, setCan] = useState({ hr: false, finance: false })
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(null)
@@ -42,6 +43,7 @@ export default function Approve() {
     setTrips(data?.trips || [])
     setExpenses(data?.expenses || [])
     setCorrections(data?.corrections || [])
+    setExpenseRequests(data?.expense_requests || [])
     setCan(data?.can || { hr: false, finance: false })
     setLoading(false)
   }, [lineProfile?.lineUserId])
@@ -79,7 +81,8 @@ export default function Approve() {
   const pendingTrips = trips.filter(t => t.status === '待審核')
   const pendingExps = expenses.filter(e => e.status === '待審核')
   const pendingCorrs = corrections.filter(c => c.status === '待審核')
-  const totalPending = pendingLeaves.length + pendingOTs.length + pendingTrips.length + pendingExps.length + pendingCorrs.length
+  const pendingExpReqs = expenseRequests.filter(e => e.status === '申請中')
+  const totalPending = pendingLeaves.length + pendingOTs.length + pendingTrips.length + pendingExps.length + pendingCorrs.length + pendingExpReqs.length
 
   const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已拒絕' || s === '已駁回' ? 'badge-red' : 'badge-orange'
 
@@ -90,6 +93,7 @@ export default function Approve() {
     trip: can.hr,
     correction: can.hr,
     expense: can.finance,
+    expense_request: can.finance,
   }
   const currentDisabled = !tabEnabled[tab]
 
@@ -115,6 +119,7 @@ export default function Approve() {
           { key: 'overtime', label: '加班', count: pendingOTs.length },
           { key: 'trip', label: '出差', count: pendingTrips.length },
           { key: 'expense', label: '報帳', count: pendingExps.length },
+          { key: 'expense_request', label: '費用申請', count: pendingExpReqs.length },
           { key: 'correction', label: '補打卡', count: pendingCorrs.length },
         ].map(t => {
           const enabled = tabEnabled[t.key]
@@ -299,7 +304,7 @@ export default function Approve() {
             </div>
           ))}
         </>
-      ) : (
+      ) : tab === 'correction' ? (
         <>
           {corrections.length === 0 ? (
             <div className="empty">尚無補打卡申請</div>
@@ -326,6 +331,63 @@ export default function Approve() {
                     opacity: processing === c.id ? 0.5 : 1,
                   }}><Check size={16} /> 核准並修正</button>
                   <button disabled={processing === c.id} onClick={() => handle('correction', c.id, 'reject')} style={{
+                    flex: 1, padding: '10px', borderRadius: 10,
+                    border: '1.5px solid var(--red)', background: 'transparent',
+                    color: 'var(--red)', fontSize: 14, fontWeight: 700,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  }}><X size={16} /> 駁回</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      ) : (
+        <>
+          {expenseRequests.length === 0 ? (
+            <div className="empty">尚無費用申請</div>
+          ) : expenseRequests.map(er => (
+            <div key={er.id} className="list-item">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                  <span style={{ fontSize: 15, fontWeight: 800 }}>{er.employee}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cyan)' }}>
+                    NT$ {Number(er.estimated_amount || 0).toLocaleString()}
+                  </span>
+                </div>
+                <span className={`badge ${statusBadge(er.status)}`}>{er.status}</span>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>
+                {er.title}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--t3)' }}>
+                {er.account_name && <span>{er.account_name} · </span>}
+                {er.department && <span>{er.department} · </span>}
+                {er.store && <span>{er.store}</span>}
+              </div>
+              {er.description && (
+                <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{er.description}</div>
+              )}
+              {er.chain_name && (
+                <div style={{
+                  marginTop: 6, padding: '4px 8px', borderRadius: 6,
+                  background: 'var(--purple-dim)', color: 'var(--purple)',
+                  fontSize: 11, fontWeight: 600,
+                }}>
+                  🔐 {er.chain_name}{er.chain_steps ? ` · ${er.chain_steps}` : ''}
+                </div>
+              )}
+              {er.reject_reason && (
+                <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>駁回原因：{er.reject_reason}</div>
+              )}
+              {er.status === '申請中' && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'approve')} style={{
+                    flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+                    background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    opacity: processing === er.id ? 0.5 : 1,
+                  }}><Check size={16} /> 核准</button>
+                  <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'reject')} style={{
                     flex: 1, padding: '10px', borderRadius: 10,
                     border: '1.5px solid var(--red)', background: 'transparent',
                     color: 'var(--red)', fontSize: 14, fontWeight: 700,
