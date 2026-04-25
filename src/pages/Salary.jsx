@@ -14,6 +14,7 @@ export default function Salary() {
 
   const [leaveDeductions, setLeaveDeductions] = useState([])
   const [expenses, setExpenses] = useState([])
+  const [payrollRecords, setPayrollRecords] = useState([])  // 正式 payroll_records（含自訂津貼+法扣明細）
 
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
@@ -21,16 +22,21 @@ export default function Salary() {
       supabase.rpc('liff_list_my_salary', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_my_expenses', { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([s, l, e]) => {
+      supabase.rpc('liff_get_my_payroll_records', { p_line_user_id: lineProfile.lineUserId, p_limit: 12 }),
+    ]).then(([s, l, e, p]) => {
       const sal = Array.isArray(s.data) ? s.data : []
       setRecords(sal)
-      setBonusRecords([]) // 獎金整併到 bonus_records，後續若需要再補 RPC
+      setBonusRecords([])
       setLeaveDeductions((Array.isArray(l.data) ? l.data : []).filter(x => x.status === '已核准'))
       setExpenses(Array.isArray(e.data) ? e.data : [])
+      if (p.data?.ok) setPayrollRecords(p.data.records || [])
       if (sal.length) setSelectedMonth(sal[0].month)
       setLoading(false)
     })
   }, [lineProfile])
+
+  // 找對應月份的正式 payroll_record（pay_period 是 YYYY-MM 格式，跟 selectedMonth 對齊）
+  const officialRecord = payrollRecords.find(r => r.pay_period === selectedMonth)
 
   const current = records.find(r => r.month === selectedMonth)
   const bonus = bonusRecords.filter(b => b.period === selectedMonth)
@@ -108,6 +114,75 @@ export default function Salary() {
                   </div>
                 ))}
               </div>
+
+              {/* 📊 正式薪資單明細（含自訂津貼 + 法扣，從 payroll_records 取） */}
+              {officialRecord && (
+                <div className="card" style={{ borderColor: 'rgba(167,139,250,0.25)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--purple)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    📊 正式薪資單
+                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(167,139,250,0.15)', color: 'var(--purple)' }}>
+                      HR 結算版
+                    </span>
+                  </div>
+
+                  {/* 自訂津貼 */}
+                  {Array.isArray(officialRecord.custom_allowances_breakdown) && officialRecord.custom_allowances_breakdown.length > 0 && (
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginBottom: 6 }}>+ 自訂津貼</div>
+                      {officialRecord.custom_allowances_breakdown.map((c, i) => (
+                        <div key={i} className="info-row" style={{ paddingLeft: 12 }}>
+                          <span className="info-label">{c.name}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--green)' }}>+NT$ {Number(c.amount || 0).toLocaleString()}</span>
+                        </div>
+                      ))}
+                      <div className="info-row" style={{ paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
+                        <span className="info-label" style={{ fontWeight: 700 }}>津貼合計</span>
+                        <span style={{ fontWeight: 700, color: 'var(--green)' }}>+NT$ {Number(officialRecord.custom_allowances_total || 0).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 法扣 */}
+                  {Array.isArray(officialRecord.legal_deduction_breakdown) && officialRecord.legal_deduction_breakdown.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700, marginBottom: 6 }}>- 法扣明細</div>
+                      {officialRecord.legal_deduction_breakdown.map((d, i) => (
+                        <div key={i} className="info-row" style={{ paddingLeft: 12 }}>
+                          <span className="info-label">
+                            {d.title}
+                            {d.shortfall > 0 && (
+                              <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--orange)' }}>⚠️ 餘額不足</span>
+                            )}
+                          </span>
+                          <span style={{ fontWeight: 600, color: 'var(--red)' }}>-NT$ {Number(d.amount || 0).toLocaleString()}</span>
+                        </div>
+                      ))}
+                      <div className="info-row" style={{ paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
+                        <span className="info-label" style={{ fontWeight: 700 }}>法扣合計</span>
+                        <span style={{ fontWeight: 700, color: 'var(--red)' }}>-NT$ {Number(officialRecord.legal_deduction_total || 0).toLocaleString()}</span>
+                      </div>
+                      {officialRecord.legal_deduction_breakdown.some(d => d.shortfall > 0) && (
+                        <div style={{
+                          marginTop: 8, padding: '8px 10px', borderRadius: 8,
+                          background: 'rgba(251,146,60,0.1)', color: 'var(--orange)', fontSize: 11,
+                        }}>
+                          ⚠️ 部分法扣金額本月薪水不夠扣，未扣部分將自動延後到下月
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 應發 vs 實發 對照 */}
+                  <div style={{
+                    marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)',
+                    display: 'flex', justifyContent: 'space-between', fontSize: 13,
+                  }}>
+                    <span style={{ color: 'var(--t3)' }}>應發 NT$ {Number(officialRecord.gross_salary || 0).toLocaleString()}</span>
+                    <span style={{ color: 'var(--t3)' }}>扣除 NT$ {Number(officialRecord.total_deductions || 0).toLocaleString()}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--green)' }}>實發 NT$ {Number(officialRecord.net_salary || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Leave Deduction Detail */}
               {monthLeaves.length > 0 && (
