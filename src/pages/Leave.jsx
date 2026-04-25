@@ -103,6 +103,25 @@ export default function Leave() {
   const [existingAttach, setExistingAttach] = useState([]) // existing URLs from DB
   const [uploading, setUploading] = useState(false)
   const [benefitExtras, setBenefitExtras] = useState({}) // code → extra_days from benefit_policies
+  const [leaveSteps, setLeaveSteps] = useState({}) // 中文假別名稱 → {step, unit}
+
+  // 取目前選的假別 step（如 type='特休'，看 leaveSteps 有沒有 'annual' override）
+  const currentStep = (() => {
+    // form.type 是中文（如 '特休'），需轉成 code
+    const codeMap = { '特休': 'annual', '病假': 'sick', '事假': 'personal', '婚假': 'marriage',
+      '喪假': 'bereavement', '產假': 'maternity', '陪產假': 'paternity', '生理假': 'menstrual',
+      '家庭照顧假': 'family', '公假': 'official', '公傷假': 'injury' }
+    const code = codeMap[form?.type] || ''
+    const cfg = leaveSteps[code]
+    if (!cfg) return { step: 0.5, unit: 'day' }  // fallback
+    return { step: Number(cfg.step), unit: cfg.unit || 'day' }
+  })()
+
+  // 把計算出的天/時往上對齊到 step 倍數
+  const snapToStep = (val, step) => {
+    if (!val || !step) return val
+    return Math.ceil(val / step - 1e-9) * step
+  }
 
   const reload = () => {
     if (!lineProfile?.lineUserId) return
@@ -139,6 +158,17 @@ export default function Leave() {
   }
 
   useEffect(() => { reload() }, [lineProfile, employee])
+
+  // 載入「請假最小單位」設定（廠商在主系統設定的 step）
+  useEffect(() => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_get_my_unit_steps', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => {
+        if (data?.ok && data.leave_steps && typeof data.leave_steps === 'object') {
+          setLeaveSteps(data.leave_steps)
+        }
+      })
+  }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -237,9 +267,17 @@ export default function Leave() {
       const [sh, sm] = form.start_time.split(':').map(Number)
       const [eh, em] = form.end_time.split(':').map(Number)
       hours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+      // 對齊到該假別的最小單位（小時模式）
+      if (currentStep.unit === 'hour') {
+        hours = snapToStep(hours, currentStep.step)
+      }
       days = Math.round(hours / 8 * 10) / 10
     } else {
       days = countWorkDays(form.start_date, form.end_date || form.start_date, holidays)
+      // 對齊到該假別的最小單位（天模式）
+      if (currentStep.unit === 'day') {
+        days = snapToStep(days, currentStep.step)
+      }
       hours = days * 8
     }
 
@@ -393,6 +431,10 @@ export default function Leave() {
             <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
               {TYPES.map(t => <option key={t}>{t}</option>)}
             </select>
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+              本店此假別最小單位：<b style={{ color: 'var(--cyan)' }}>{currentStep.step} {currentStep.unit === 'day' ? '天' : '小時'}</b>
+              <span style={{ marginLeft: 4 }}>· 不滿一個單位會自動進位</span>
+            </div>
           </div>
           {/* Day / Hour toggle */}
           <div className="form-group">

@@ -4,6 +4,16 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
+// 依 step 產生 0.5 ~ 12 的所有可選時數
+function buildHourOptions(step) {
+  const s = Number(step) || 0.5
+  const opts = []
+  for (let v = s; v <= 12 + 1e-9; v += s) {
+    opts.push(Math.round(v * 100) / 100)
+  }
+  return opts
+}
+
 export default function Overtime() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
@@ -11,8 +21,11 @@ export default function Overtime() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [step, setStep] = useState(0.5)  // 廠商設定的最小單位
   const [form, setForm] = useState({ date: '', hours: 1, reason: '' })
   const [submitting, setSubmitting] = useState(false)
+
+  const hourOptions = buildHourOptions(step)
 
   const reload = () => {
     if (!lineProfile?.lineUserId) return
@@ -20,18 +33,34 @@ export default function Overtime() {
       .then(({ data }) => { setRecords(Array.isArray(data) ? data : []); setLoading(false) })
   }
 
+  // 載入加班 step 設定
+  useEffect(() => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_get_my_unit_steps', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => {
+        if (data?.ok && data.overtime_step_hours) {
+          const s = Number(data.overtime_step_hours)
+          setStep(s)
+          // 表單初始 hours 對齊 step
+          setForm(f => ({ ...f, hours: s }))
+        }
+      })
+  }, [lineProfile])
+
   useEffect(() => { reload() }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', hours: 1, reason: '' })
+    setForm({ date: '', hours: step, reason: '' })
     setEditingId(null)
     setShowForm(false)
   }
 
   const handleEdit = (r) => {
-    setForm({ date: r.date, hours: r.hours, reason: r.reason || '' })
+    // 把舊值對齊到當前 step（往上找最近的合法值）
+    const aligned = hourOptions.find(o => o >= r.hours) || hourOptions[hourOptions.length - 1]
+    setForm({ date: r.date, hours: aligned, reason: r.reason || '' })
     setEditingId(r.id)
     setShowForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -110,11 +139,20 @@ export default function Overtime() {
           <div className="form-group">
             <label className="form-label">加班時數</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input className="form-input" type="number" min="0.5" max="12" step="0.5" value={form.hours}
-                onChange={e => set('hours', e.target.value)}
+              <select
+                className="form-input"
+                value={form.hours}
+                onChange={e => set('hours', Number(e.target.value))}
                 style={{ flex: 1 }}
-              />
+              >
+                {hourOptions.map(h => (
+                  <option key={h} value={h}>{h}</option>
+                ))}
+              </select>
               <span style={{ fontSize: 13, color: 'var(--t3)', whiteSpace: 'nowrap' }}>小時</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+              本店加班最小單位 {step} 小時
             </div>
             {form.hours > 4 && (
               <div style={{ fontSize: 11, color: 'var(--orange)', marginTop: 4 }}>
