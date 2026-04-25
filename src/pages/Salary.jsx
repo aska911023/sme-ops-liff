@@ -80,7 +80,7 @@ export default function Salary() {
 
           {current && (
             <>
-              {/* Net Salary */}
+              {/* Net Salary：優先用正式 payroll_records，否則用 salary_records 簡版 */}
               <div style={{
                 background: 'linear-gradient(135deg, rgba(52,211,153,0.12), rgba(34,211,238,0.08))',
                 border: '1px solid rgba(52,211,153,0.2)',
@@ -88,11 +88,17 @@ export default function Salary() {
               }}>
                 <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 6 }}>實發薪資</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--green)' }}>
-                  NT$ {(current.net_salary || 0).toLocaleString()}
+                  NT$ {(officialRecord?.net_salary ?? current.net_salary ?? 0).toLocaleString()}
                 </div>
+                {officialRecord && (
+                  <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>
+                    （依 HR 結算版正式薪資單）
+                  </div>
+                )}
               </div>
 
-              {/* Breakdown */}
+              {/* Breakdown：有 officialRecord 時隱藏舊版簡表，避免雙份對不上 */}
+              {!officialRecord && (
               <div className="card">
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 12 }}>薪資明細</div>
                 {[
@@ -114,6 +120,7 @@ export default function Salary() {
                   </div>
                 ))}
               </div>
+              )}
 
               {/* 📊 正式薪資單明細（含自訂津貼 + 法扣，從 payroll_records 取） */}
               {officialRecord && (

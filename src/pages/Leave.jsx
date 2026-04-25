@@ -482,6 +482,11 @@ export default function Leave() {
             const end = new Date(form.end_date || form.start_date)
             const calDays = Math.max(1, Math.ceil((end - start) / 86400000) + 1)
             const skipped = calDays - wd
+            // 套用最小單位進位（同 handleSubmit 的邏輯，讓員工事先看到實際扣多少）
+            const snapped = currentStep.unit === 'day'
+              ? snapToStep(wd, currentStep.step)
+              : wd
+            const snapDelta = snapped - wd
             return (
               <div style={{
                 padding: '10px 14px', borderRadius: 10, marginBottom: 10,
@@ -489,7 +494,36 @@ export default function Leave() {
                 fontSize: 13, color: 'var(--t2)',
               }}>
                 實際請假 <b style={{ color: 'var(--cyan)' }}>{wd} 個工作天</b>
-                {skipped > 0 && <span style={{ color: 'var(--t3)', fontSize: 12 }}>（已扣除 {skipped} 天假日/週末）</span>}
+                {skipped > 0 && <span style={{ color: 'var(--t3)', fontSize: 12 }}> （已扣除 {skipped} 天假日/週末）</span>}
+                {snapDelta > 0 && (
+                  <div style={{ marginTop: 4, fontSize: 12, color: 'var(--orange)' }}>
+                    ⚠️ 進位後實際扣 <b>{snapped} 天</b>（本店此假別最小 {currentStep.step} 天）
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+          {/* Hour preview（小時模式對齊 step） */}
+          {form.unit === 'hour' && form.start_time && form.end_time && (() => {
+            const [sh, sm] = form.start_time.split(':').map(Number)
+            const [eh, em] = form.end_time.split(':').map(Number)
+            const naturalHours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+            const snapped = currentStep.unit === 'hour'
+              ? snapToStep(naturalHours, currentStep.step)
+              : naturalHours
+            const snapDelta = snapped - naturalHours
+            return (
+              <div style={{
+                padding: '10px 14px', borderRadius: 10, marginBottom: 10,
+                background: 'var(--cyan-dim)', border: '1px solid rgba(34,211,238,0.15)',
+                fontSize: 13, color: 'var(--t2)',
+              }}>
+                實際請假 <b style={{ color: 'var(--cyan)' }}>{naturalHours.toFixed(1)} 小時</b>
+                {snapDelta > 0 && (
+                  <div style={{ marginTop: 4, fontSize: 12, color: 'var(--orange)' }}>
+                    ⚠️ 進位後實際扣 <b>{snapped} 小時</b>（本店此假別最小 {currentStep.step} 小時）
+                  </div>
+                )}
               </div>
             )
           })()}
