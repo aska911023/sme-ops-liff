@@ -6,6 +6,7 @@ const MENUS = [
   { path: '/my-schedule', icon: '📅', label: '我的班表', color: 'var(--blue)', dim: 'var(--blue-dim)' },
   { path: '/off-request', icon: '🗓️', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
   { path: '/leave', icon: '📋', label: '請假', color: 'var(--blue)', dim: 'var(--blue-dim)' },
+  { path: '/leave-balance', icon: '📊', label: '假期額度', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
   { path: '/overtime', icon: '🕐', label: '加班申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
   { path: '/clock-correction', icon: '🔧', label: '補打卡', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
   { path: '/salary', icon: '💰', label: '查薪水', color: 'var(--green)', dim: 'var(--green-dim)' },
@@ -14,6 +15,10 @@ const MENUS = [
   { path: '/expense-request', icon: '📝', label: '費用申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
   { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)' },
   { path: '/tasks', icon: '⚙️', label: '流程回報', color: 'var(--purple)', dim: 'var(--purple-dim)' },
+  { path: '/training', icon: '🎓', label: '教育訓練', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
+  { path: '/performance', icon: '📈', label: '我的績效', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
+  { path: '/benefits', icon: '🎁', label: '我的福利', color: 'var(--green)', dim: 'var(--green-dim)' },
+  { path: '/documents', icon: '📁', label: '公司文件', color: 'var(--blue)', dim: 'var(--blue-dim)' },
 ]
 
 const MANAGER_MENUS = [
