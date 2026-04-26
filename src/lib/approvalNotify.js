@@ -1,13 +1,17 @@
 // ============================================================
-// 簽核事件 → LINE 推播
+// 簽核事件 → LINE 推播 (Flex Message)
 //
-// approve 後依事件推訊息：
-//   advanced  → 通知下一關簽核者
-//   approved  → 通知申請人通過
-//   rejected  → 通知申請人退回 + 帶原因
+// 全部走 Flex Bubble 卡片風格，跟主系統一致：
+//   - 紫色 header (任務確認 / 簽核請求)
+//   - 綠色 header (狀態變化通知)
+//   - 紅色 header (退回)
+//   - 卡片底部一個 CTA 按鈕跳對應 LIFF 頁
 // ============================================================
 
 import { supabase } from './supabase'
+
+const LIFF_ID = import.meta.env.VITE_LIFF_ID
+const LIFF_BASE = LIFF_ID ? `https://liff.line.me/${LIFF_ID}` : 'https://sme-ops-liff.vercel.app'
 
 const TYPE_LABEL = {
   leave: '請假',
@@ -18,104 +22,196 @@ const TYPE_LABEL = {
   expense_request: '申請',
 }
 
-async function getLineUserId(empId) {
-  if (!empId) return null
-  const { data } = await supabase.from('employees').select('line_user_id').eq('id', empId).maybeSingle()
-  if (data?.line_user_id) return data.line_user_id
-  // fallback: employee_line_accounts (multi-channel)
-  const { data: acc } = await supabase.from('employee_line_accounts')
-    .select('line_user_id').eq('employee_id', empId).order('is_primary', { ascending: false }).limit(1).maybeSingle()
-  return acc?.line_user_id || null
+async function getLineTarget(empId) {
+  if (!empId) return { line_user_id: null, channel_code: null }
+  const { data } = await supabase.from('employee_line_accounts')
+    .select('line_user_id, channel_id, line_channels(code, is_default, status)')
+    .eq('employee_id', empId)
+    .order('is_primary', { ascending: false })
+  if (!data?.length) return { line_user_id: null, channel_code: null }
+  // 優先 is_default 的 channel
+  const sorted = [...data].sort((a, b) => {
+    const aDef = a.line_channels?.is_default ? 1 : 0
+    const bDef = b.line_channels?.is_default ? 1 : 0
+    return bDef - aDef
+  })
+  const target = sorted.find(d => d.line_channels?.status === 'active') || sorted[0]
+  return {
+    line_user_id: target?.line_user_id || null,
+    channel_code: target?.line_channels?.code || null,
+  }
 }
 
-async function pushLine(lineUserId, text, channelCode) {
+async function pushFlex(lineUserId, altText, bubble, channelCode) {
   if (!lineUserId) return
   try {
     await supabase.functions.invoke('line-push', {
-      body: { to: lineUserId, messages: [{ type: 'text', text }], channelCode },
+      body: {
+        to: lineUserId,
+        messages: [{ type: 'flex', altText, contents: bubble }],
+        channelCode,
+      },
     })
   } catch (err) {
     console.warn('line-push failed', err)
   }
 }
 
+// ── Flex card builders ──────────────────────────────────────
+
+function buildBubble({ headerColor, headerText, title, subtitle, footnote, btnLabel, btnPath, btnColor }) {
+  const url = btnPath ? `${LIFF_BASE}${btnPath.startsWith('/') ? '' : '/'}${btnPath}` : LIFF_BASE
+  return {
+    type: 'bubble',
+    size: 'kilo',
+    header: {
+      type: 'box', layout: 'vertical',
+      backgroundColor: headerColor,
+      paddingAll: '14px',
+      contents: [{ type: 'text', text: headerText, color: '#ffffff', weight: 'bold', size: 'md' }],
+    },
+    body: {
+      type: 'box', layout: 'vertical', spacing: 'md', paddingAll: '16px',
+      contents: [
+        { type: 'text', text: title, weight: 'bold', size: 'lg', wrap: true },
+        ...(subtitle ? [{ type: 'text', text: subtitle, size: 'sm', color: '#8c8c8c', wrap: true }] : []),
+        ...(footnote ? [{ type: 'text', text: footnote, size: 'xs', color: '#a8a8a8', wrap: true, margin: 'sm' }] : []),
+      ],
+    },
+    footer: {
+      type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px',
+      contents: [{
+        type: 'button',
+        action: { type: 'uri', label: btnLabel, uri: url },
+        style: 'primary', color: btnColor || headerColor, height: 'sm',
+      }],
+    },
+  }
+}
+
+// ── Public APIs ─────────────────────────────────────────────
+
+// 申請類事件（advanced/approved/rejected）
 export async function notifyApprovalEvent({ type, result }) {
   if (!result?.ok) return
   const typeLabel = TYPE_LABEL[type] || type
   const event = result.event
 
-  // (1) 通知申請人狀態變化
+  // (1) 申請人狀態變化
   if (event === 'approved' || event === 'rejected') {
     const applicantId = result.applicant?.emp_id
-    const lineId = await getLineUserId(applicantId)
-    const text = event === 'approved'
-      ? `✅ 你的「${typeLabel}」申請已${result.status}`
-      : `🔄 你的「${typeLabel}」申請被退回\n可在 LIFF「我的簽核進度」修改後重送`
-    await pushLine(lineId, text)
+    const target = await getLineTarget(applicantId)
+    if (!target.line_user_id) return
+    const isApproved = event === 'approved'
+    const bubble = buildBubble({
+      headerColor: isApproved ? '#10b981' : '#ef4444',
+      headerText: isApproved ? '✅ 簽核通過' : '🔄 申請被退回',
+      title: `你的「${typeLabel}」${isApproved ? '已通過' : '被退回'}`,
+      subtitle: isApproved
+        ? `狀態：${result.status}`
+        : '可在「我的簽核進度」修改後重送',
+      btnLabel: isApproved ? '查看詳情' : '修改重送',
+      btnPath: '/approval-status',
+      btnColor: isApproved ? '#10b981' : '#ef4444',
+    })
+    await pushFlex(target.line_user_id, `${typeLabel}${isApproved ? '已通過' : '被退回'}`, bubble, target.channel_code)
     return
   }
 
-  // (2) 推進到下一關 → 通知下一關簽核者 + 同步通知申請人「進度推進中」
+  // (2) 推進下一關
   if (event === 'advanced' && Array.isArray(result.next_approvers)) {
     const totalAtStep = result.advanced_to_step + 1
     for (const ap of result.next_approvers) {
-      const lineId = await getLineUserId(ap.emp_id)
-      await pushLine(lineId,
-        `📋 有新的「${typeLabel}」需要你簽核（第 ${totalAtStep} 關）\n請至 LIFF「簽核中心」處理`)
+      const target = await getLineTarget(ap.emp_id)
+      if (!target.line_user_id) continue
+      const bubble = buildBubble({
+        headerColor: '#8b5cf6',
+        headerText: '📝 簽核請求',
+        title: `「${typeLabel}」等待你簽核`,
+        subtitle: `第 ${totalAtStep} 關 · ${result.applicant?.name || '申請人'}`,
+        btnLabel: '前往審核',
+        btnPath: '/approve',
+      })
+      await pushFlex(target.line_user_id, `${typeLabel} 簽核請求`, bubble, target.channel_code)
     }
+    // 通知申請人進度
     const applicantId = result.applicant?.emp_id
     if (applicantId) {
-      const lineId = await getLineUserId(applicantId)
-      await pushLine(lineId,
-        `🔔 你的「${typeLabel}」已通過第 ${result.advanced_to_step} 關，進入第 ${totalAtStep} 關`)
+      const target = await getLineTarget(applicantId)
+      if (target.line_user_id) {
+        const bubble = buildBubble({
+          headerColor: '#06b6d4',
+          headerText: '🔔 簽核進度更新',
+          title: `「${typeLabel}」已通過第 ${result.advanced_to_step} 關`,
+          subtitle: `進入第 ${totalAtStep} 關審核`,
+          btnLabel: '查看進度',
+          btnPath: '/approval-status',
+          btnColor: '#06b6d4',
+        })
+        await pushFlex(target.line_user_id, `${typeLabel} 進度更新`, bubble, target.channel_code)
+      }
     }
   }
 }
 
-// 執行人完成任務時，推 LINE 給審批人「請審核」
-// approvers 已含 line_user_id + channel_code（v2 RPC 取 line_channels.is_default）
+// 執行人完成任務時，推給審批人「請審核」（任務確認專用）
 export async function pushTaskApprovalRequest({ taskTitle, approvers }) {
   for (const ap of approvers || []) {
     if (!ap.line_user_id) continue
-    await pushLine(ap.line_user_id,
-      `📋 任務「${taskTitle}」需要你審核\n請至 LIFF「任務確認」處理`,
-      ap.channel_code)
+    const bubble = buildBubble({
+      headerColor: '#f59e0b',
+      headerText: '✔️ 任務確認',
+      title: `任務「${taskTitle}」需要你確認`,
+      subtitle: '執行人已標記完成，請審核',
+      btnLabel: '前往確認',
+      btnPath: '/task-confirmations',
+      btnColor: '#f59e0b',
+    })
+    await pushFlex(ap.line_user_id, `任務「${taskTitle}」需要你確認`, bubble, ap.channel_code)
   }
 }
 
-// 任務確認 (在 Tasks 頁用)
+// 任務確認結果通知執行人
 export async function notifyTaskConfirmation({ action, taskTitle, executorEmpId, notes }) {
-  const lineId = await getLineUserId(executorEmpId)
-  if (!lineId) return
-  const text = action === 'approve'
-    ? `✅ 你的任務「${taskTitle}」已通過審核`
-    : `🔄 你的任務「${taskTitle}」被退回\n原因：${notes || '（未填）'}`
-  await pushLine(lineId, text)
+  const target = await getLineTarget(executorEmpId)
+  if (!target.line_user_id) return
+  const isApproved = action === 'approve'
+  const bubble = buildBubble({
+    headerColor: isApproved ? '#10b981' : '#ef4444',
+    headerText: isApproved ? '✅ 任務通過' : '🔄 任務退回',
+    title: `任務「${taskTitle}」${isApproved ? '已通過審核' : '被退回'}`,
+    subtitle: isApproved ? null : `原因：${notes || '（未填）'}`,
+    btnLabel: '查看任務',
+    btnPath: '/tasks',
+    btnColor: isApproved ? '#10b981' : '#ef4444',
+  })
+  await pushFlex(target.line_user_id, `任務${isApproved ? '通過' : '退回'}`, bubble, target.channel_code)
 }
 
-// 提交新單時通知第一關（HR 直接通知簽核者；申請通知 chain 第 1 關）
+// 新單送出時通知第一關
 export async function notifyNewSubmission({ type, applicantEmpId, requestId, briefText }) {
   const typeLabel = TYPE_LABEL[type] || type
+  let approvers = []
 
   if (type === 'expense_request') {
-    const { data: approvers } = await supabase.rpc('liff_resolve_chain_first_approvers', {
-      p_request_id: requestId,
-    })
-    for (const ap of approvers || []) {
-      const lineId = await getLineUserId(ap.emp_id)
-      await pushLine(lineId,
-        `📋 新的「${typeLabel}」需要你簽核\n${briefText || ''}\n請至 LIFF「簽核中心」處理`)
-    }
-    return
+    const { data } = await supabase.rpc('liff_resolve_chain_first_approvers', { p_request_id: requestId })
+    approvers = data || []
+  } else {
+    const { data } = await supabase.rpc('liff_resolve_hr_approvers', { p_applicant_emp_id: applicantEmpId })
+    approvers = data || []
   }
 
-  // HR 類
-  const { data: approvers } = await supabase.rpc('liff_resolve_hr_approvers', {
-    p_applicant_emp_id: applicantEmpId,
-  })
-  for (const ap of approvers || []) {
-    const lineId = await getLineUserId(ap.emp_id)
-    await pushLine(lineId,
-      `📋 新的「${typeLabel}」需要你簽核\n${briefText || ''}\n請至 LIFF「簽核中心」處理`)
+  for (const ap of approvers) {
+    const target = await getLineTarget(ap.emp_id)
+    if (!target.line_user_id) continue
+    const bubble = buildBubble({
+      headerColor: '#8b5cf6',
+      headerText: '📝 簽核請求',
+      title: `「${typeLabel}」等待你簽核`,
+      subtitle: briefText || null,
+      btnLabel: '前往審核',
+      btnPath: '/approve',
+    })
+    await pushFlex(target.line_user_id, `${typeLabel} 簽核請求`, bubble, target.channel_code)
   }
 }
