@@ -22,7 +22,8 @@ const MENUS = [
 ]
 
 const MANAGER_MENUS = [
-  { path: '/approve', icon: '✅', label: '審核中心', color: 'var(--green)', dim: 'var(--green-dim)' },
+  { path: '/approve', icon: '✅', label: '簽核中心', color: 'var(--green)', dim: 'var(--green-dim)' },
+  { path: '/task-confirmations', icon: '✔️', label: '任務確認', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
   { path: '/dashboard', icon: '📊', label: '營運儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
 ]
 

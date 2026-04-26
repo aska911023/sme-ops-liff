@@ -22,6 +22,7 @@ import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
 import Overtime from './pages/Overtime'
 import Approve from './pages/Approve'
+import TaskConfirmations from './pages/TaskConfirmations'
 import ClockCorrection from './pages/ClockCorrection'
 import MySchedule from './pages/MySchedule'
 import ApprovalStatus from './pages/ApprovalStatus'
@@ -74,7 +75,7 @@ function TabBar() {
   const { pathname } = useLocation()
 
   const tabs = [
-    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance'] },
+    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/overtime', '/approve', '/task-confirmations', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance'] },
     { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer'] },
     { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
     { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
@@ -187,6 +188,7 @@ export default function App() {
         <Route path="/business-trip" element={<BusinessTrip />} />
         <Route path="/overtime" element={<Overtime />} />
         <Route path="/approve" element={<Approve />} />
+        <Route path="/task-confirmations" element={<TaskConfirmations />} />
         <Route path="/clock-correction" element={<ClockCorrection />} />
         <Route path="/my-schedule" element={<MySchedule />} />
         <Route path="/approval-status" element={<ApprovalStatus />} />
