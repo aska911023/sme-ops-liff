@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { notifyTaskConfirmation } from '../lib/approvalNotify'
+import { TaskAttachments } from './Tasks'
 
 const ERR_MSG = {
   EMPLOYEE_NOT_FOUND: '找不到員工資料，請重新綁定 LINE',
@@ -208,9 +209,18 @@ export default function TaskConfirmations() {
                         ))}
                       </div>
                     )}
-                    {(!d.checklists?.length && !d.inline_items?.length && !d.comments?.length) && (
+                    {/* 附件（read-only） */}
+                    {d.attachments && d.attachments.length > 0 && (
+                      <TaskAttachments
+                        taskId={tc.task_id}
+                        attachments={d.attachments}
+                        lineUserId={lineProfile?.lineUserId}
+                        readOnly={true}
+                      />
+                    )}
+                    {(!d.checklists?.length && !d.inline_items?.length && !d.comments?.length && !d.attachments?.length) && (
                       <div style={{ fontSize: 12, color: 'var(--t3)', textAlign: 'center', padding: 8 }}>
-                        執行人沒留下任何清單 / 留言
+                        執行人沒留下任何清單 / 留言 / 附件
                       </div>
                     )}
                   </>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronLeft, ChevronDown, ChevronRight, Check, Send, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronDown, ChevronRight, Check, Send, Plus, Paperclip, Image, FileText, X, Eye } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -318,6 +318,15 @@ export default function Tasks() {
                       </div>
                     )}
 
+                    {/* ★ 附件區（照片/檔案回報） */}
+                    <TaskAttachments
+                      taskId={t.id}
+                      attachments={detail.attachments || []}
+                      lineUserId={lineProfile?.lineUserId}
+                      onChange={() => loadList()}
+                      currentEmpId={detail.task?.assignee_id}
+                    />
+
                     {/* Comments */}
                     <div style={{ marginTop: 14 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>
@@ -395,6 +404,122 @@ function ChecklistRow({ item, onToggle }) {
       }}>
         {item.title}
       </span>
+    </div>
+  )
+}
+
+// 附件區（任務回報用）
+export function TaskAttachments({ taskId, attachments = [], lineUserId, onChange, currentEmpId, readOnly = false }) {
+  const [uploading, setUploading] = useState(false)
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const ext = file.name.split('.').pop()
+        const path = `tasks/${taskId}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
+        const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+        if (upErr) { console.warn('upload err', upErr); alert('上傳失敗：' + upErr.message); continue }
+        const { data, error } = await supabase.rpc('liff_insert_task_attachment', {
+          p_line_user_id: lineUserId,
+          p_payload: {
+            task_id: taskId,
+            file_name: file.name,
+            storage_path: path,
+            file_size: file.size,
+            file_type: file.type,
+          },
+        })
+        if (error || !data?.ok) { alert('紀錄失敗：' + (data?.error || error?.message)); continue }
+      }
+      onChange?.()
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDelete = async (att) => {
+    if (!confirm(`刪除附件「${att.file_name}」？`)) return
+    await supabase.storage.from('attachments').remove([att.storage_path]).catch(() => {})
+    const { data } = await supabase.rpc('liff_delete_task_attachment', {
+      p_line_user_id: lineUserId, p_id: att.id,
+    })
+    if (!data?.ok) { alert(data?.error || '刪除失敗'); return }
+    onChange?.()
+  }
+
+  const viewFile = (att) => {
+    const { data } = supabase.storage.from('attachments').getPublicUrl(att.storage_path)
+    if (data?.publicUrl) window.open(data.publicUrl, '_blank')
+  }
+
+  const isImage = (att) => att.file_type?.startsWith('image/')
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)' }}>
+          📎 回報附件 ({attachments.length})
+        </div>
+        {!readOnly && (
+          <label style={{
+            cursor: 'pointer',
+            padding: '6px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+            background: 'var(--cyan-dim)', color: 'var(--cyan)',
+            border: '1px solid var(--cyan)',
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            opacity: uploading ? 0.5 : 1,
+          }}>
+            <Paperclip size={12} /> {uploading ? '上傳中...' : '加照片/檔案'}
+            <input
+              type="file"
+              accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+              multiple
+              onChange={handleUpload}
+              disabled={uploading}
+              style={{ display: 'none' }}
+            />
+          </label>
+        )}
+      </div>
+      {attachments.length === 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--t3)', padding: '4px 0' }}>
+          {readOnly ? '執行人未上傳附件' : '尚未上傳任何附件'}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {attachments.map(att => (
+            <div key={att.id} style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '8px 10px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              {isImage(att) ? <Image size={14} style={{ color: 'var(--cyan)', flexShrink: 0 }} /> : <FileText size={14} style={{ color: 'var(--purple)', flexShrink: 0 }} />}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {att.file_name}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--t3)' }}>
+                  {att.uploaded_by} · {(att.file_size / 1024).toFixed(0)} KB · {new Date(att.created_at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+              <button onClick={() => viewFile(att)} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--cyan)', padding: 4, display: 'flex', alignItems: 'center',
+              }}><Eye size={14} /></button>
+              {!readOnly && currentEmpId === att.uploaded_by_emp_id && (
+                <button onClick={() => handleDelete(att)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--red)', padding: 4, display: 'flex', alignItems: 'center',
+                }}><X size={14} /></button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
