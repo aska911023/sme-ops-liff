@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, Check, X, Lock } from 'lucide-react'
+import { ChevronLeft, Check, X, Lock, ClipboardCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -17,13 +17,14 @@ const ERR_MSG = {
 export default function Approve() {
   const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('leave') // leave | overtime | trip | expense | correction | expense_request
+  const [tab, setTab] = useState('task_confirmation') // task_confirmation | leave | overtime | trip | expense | correction | expense_request
   const [leaves, setLeaves] = useState([])
   const [overtimes, setOvertimes] = useState([])
   const [trips, setTrips] = useState([])
   const [expenses, setExpenses] = useState([])
   const [corrections, setCorrections] = useState([])
   const [expenseRequests, setExpenseRequests] = useState([])
+  const [taskConfs, setTaskConfs] = useState([])
   const [can, setCan] = useState({ hr: false, finance: false })
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(null)
@@ -44,6 +45,7 @@ export default function Approve() {
     setExpenses(data?.expenses || [])
     setCorrections(data?.corrections || [])
     setExpenseRequests(data?.expense_requests || [])
+    setTaskConfs(data?.task_confirmations || [])
     setCan(data?.can || { hr: false, finance: false })
     setLoading(false)
   }, [lineProfile?.lineUserId])
@@ -53,7 +55,9 @@ export default function Approve() {
   const handle = async (type, id, action) => {
     let reason = null
     if (action === 'reject') {
-      const label = type === 'trip' || type === 'expense' ? '駁回' : '拒絕'
+      const label = type === 'trip' || type === 'expense' || type === 'expense_request' ? '駁回'
+                  : type === 'task_confirmation' ? '退回'
+                  : '拒絕'
       reason = prompt(`請輸入${label}原因：`)
       if (reason === null) return
       if (!reason.trim()) { alert(`請填寫${label}原因`); return }
@@ -82,12 +86,16 @@ export default function Approve() {
   const pendingExps = expenses.filter(e => e.status === '待審核')
   const pendingCorrs = corrections.filter(c => c.status === '待審核')
   const pendingExpReqs = expenseRequests.filter(e => e.status === '申請中')
-  const totalPending = pendingLeaves.length + pendingOTs.length + pendingTrips.length + pendingExps.length + pendingCorrs.length + pendingExpReqs.length
+  // 任務確認：只看「執行人已標記完成、等待我簽核」的（task.status='待確認' 才是真的等我）
+  const pendingTaskConfs = taskConfs.filter(tc => tc.task_status === '待確認')
+  const totalPending = pendingLeaves.length + pendingOTs.length + pendingTrips.length + pendingExps.length + pendingCorrs.length + pendingExpReqs.length + pendingTaskConfs.length
 
   const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已拒絕' || s === '已駁回' ? 'badge-red' : 'badge-orange'
 
   // tab 對應到「需要哪個權限」
+  // task_confirmation：靠 task_confirmations.approver=我 即可，不檢查 hr/finance
   const tabEnabled = {
+    task_confirmation: true,
     leave: can.hr,
     overtime: can.hr,
     trip: can.hr,
@@ -115,6 +123,7 @@ export default function Approve() {
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
         {[
+          { key: 'task_confirmation', label: '任務確認', count: pendingTaskConfs.length },
           { key: 'leave', label: '請假', count: pendingLeaves.length },
           { key: 'overtime', label: '加班', count: pendingOTs.length },
           { key: 'trip', label: '出差', count: pendingTrips.length },
@@ -154,6 +163,54 @@ export default function Approve() {
           <Lock size={20} style={{ marginBottom: 8, opacity: 0.6 }} />
           <div>你的角色沒有權限審核這類單據</div>
         </div>
+      ) : tab === 'task_confirmation' ? (
+        <>
+          {pendingTaskConfs.length === 0 ? (
+            <div className="empty">
+              <ClipboardCheck size={20} style={{ marginBottom: 8, opacity: 0.6 }} />
+              <div>目前沒有等你確認的任務</div>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+                當執行人按「完成」後，這裡才會出現
+              </div>
+            </div>
+          ) : pendingTaskConfs.map(tc => (
+            <div key={tc.id} className="list-item">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                  <ClipboardCheck size={14} style={{ color: 'var(--cyan)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tc.task_title}</span>
+                </div>
+                <span className="badge badge-orange" style={{ flexShrink: 0 }}>待確認</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 4 }}>
+                {tc.workflow_name && <span>📋 {tc.workflow_name}</span>}
+                {tc.task_assignee && <span> · 執行：{tc.task_assignee}</span>}
+                {tc.task_store && <span> · 📍 {tc.task_store}</span>}
+              </div>
+              {tc.priority && tc.priority !== '中' && (
+                <span style={{
+                  fontSize: 10, padding: '1px 6px', borderRadius: 4, fontWeight: 700,
+                  background: tc.priority === '高' ? 'rgba(248,113,113,0.15)' : 'var(--card)',
+                  color: tc.priority === '高' ? 'var(--red)' : 'var(--t3)',
+                }}>{tc.priority}優先</span>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button disabled={processing === tc.id} onClick={() => handle('task_confirmation', tc.id, 'approve')} style={{
+                  flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+                  background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  opacity: processing === tc.id ? 0.5 : 1,
+                }}><Check size={16} /> 通過</button>
+                <button disabled={processing === tc.id} onClick={() => handle('task_confirmation', tc.id, 'reject')} style={{
+                  flex: 1, padding: '10px', borderRadius: 10,
+                  border: '1.5px solid var(--red)', background: 'transparent',
+                  color: 'var(--red)', fontSize: 14, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}><X size={16} /> 退回</button>
+              </div>
+            </div>
+          ))}
+        </>
       ) : tab === 'leave' ? (
         <>
           {leaves.length === 0 ? (

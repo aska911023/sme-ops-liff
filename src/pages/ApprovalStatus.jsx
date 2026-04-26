@@ -1,187 +1,192 @@
-import { useState, useEffect } from 'react'
-import { ChevronLeft, ArrowRight, Check, X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ChevronLeft, FileText, Clock, CheckCircle2, XCircle, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
+// 把 status 分到三大類：進行中 / 已通過 / 已退回
+const PASS_STATUSES = ['已核准', '已核銷', '已通過']
+const FAIL_STATUSES = ['已拒絕', '已駁回', '已退回']
+
+const TYPE_META = {
+  leaves:           { label: '請假',     icon: '🏖️', color: 'cyan' },
+  overtimes:        { label: '加班',     icon: '⏰', color: 'orange' },
+  trips:            { label: '出差',     icon: '🚗', color: 'purple' },
+  expenses:         { label: '報帳',     icon: '💰', color: 'green' },
+  corrections:      { label: '補打卡',   icon: '✏️', color: 'cyan' },
+  expense_requests: { label: '費用申請', icon: '📝', color: 'green' },
+}
+
 export default function ApprovalStatus() {
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
-  const [forms, setForms] = useState([])
-  const [steps, setSteps] = useState([])
-  const [chains, setChains] = useState([])
+  const [tab, setTab] = useState('pending') // pending | passed | failed
+  const [data, setData] = useState({ leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [] })
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('mine') // mine | pending
 
-  useEffect(() => {
-    if (!employee) return
-    Promise.all([
-      supabase.from('approval_forms').select('*').order('created_at', { ascending: false }),
-      supabase.from('approval_form_steps').select('*').order('form_id,step_order'),
-      supabase.from('approval_chains').select('*'),
-    ]).then(([f, s, c]) => {
-      setForms(f.data || [])
-      setSteps(s.data || [])
-      setChains(c.data || [])
-      setLoading(false)
+  const reload = useCallback(async () => {
+    if (!lineProfile?.lineUserId) return
+    const { data: rpcData, error } = await supabase.rpc('liff_list_my_submissions', {
+      p_line_user_id: lineProfile.lineUserId,
     })
-  }, [employee])
-
-  const getFS = (id) => steps.filter(s => s.form_id === id).sort((a, b) => a.step_order - b.step_order)
-  const getChain = (id) => chains.find(c => c.id === id)
-
-  // My forms = I submitted
-  const myForms = forms.filter(f => f.applicant === employee?.name)
-  // Pending for me = steps where status='待簽' and my role matches
-  const pendingForms = forms.filter(f => {
-    const fSteps = getFS(f.id)
-    return fSteps.some(s => s.status === '待簽')
-  })
-
-  const handleApprove = async (stepId, formId, action) => {
-    let comment = ''
-    if (action === '退回') {
-      comment = prompt('退回原因：')
-      if (!comment?.trim()) return
+    if (error) {
+      console.error('load my submissions', error)
+      setLoading(false)
+      return
     }
-    const { data: step } = await supabase.from('approval_form_steps').update({
-      status: action === '核准' ? '已核准' : '已退回',
-      approver: employee.name,
-      comment: comment || null,
-      acted_at: new Date().toISOString(),
-    }).eq('id', stepId).select().single()
-    if (!step) return
-    setSteps(prev => prev.map(s => s.id === stepId ? step : s))
+    setData(rpcData || { leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [] })
+    setLoading(false)
+  }, [lineProfile?.lineUserId])
 
-    if (action === '核准') {
-      const all = steps.map(s => s.id === stepId ? step : s).filter(s => s.form_id === formId)
-      const next = all.find(s => s.status === '等待中')
-      if (next) {
-        const { data: ns } = await supabase.from('approval_form_steps').update({ status: '待簽' }).eq('id', next.id).select().single()
-        if (ns) setSteps(prev => prev.map(s => s.id === ns.id ? ns : s))
-      } else {
-        const { data: f } = await supabase.from('approval_forms').update({ status: '已通過', completed_at: new Date().toISOString() }).eq('id', formId).select().single()
-        if (f) setForms(prev => prev.map(x => x.id === formId ? f : x))
-      }
-    } else {
-      const { data: f } = await supabase.from('approval_forms').update({ status: '已退回', completed_at: new Date().toISOString() }).eq('id', formId).select().single()
-      if (f) setForms(prev => prev.map(x => x.id === formId ? f : x))
-    }
+  useEffect(() => { reload() }, [reload])
+
+  // 把所有 type 的 records 攤平成統一格式
+  const flatten = () => {
+    const rows = []
+    Object.entries(TYPE_META).forEach(([key, meta]) => {
+      ;(data[key] || []).forEach(r => {
+        const status = r.status || ''
+        rows.push({
+          ...r,
+          _type: key,
+          _meta: meta,
+          _status: status,
+          _bucket: PASS_STATUSES.includes(status) ? 'passed'
+                 : FAIL_STATUSES.includes(status) ? 'failed'
+                 : 'pending',
+        })
+      })
+    })
+    rows.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    return rows
   }
 
-  const stColor = (s) => s === '已通過' || s === '已核准' ? 'var(--green)' : s === '已退回' ? 'var(--red)' : s === '待簽' ? 'var(--orange)' : 'var(--t3)'
-  const stBg = (s) => s === '已通過' || s === '已核准' ? 'var(--green-dim)' : s === '已退回' ? 'var(--red-dim)' : s === '待簽' ? 'rgba(251,146,60,0.1)' : 'var(--card)'
+  const allRows = flatten()
+  const counts = {
+    pending: allRows.filter(r => r._bucket === 'pending').length,
+    passed:  allRows.filter(r => r._bucket === 'passed').length,
+    failed:  allRows.filter(r => r._bucket === 'failed').length,
+  }
+  const visibleRows = allRows.filter(r => r._bucket === tab)
 
-  const displayed = tab === 'mine' ? myForms : pendingForms
+  const stColor = (s) => PASS_STATUSES.includes(s) ? 'var(--green)'
+                       : FAIL_STATUSES.includes(s) ? 'var(--red)'
+                       : 'var(--orange)'
+  const stBg    = (s) => PASS_STATUSES.includes(s) ? 'var(--green-dim)'
+                       : FAIL_STATUSES.includes(s) ? 'var(--red-dim)'
+                       : 'rgba(251,146,60,0.1)'
+
+  // 摘要行：根據 type 顯示不同欄位
+  const renderSummary = (r) => {
+    if (r._type === 'leaves') {
+      return `${r.type || '請假'} · ${r.start_date}${r.end_date && r.end_date !== r.start_date ? ` ~ ${r.end_date}` : ''} · ${r.hours && r.hours < 8 ? `${r.hours}h` : `${r.days}天`}`
+    }
+    if (r._type === 'overtimes') return `${r.date} · ${r.hours}h`
+    if (r._type === 'trips')     return `${r.destination || ''} · ${r.start_date} ~ ${r.end_date}`
+    if (r._type === 'expenses')  return `${r.category || ''} · NT$ ${Number(r.amount || 0).toLocaleString()} · ${r.date}`
+    if (r._type === 'corrections') return `${r.type || '上班打卡'} · ${r.date} · ${r.correction_time || '未填'}`
+    if (r._type === 'expense_requests') return `${r.title} · NT$ ${Number(r.estimated_amount || 0).toLocaleString()}`
+    return ''
+  }
 
   return (
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
-        <div className="header-title">🛡️ 簽核狀態</div>
+        <div className="header-title">📊 我的簽核進度</div>
+        <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
+          查詢我提交過的所有單據狀態
+        </div>
       </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {[
-          { key: 'mine', label: '我的申請', count: myForms.length },
-          { key: 'pending', label: '待我簽核', count: pendingForms.filter(f => getFS(f.id).some(s => s.status === '待簽')).length },
-        ].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)} style={{
-            flex: 1, padding: '10px', borderRadius: 10, fontSize: 13, fontWeight: 700,
-            border: `1.5px solid ${tab === t.key ? 'var(--cyan)' : 'var(--border2)'}`,
-            background: tab === t.key ? 'var(--cyan-dim)' : 'var(--card)',
-            color: tab === t.key ? 'var(--cyan)' : 'var(--t2)',
-            cursor: 'pointer', position: 'relative',
-          }}>
-            {t.label}
-            {t.count > 0 && (
-              <span style={{
-                position: 'absolute', top: -6, right: -6,
-                width: 20, height: 20, borderRadius: '50%',
-                background: t.key === 'pending' ? 'var(--orange)' : 'var(--cyan)',
-                color: '#fff', fontSize: 11, fontWeight: 800,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>{t.count}</span>
-            )}
-          </button>
-        ))}
+          { key: 'pending', label: '進行中', icon: Clock,         count: counts.pending, color: 'var(--orange)' },
+          { key: 'passed',  label: '已通過', icon: CheckCircle2,  count: counts.passed,  color: 'var(--green)' },
+          { key: 'failed',  label: '已退回', icon: XCircle,       count: counts.failed,  color: 'var(--red)' },
+        ].map(t => {
+          const Icon = t.icon
+          return (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              flex: 1, padding: '10px 6px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+              border: `1.5px solid ${tab === t.key ? t.color : 'var(--border2)'}`,
+              background: tab === t.key ? `${t.color === 'var(--orange)' ? 'rgba(251,146,60,0.1)' : t.color === 'var(--green)' ? 'var(--green-dim)' : 'var(--red-dim)'}` : 'var(--card)',
+              color: tab === t.key ? t.color : 'var(--t2)',
+              cursor: 'pointer', position: 'relative',
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+            }}>
+              <Icon size={16} />
+              <span>{t.label}</span>
+              {t.count > 0 && (
+                <span style={{
+                  position: 'absolute', top: -6, right: -6,
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: t.color, color: '#fff',
+                  fontSize: 11, fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>{t.count}</span>
+              )}
+            </button>
+          )
+        })}
       </div>
+
+      {/* Quick link to Approve page */}
+      <button onClick={() => navigate('/approve')} style={{
+        width: '100%', padding: '10px 14px', borderRadius: 10, marginBottom: 16,
+        background: 'var(--cyan-dim)', color: 'var(--cyan)',
+        border: '1.5px solid var(--cyan)', fontSize: 13, fontWeight: 700,
+        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <span>👀 我要審別人的單據</span>
+        <ArrowRight size={14} />
+      </button>
 
       {loading ? (
         <div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div>
-      ) : displayed.length === 0 ? (
-        <div className="empty">{tab === 'mine' ? '尚無提交的簽核' : '目前沒有待簽核的表單'}</div>
-      ) : displayed.map(f => {
-        const fSteps = getFS(f.id)
-        const chain = getChain(f.chain_id)
-        return (
-          <div key={f.id} className="list-item" style={{ marginBottom: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>{f.title}</div>
-                <div style={{ fontSize: 11, color: 'var(--t3)' }}>
-                  {chain?.name} · {f.store || '—'} · {f.created_at?.slice(0, 10)}
-                </div>
-              </div>
-              <span style={{
-                padding: '3px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-                background: stBg(f.status), color: stColor(f.status),
-              }}>{f.status}</span>
-            </div>
-
-            {/* Flow */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'var(--cyan-dim)', color: 'var(--cyan)', fontWeight: 600 }}>{f.applicant}</span>
-              {fSteps.map((s, i) => (
-                <span key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <ArrowRight size={10} style={{ color: 'var(--t3)' }} />
-                  <span style={{
-                    fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600,
-                    background: stBg(s.status), color: stColor(s.status),
-                  }}>
-                    {chain?.steps?.[i]?.label || s.role}
-                    {s.status === '已核准' && ' ✓'}
-                    {s.status === '已退回' && ' ✗'}
-                  </span>
-                </span>
-              ))}
-            </div>
-
-            {/* Step details for pending */}
-            {fSteps.map((s, i) => {
-              if (s.status !== '待簽' && s.status !== '已退回') return null
-              return (
-                <div key={s.id} style={{
-                  padding: '10px 12px', borderRadius: 10, marginBottom: 4,
-                  background: s.status === '待簽' ? 'rgba(251,146,60,0.08)' : 'var(--red-dim)',
-                  border: `1px solid ${s.status === '待簽' ? 'rgba(251,146,60,0.2)' : 'rgba(248,113,113,0.15)'}`,
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--t2)' }}>
-                    {chain?.steps?.[i]?.label || `第 ${i + 1} 關`} — {s.role}
-                  </div>
-                  {s.comment && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>退回原因：{s.comment}</div>}
-                  {s.status === '待簽' && tab === 'pending' && (
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <button onClick={() => handleApprove(s.id, f.id, '核准')} style={{
-                        flex: 3, padding: '10px', borderRadius: 10, border: 'none',
-                        background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                      }}><Check size={16} /> 核准</button>
-                      <button onClick={() => handleApprove(s.id, f.id, '退回')} style={{
-                        flex: 1, padding: '10px', borderRadius: 10,
-                        border: '1.5px solid var(--red)', background: 'transparent',
-                        color: 'var(--red)', fontSize: 14, fontWeight: 700,
-                        cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                      }}><X size={16} /> 退回</button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+      ) : visibleRows.length === 0 ? (
+        <div className="empty">
+          <FileText size={20} style={{ marginBottom: 8, opacity: 0.6 }} />
+          <div>
+            {tab === 'pending' ? '目前沒有進行中的單據' :
+             tab === 'passed'  ? '尚無已通過的單據' :
+                                 '尚無被退回的單據'}
           </div>
-        )
-      })}
+        </div>
+      ) : visibleRows.map(r => (
+        <div key={`${r._type}-${r.id}`} className="list-item" style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+              <span style={{ fontSize: 16 }}>{r._meta.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t1)' }}>{r._meta.label}</span>
+              {r.created_at && (
+                <span style={{ fontSize: 11, color: 'var(--t3)' }}>· {r.created_at.slice(0, 10)}</span>
+              )}
+            </div>
+            <span style={{
+              padding: '3px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+              background: stBg(r._status), color: stColor(r._status), flexShrink: 0,
+            }}>{r._status}</span>
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--t2)', marginLeft: 24 }}>
+            {renderSummary(r)}
+          </div>
+          {r.reject_reason && (
+            <div style={{
+              marginTop: 6, marginLeft: 24, padding: '6px 10px', borderRadius: 6,
+              background: 'var(--red-dim)', fontSize: 11, color: 'var(--red)',
+            }}>
+              退回原因：{r.reject_reason}
+            </div>
+          )}
+          {r.approver && PASS_STATUSES.includes(r._status) && (
+            <div style={{ marginTop: 4, marginLeft: 24, fontSize: 11, color: 'var(--t3)' }}>
+              簽核人：{r.approver}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
