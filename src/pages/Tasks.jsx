@@ -125,15 +125,16 @@ export default function Tasks() {
     loadList()
   }
 
-  const toggleSharedItem = async (item) => {
+  const toggleSharedItem = async (item, taskId) => {
     const next = !item.checked
-    const { data } = await supabase.rpc('liff_toggle_checklist_item', {
+    // v2 帶 task_id → 寫 per-task 狀態，不會污染範本
+    const { data } = await supabase.rpc('liff_toggle_checklist_item_v2', {
       p_line_user_id: lineProfile.lineUserId,
+      p_task_id: taskId,
       p_item_id: item.id,
       p_checked: next,
     })
     if (!data?.ok) { alert(ERR_MSG[data?.error] || '切換失敗'); return }
-    // 本地更新
     setDetail(d => ({
       ...d,
       checklists: d.checklists.map(cl => ({
@@ -285,7 +286,7 @@ export default function Tasks() {
                           📋 {cl.name} ({cl.items.filter(i => i.checked).length}/{cl.items.length})
                         </div>
                         {cl.items.map(item => (
-                          <ChecklistRow key={item.id} item={item} onToggle={() => toggleSharedItem(item)} />
+                          <ChecklistRow key={item.id} item={item} onToggle={() => toggleSharedItem(item, t.id)} />
                         ))}
                       </div>
                     ))}
