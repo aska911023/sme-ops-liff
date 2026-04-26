@@ -192,10 +192,15 @@ export default function ApprovalStatus() {
           </div>
           {r.reject_reason && (
             <div style={{
-              marginTop: 6, marginLeft: 24, padding: '6px 10px', borderRadius: 6,
-              background: 'var(--red-dim)', fontSize: 11, color: 'var(--red)',
+              marginTop: 8, marginLeft: 24, padding: '10px 12px', borderRadius: 8,
+              background: 'rgba(248,113,113,0.12)', border: '1.5px solid var(--red)',
             }}>
-              退回原因：{r.reject_reason}
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 3 }}>
+                🔄 退回原因
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--red)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                {r.reject_reason}
+              </div>
             </div>
           )}
           {r.approver && PASS_STATUSES.includes(r._status) && (

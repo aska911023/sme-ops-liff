@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, Check, X, Lock, Users, Wallet } from 'lucide-react'
+import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -328,17 +328,79 @@ function renderTab(tab, data, processing, handle, statusBadge) {
 }
 
 function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准' }) {
+  const [expanded, setExpanded] = useState(false)
   const isPending = item.status === '待審核' || item.status === '申請中'
+
+  // 動態欄位：展開時顯示
+  const detailFields = []
+  if (item.created_at)   detailFields.push(['提交時間', item.created_at.replace('T', ' ').slice(0, 16)])
+  if (item.department)   detailFields.push(['部門', item.department])
+  if (item.store)        detailFields.push(['門市', item.store])
+  if (item.start_date)   detailFields.push(['起始日', item.start_date])
+  if (item.end_date && item.end_date !== item.start_date) detailFields.push(['結束日', item.end_date])
+  if (item.date)         detailFields.push(['日期', item.date])
+  if (item.hours)        detailFields.push(['時數', `${item.hours} 小時`])
+  if (item.days)         detailFields.push(['天數', `${item.days} 天`])
+  if (item.type)         detailFields.push(['類型', item.type])
+  if (item.destination)  detailFields.push(['出差地', item.destination])
+  if (item.budget)       detailFields.push(['預算', `NT$ ${Number(item.budget).toLocaleString()}`])
+  if (item.amount)       detailFields.push(['金額', `NT$ ${Number(item.amount).toLocaleString()}`])
+  if (item.estimated_amount) detailFields.push(['預估金額', `NT$ ${Number(item.estimated_amount).toLocaleString()}`])
+  if (item.account_code) detailFields.push(['會計科目', `${item.account_code} ${item.account_name || ''}`])
+  if (item.category)     detailFields.push(['類別', item.category])
+  if (item.correction_time) detailFields.push(['補卡時間', item.correction_time])
+  if (item.purpose)      detailFields.push(['出差目的', item.purpose])
+  if (item.reason)       detailFields.push(['原因', item.reason])
+  if (item.description)  detailFields.push(['說明', item.description])
+  if (item.chain_name)   detailFields.push(['簽核鏈', `${item.chain_name} (第 ${(item.current_step ?? 0) + 1}/${item.chain_total_steps} 關)`])
+
   return (
-    <div className="list-item">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <span style={{ fontSize: 15, fontWeight: 800 }}>{item.employee}</span>
-        <span className={`badge ${statusBadge(item.status)}`}>{item.status}</span>
+    <div className="list-item" style={{
+      borderLeft: item.status === '已退回' ? '3px solid var(--red)' : undefined,
+    }}>
+      {/* Header (clickable to expand) */}
+      <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{item.employee}</span>
+          </div>
+          <span className={`badge ${statusBadge(item.status)}`}>{item.status}</span>
+        </div>
+        {body}
       </div>
-      {body}
+
+      {/* 退回原因（明顯） */}
       {item.reject_reason && (
-        <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>退回原因：{item.reject_reason}</div>
+        <div style={{
+          marginTop: 8, padding: '8px 12px', borderRadius: 8,
+          background: 'rgba(248,113,113,0.12)', border: '1px solid var(--red)',
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 2 }}>
+            🔄 退回原因
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--red)', whiteSpace: 'pre-wrap' }}>
+            {item.reject_reason}
+          </div>
+        </div>
       )}
+
+      {/* 展開詳細 */}
+      {expanded && detailFields.length > 0 && (
+        <div style={{
+          marginTop: 10, padding: '10px 12px', borderRadius: 8,
+          background: 'var(--card)', border: '1px solid var(--border2)',
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', marginBottom: 6 }}>📄 完整資訊</div>
+          {detailFields.map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', gap: 8, fontSize: 12, padding: '3px 0', borderBottom: '1px dashed var(--border2)' }}>
+              <span style={{ color: 'var(--t3)', minWidth: 70, flexShrink: 0 }}>{k}</span>
+              <span style={{ color: 'var(--t1)', wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {isPending && (
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <button disabled={processing === item.id} onClick={() => handle(type, item.id, 'approve')} style={{
