@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronDown, ChevronRight, Check, Send, Plus } from 'lucid
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { pushTaskApprovalRequest } from '../lib/approvalNotify'
 
 const SCOPES = [
   { key: 'active',    label: '進行中' },
@@ -100,12 +101,20 @@ export default function Tasks() {
 
   const handleComplete = async (taskId) => {
     setProcessing(taskId)
-    const { data } = await supabase.rpc('liff_complete_task', {
+    // ★ 改用 v2：有審批人時 status='待確認' 並回傳 approvers，立即推 LINE
+    const { data } = await supabase.rpc('liff_complete_task_v2', {
       p_line_user_id: lineProfile.lineUserId,
       p_task_id: taskId,
     })
     setProcessing(null)
     if (!data?.ok) { alert(ERR_MSG[data?.error] || `完成失敗：${data?.error || 'unknown'}`); return }
+
+    // 有審批人 → 推 LINE
+    if (data.has_pending_confirmations && Array.isArray(data.approvers) && data.approvers.length > 0) {
+      pushTaskApprovalRequest({ taskTitle: data.task_title, approvers: data.approvers }).catch(err => console.warn('notify failed', err))
+      alert(`已標記完成，等 ${data.approvers.length} 位審批人通過`)
+    }
+
     setExpandedId(null)
     setDetail(null)
     loadList()

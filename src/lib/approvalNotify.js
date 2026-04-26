@@ -72,6 +72,16 @@ export async function notifyApprovalEvent({ type, action, result }) {
   }
 }
 
+// 執行人完成任務時，推 LINE 給審批人「請審核」
+// approvers 已含 line_user_id（v2 RPC 直接回傳）
+export async function pushTaskApprovalRequest({ taskTitle, approvers }) {
+  for (const ap of approvers || []) {
+    if (!ap.line_user_id) continue
+    await pushLine(ap.line_user_id,
+      `📋 任務「${taskTitle}」需要你審核\n請至 LIFF「任務確認」處理`)
+  }
+}
+
 // 任務確認 (在 Tasks 頁用)
 export async function notifyTaskConfirmation({ action, taskTitle, executorEmpId, notes }) {
   const lineId = await getLineUserId(executorEmpId)
