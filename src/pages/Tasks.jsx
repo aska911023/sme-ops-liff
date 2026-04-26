@@ -272,6 +272,21 @@ export default function Tasks() {
                       <Check size={16} /> 回報完成
                     </button>
 
+                    {/* ★ 退回原因 (task 被審批人退回時顯示) */}
+                    {detail.task.status === '已退回' && Array.isArray(detail.confirmations) && detail.confirmations.filter(c => c.status === 'rejected').map(c => (
+                      <div key={c.id} style={{
+                        marginTop: 12, padding: '10px 12px', borderRadius: 8,
+                        background: 'rgba(248,113,113,0.12)', border: '1.5px solid var(--red)',
+                      }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 3 }}>
+                          🔄 退回原因 · {c.approver}
+                        </div>
+                        <div style={{ fontSize: 13, color: 'var(--red)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+                          {c.notes || '（未填）'}
+                        </div>
+                      </div>
+                    ))}
+
                     {/* Description */}
                     {detail.task.description && (
                       <div style={{ marginTop: 12, fontSize: 13, color: 'var(--t2)', whiteSpace: 'pre-wrap' }}>
