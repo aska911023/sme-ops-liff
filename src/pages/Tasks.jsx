@@ -108,8 +108,8 @@ export default function Tasks() {
     })
     setProcessing(null)
     if (error) {
-      console.error('liff_complete_task_v2 error', error)
-      alert(`系統錯誤：${error.message}\n${error.details || ''}\n${error.hint || ''}`)
+      console.error('liff_complete_task_v2 error', JSON.stringify(error, null, 2))
+      alert(`系統錯誤\nmsg: ${error.message}\ncode: ${error.code}\ndetails: ${error.details}\nhint: ${error.hint}`)
       return
     }
     if (!data?.ok) { alert(ERR_MSG[data?.error] || `完成失敗：${data?.error || 'unknown'}`); return }
