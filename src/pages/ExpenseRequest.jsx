@@ -3,6 +3,7 @@ import { ChevronLeft, Plus, Upload, Image, FileText, X, Eye, Send } from 'lucide
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { notifyNewSubmission } from '../lib/approvalNotify'
 
 const STATUS_COLORS = {
   '申請中': 'var(--blue)',
@@ -104,6 +105,15 @@ export default function ExpenseRequest() {
 
     if (data?.id && files.length > 0) {
       await uploadFiles(data.id, files, 'request')
+    }
+
+    if (!error && employee?.id && data?.id) {
+      notifyNewSubmission({
+        type: 'expense_request',
+        applicantEmpId: employee.id,
+        requestId: data.id,
+        briefText: `${form.title} NT$${total}`,
+      }).catch(err => console.warn('notify failed', err))
     }
 
     setSubmitting(false)

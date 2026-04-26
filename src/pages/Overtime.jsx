@@ -3,6 +3,7 @@ import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { notifyNewSubmission } from '../lib/approvalNotify'
 
 // 依 step 產生 0.5 ~ 12 的所有可選時數
 function buildHourOptions(step) {
@@ -15,7 +16,7 @@ function buildHourOptions(step) {
 }
 
 export default function Overtime() {
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -107,6 +108,15 @@ export default function Overtime() {
     }
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
+
+    if (!editingId && employee?.id) {
+      notifyNewSubmission({
+        type: 'overtime',
+        applicantEmpId: employee.id,
+        briefText: `${form.date} ${form.hours}h`,
+      }).catch(err => console.warn('notify failed', err))
+    }
+
     reload()
     resetForm()
     setSubmitting(false)

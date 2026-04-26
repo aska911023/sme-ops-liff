@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { notifyNewSubmission } from '../lib/approvalNotify'
 
 const TYPES = ['特休', '事假', '病假', '公假', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理假', '產檢假', '家庭照顧假', '公傷病假']
 
@@ -313,6 +314,14 @@ export default function Leave() {
       setUploading(true)
       try { await uploadAttachments(editingId || Date.now()) } catch (e) { /* ignore */ }
       setUploading(false)
+    }
+
+    if (!editingId && employee?.id) {
+      notifyNewSubmission({
+        type: 'leave',
+        applicantEmpId: employee.id,
+        briefText: `${form.type}: ${form.start_date}~${form.end_date || form.start_date}`,
+      }).catch(err => console.warn('notify failed', err))
     }
 
     reload()

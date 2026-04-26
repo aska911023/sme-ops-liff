@@ -3,9 +3,10 @@ import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { notifyNewSubmission } from '../lib/approvalNotify'
 
 export default function ClockCorrection() {
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -64,6 +65,15 @@ export default function ClockCorrection() {
       },
     })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
+
+    if (!editingId && employee?.id) {
+      notifyNewSubmission({
+        type: 'correction',
+        applicantEmpId: employee.id,
+        briefText: `${form.date} ${form.type || ''}`,
+      }).catch(err => console.warn('notify failed', err))
+    }
+
     reload()
     resetForm()
     setSubmitting(false)
