@@ -102,11 +102,16 @@ export default function Tasks() {
   const handleComplete = async (taskId) => {
     setProcessing(taskId)
     // ★ 改用 v2：有審批人時 status='待確認' 並回傳 approvers，立即推 LINE
-    const { data } = await supabase.rpc('liff_complete_task_v2', {
+    const { data, error } = await supabase.rpc('liff_complete_task_v2', {
       p_line_user_id: lineProfile.lineUserId,
       p_task_id: taskId,
     })
     setProcessing(null)
+    if (error) {
+      console.error('liff_complete_task_v2 error', error)
+      alert(`系統錯誤：${error.message}\n${error.details || ''}\n${error.hint || ''}`)
+      return
+    }
     if (!data?.ok) { alert(ERR_MSG[data?.error] || `完成失敗：${data?.error || 'unknown'}`); return }
 
     // 有審批人 → 推 LINE
