@@ -1,20 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, FileText, Clock, CheckCircle2, XCircle, ArrowRight } from 'lucide-react'
+import { ChevronLeft, FileText, Clock, CheckCircle2, XCircle, ArrowRight, RotateCcw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 // 把 status 分到三大類：進行中 / 已通過 / 已退回
 const PASS_STATUSES = ['已核准', '已核銷', '已通過']
+// '已退回' = 可重送（B2）；'已拒絕' / '已駁回' = legacy 不可重送
+const RESUBMIT_STATUS = '已退回'
 const FAIL_STATUSES = ['已拒絕', '已駁回', '已退回']
 
 const TYPE_META = {
-  leaves:           { label: '請假',     icon: '🏖️', color: 'cyan' },
-  overtimes:        { label: '加班',     icon: '⏰', color: 'orange' },
-  trips:            { label: '出差',     icon: '🚗', color: 'purple' },
-  expenses:         { label: '報帳',     icon: '💰', color: 'green' },
-  corrections:      { label: '補打卡',   icon: '✏️', color: 'cyan' },
-  expense_requests: { label: '費用申請', icon: '📝', color: 'green' },
+  leaves:           { label: '請假',   icon: '🏖️', color: 'cyan',   rpcType: 'leave' },
+  overtimes:        { label: '加班',   icon: '⏰', color: 'orange', rpcType: 'overtime' },
+  trips:            { label: '出差',   icon: '🚗', color: 'purple', rpcType: 'trip' },
+  expenses:         { label: '報帳',   icon: '💰', color: 'green',  rpcType: 'expense' },
+  corrections:      { label: '補打卡', icon: '✏️', color: 'cyan',   rpcType: 'correction' },
+  expense_requests: { label: '申請',   icon: '📝', color: 'green',  rpcType: 'expense_request' },
 }
 
 export default function ApprovalStatus() {
@@ -23,6 +25,7 @@ export default function ApprovalStatus() {
   const [tab, setTab] = useState('pending') // pending | passed | failed
   const [data, setData] = useState({ leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [] })
   const [loading, setLoading] = useState(true)
+  const [resubmitting, setResubmitting] = useState(null)
 
   const reload = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
@@ -39,6 +42,21 @@ export default function ApprovalStatus() {
   }, [lineProfile?.lineUserId])
 
   useEffect(() => { reload() }, [reload])
+
+  const handleResubmit = async (row) => {
+    if (!confirm(`確定要將「${row._meta.label}」重新送審？`)) return
+    setResubmitting(`${row._type}-${row.id}`)
+    const { data: result, error } = await supabase.rpc('liff_resubmit_request', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_type: row._meta.rpcType,
+      p_id: row.id,
+      p_changes: null,
+    })
+    setResubmitting(null)
+    if (error) { alert('系統錯誤：' + error.message); return }
+    if (!result?.ok) { alert(result?.error === 'NOT_FOUND_OR_NOT_REJECTED' ? '單據已不是退回狀態' : `重送失敗：${result?.error}`); return }
+    reload()
+  }
 
   // 把所有 type 的 records 攤平成統一格式
   const flatten = () => {
@@ -184,6 +202,21 @@ export default function ApprovalStatus() {
             <div style={{ marginTop: 4, marginLeft: 24, fontSize: 11, color: 'var(--t3)' }}>
               簽核人：{r.approver}
             </div>
+          )}
+          {r._status === RESUBMIT_STATUS && (
+            <button
+              onClick={() => handleResubmit(r)}
+              disabled={resubmitting === `${r._type}-${r.id}`}
+              style={{
+                marginTop: 8, marginLeft: 24, padding: '8px 14px', borderRadius: 8,
+                border: '1.5px solid var(--cyan)', background: 'var(--cyan-dim)',
+                color: 'var(--cyan)', fontSize: 12, fontWeight: 700,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                opacity: resubmitting === `${r._type}-${r.id}` ? 0.5 : 1,
+              }}
+            >
+              <RotateCcw size={12} /> 修改後重新送審
+            </button>
           )}
         </div>
       ))}

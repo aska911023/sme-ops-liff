@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { ChevronLeft, ChevronDown, ChevronRight, Check, Send, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronDown, ChevronRight, Check, Send, Plus, ClipboardCheck, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { notifyTaskConfirmation } from '../lib/approvalNotify'
 
 const SCOPES = [
   { key: 'active',    label: '進行中' },
@@ -39,6 +40,8 @@ export default function Tasks() {
   const [commentText, setCommentText] = useState('')
   const [sending, setSending] = useState(false)
   const [processing, setProcessing] = useState(null)
+  const [taskConfs, setTaskConfs] = useState([])
+  const [showConfsSection, setShowConfsSection] = useState(true)
   const deepLinkAppliedRef = useRef(false)
 
   const setScope = (next) => {
@@ -51,17 +54,47 @@ export default function Tasks() {
   const loadList = useCallback(() => {
     if (!lineProfile?.lineUserId) return
     setLoading(true)
-    supabase.rpc('liff_list_my_tasks', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_scope: scope,
+    Promise.all([
+      supabase.rpc('liff_list_my_tasks', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_scope: scope,
+      }),
+      supabase.rpc('liff_list_my_task_confirmations', {
+        p_line_user_id: lineProfile.lineUserId,
+      }),
+    ]).then(([tRes, cRes]) => {
+      setTasks(Array.isArray(tRes.data) ? tRes.data : [])
+      setTaskConfs(Array.isArray(cRes.data) ? cRes.data : [])
+      setLoading(false)
     })
-      .then(({ data }) => {
-        setTasks(Array.isArray(data) ? data : [])
-        setLoading(false)
-      })
   }, [lineProfile?.lineUserId, scope])
 
   useEffect(() => { loadList() }, [loadList])
+
+  const handleConfRespond = async (tc, action) => {
+    let notes = null
+    if (action === 'reject') {
+      notes = prompt('退回原因（執行人會看到）：')
+      if (notes === null) return
+      if (!notes.trim()) { alert('請填寫退回原因'); return }
+    }
+    setProcessing(`tc-${tc.id}`)
+    const { data } = await supabase.rpc('liff_respond_task_confirmation', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: tc.id, p_action: action, p_notes: notes,
+    })
+    setProcessing(null)
+    if (!data?.ok) { alert(ERR_MSG[data?.error] || `失敗：${data?.error || 'unknown'}`); return }
+    // 推 LINE 給執行人
+    if (tc.task_assignee) {
+      const { data: exec } = await supabase.from('employees')
+        .select('id').eq('name', tc.task_assignee).maybeSingle()
+      if (exec?.id) {
+        notifyTaskConfirmation({ action, taskTitle: tc.task_title, executorEmpId: exec.id, notes }).catch(() => {})
+      }
+    }
+    loadList()
+  }
 
   // BOT deep-link：網址帶 ?task=<id> 就自動展開該任務（只跑一次）
   useEffect(() => {
@@ -203,6 +236,62 @@ export default function Tasks() {
           )
         })}
       </div>
+
+      {/* ★ 需我審核的任務（task_confirmations） */}
+      {!loading && taskConfs.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: '10px 12px', borderRadius: 12,
+          background: 'rgba(251,146,60,0.08)', border: '1.5px solid rgba(251,146,60,0.3)',
+        }}>
+          <div
+            onClick={() => setShowConfsSection(s => !s)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ClipboardCheck size={16} style={{ color: 'var(--orange)' }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--orange)' }}>
+                需要我審核（{taskConfs.length}）
+              </span>
+            </div>
+            {showConfsSection ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </div>
+          {showConfsSection && taskConfs.map(tc => (
+            <div key={tc.id} style={{
+              marginTop: 8, padding: '10px 12px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{tc.task_title}</span>
+                <span className="badge badge-orange">待確認</span>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 4 }}>
+                {tc.workflow_name && <span>📋 {tc.workflow_name} · </span>}
+                執行：{tc.task_assignee || '—'}
+                {tc.task_store && <span> · 📍 {tc.task_store}</span>}
+              </div>
+              {tc.task_description && (
+                <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 6, whiteSpace: 'pre-wrap' }}>
+                  {tc.task_description}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button disabled={processing === `tc-${tc.id}`} onClick={() => handleConfRespond(tc, 'approve')} style={{
+                  flex: 3, padding: '8px', borderRadius: 8, border: 'none',
+                  background: 'var(--green)', color: '#fff', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                  opacity: processing === `tc-${tc.id}` ? 0.5 : 1,
+                }}><Check size={14} /> 通過</button>
+                <button disabled={processing === `tc-${tc.id}`} onClick={() => handleConfRespond(tc, 'reject')} style={{
+                  flex: 1, padding: '8px', borderRadius: 8,
+                  border: '1.5px solid var(--red)', background: 'transparent',
+                  color: 'var(--red)', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}><X size={14} /> 退回</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading ? (
         <div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div>

@@ -10,7 +10,7 @@ const APPROVAL_TYPE_LABEL = {
   trips:            { label: '出差',     emoji: '✈️' },
   expenses:         { label: '報帳',     emoji: '💰' },
   corrections:      { label: '補打卡',   emoji: '🔧' },
-  expense_requests: { label: '費用申請', emoji: '🧾' },
+  expense_requests: { label: '申請', emoji: '🧾' },
 }
 
 export default function Todo() {

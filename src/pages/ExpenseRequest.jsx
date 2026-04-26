@@ -184,7 +184,7 @@ export default function ExpenseRequest() {
         <ChevronLeft size={18} /> {tab === 'list' ? '首頁' : '返回'}
       </button>
       <div className="header">
-        <div className="header-title">📝 費用申請</div>
+        <div className="header-title">📝 申請（事項 / 採購 / 預算）</div>
       </div>
 
       {/* ─── LIST VIEW ─── */}
@@ -192,7 +192,7 @@ export default function ExpenseRequest() {
         <>
           <button className="btn btn-primary" style={{ width: '100%', marginBottom: 16, padding: '12px 0', fontWeight: 700, borderRadius: 12 }}
             onClick={() => setTab('new')}>
-            <Plus size={16} /> 新增費用申請
+            <Plus size={16} /> 新增申請
           </button>
 
           {requests.length === 0 ? (
@@ -231,7 +231,7 @@ export default function ExpenseRequest() {
       {/* ─── NEW REQUEST FORM ─── */}
       {tab === 'new' && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>新增費用申請</div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>新增申請（事項 / 採購 / 預算）</div>
 
           {/* Expense / Non-expense toggle */}
           <div className="form-group">
