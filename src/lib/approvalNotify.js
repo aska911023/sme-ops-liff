@@ -39,7 +39,7 @@ async function pushLine(lineUserId, text, channelCode) {
   }
 }
 
-export async function notifyApprovalEvent({ type, action, result }) {
+export async function notifyApprovalEvent({ type, result }) {
   if (!result?.ok) return
   const typeLabel = TYPE_LABEL[type] || type
   const event = result.event
