@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar, FileText, Eye } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { notifyApprovalEvent, notifyShiftSwapEvent, notifyOffRequestEvent } from '../lib/approvalNotify'
@@ -55,7 +55,11 @@ const GROUPS = {
 export default function Approve() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
-  const [group, setGroup] = useState('hr')
+  const [searchParams] = useSearchParams()
+  // 從 URL ?group= 讀初始 group（LINE 卡片深連結用）
+  const initialGroup = ['hr', 'finance', 'schedule'].includes(searchParams.get('group'))
+    ? searchParams.get('group') : 'hr'
+  const [group, setGroup] = useState(initialGroup)
   const [tab, setTab] = useState('leave')
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
@@ -448,6 +452,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.expense_requests.length === 0) return empty('沒有等你審的申請單')
     return data.expense_requests.map(er => (
       <Row key={er.id} item={er} type="expense_request" processing={processing} handle={handle} statusBadge={statusBadge}
+        extraExpanded={<ExpenseAttachments requestId={er.id} />}
         body={<>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
           <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 4 }}>
@@ -545,7 +550,88 @@ function SwapRow({ swap, role, processing, statusBadge, onApprove, onReject }) {
   )
 }
 
-function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准' }) {
+function ExpenseAttachments({ requestId }) {
+  const { lineProfile } = useAuth()
+  const [atts, setAtts] = useState(null) // null=loading, []=loaded
+
+  useEffect(() => {
+    if (!lineProfile?.lineUserId || !requestId) return
+    supabase.rpc('liff_list_expense_request_attachments', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_request_id: requestId,
+    }).then(({ data, error }) => {
+      if (error) { console.warn('load attachments failed', error); setAtts([]); return }
+      setAtts(Array.isArray(data) ? data : [])
+    })
+  }, [lineProfile?.lineUserId, requestId])
+
+  const viewFile = (att) => {
+    const { data } = supabase.storage.from('attachments').getPublicUrl(att.storage_path)
+    if (data?.publicUrl) window.open(data.publicUrl, '_blank')
+  }
+
+  if (atts === null) {
+    return (
+      <div style={{
+        marginTop: 8, padding: '8px 12px', borderRadius: 8,
+        background: 'var(--card)', border: '1px solid var(--border2)',
+        fontSize: 12, color: 'var(--t3)', textAlign: 'center',
+      }}>讀取附件中...</div>
+    )
+  }
+  if (atts.length === 0) return null
+
+  return (
+    <div style={{
+      marginTop: 8, padding: '10px 12px', borderRadius: 8,
+      background: 'var(--card)', border: '1px solid var(--border2)',
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', marginBottom: 8 }}>
+        📎 附件（{atts.length}）
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {atts.map(att => {
+          const isImage = att.file_type?.startsWith('image')
+          const url = supabase.storage.from('attachments').getPublicUrl(att.storage_path)?.data?.publicUrl
+          return (
+            <div key={att.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px',
+              borderRadius: 6, background: 'var(--card-2, transparent)',
+              cursor: 'pointer',
+            }} onClick={() => viewFile(att)}>
+              {isImage && url ? (
+                <img src={url} alt="" style={{
+                  width: 44, height: 44, borderRadius: 6, objectFit: 'cover',
+                  border: '1px solid var(--border2)', flexShrink: 0,
+                }} />
+              ) : (
+                <div style={{
+                  width: 44, height: 44, borderRadius: 6,
+                  background: 'var(--orange-dim)', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                }}>
+                  <FileText size={20} color="var(--orange)" />
+                </div>
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: 'var(--t1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {att.file_name}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--t3)' }}>
+                  {att.stage === 'settlement' ? '核銷' : '申請'}
+                  {att.file_size && ` · ${Math.round(att.file_size / 1024)} KB`}
+                </div>
+              </div>
+              <Eye size={16} color="var(--cyan)" />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准', extraExpanded = null }) {
   const [expanded, setExpanded] = useState(false)
   const isPending = item.status === '待審核' || item.status === '申請中'
 
@@ -618,6 +704,9 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
           ))}
         </div>
       )}
+
+      {/* 額外擴充內容 (例如附件預覽) */}
+      {expanded && extraExpanded}
 
       {isPending && (
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>

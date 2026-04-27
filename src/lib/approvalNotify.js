@@ -22,6 +22,14 @@ const TYPE_LABEL = {
   expense_request: '申請',
 }
 
+// 簽核中心三個分頁，type → group
+const TYPE_GROUP = {
+  leave: 'hr', overtime: 'hr', trip: 'hr', correction: 'hr',
+  expense: 'finance', expense_request: 'finance',
+  shift_swap: 'schedule', off_request: 'schedule',
+}
+const approveLink = (type) => `/approve?group=${TYPE_GROUP[type] || 'hr'}`
+
 async function getLineTarget(empId) {
   if (!empId) return { line_user_id: null, channel_code: null }
   // 走 SECURITY DEFINER RPC 繞 RLS（直查 employee_line_accounts 在 anon 下被擋會回空）
@@ -121,7 +129,7 @@ export async function notifyApprovalEvent({ type, result }) {
         title: `「${typeLabel}」等待你簽核`,
         subtitle: `第 ${totalAtStep} 關 · ${result.applicant?.name || '申請人'}`,
         btnLabel: '前往審核',
-        btnPath: '/approve',
+        btnPath: approveLink(type),
       })
       await pushFlex(target.line_user_id, `${typeLabel} 簽核請求`, bubble, target.channel_code)
     }
@@ -184,7 +192,7 @@ export async function notifyShiftSwapEvent({ event, swap, reason }) {
       subtitle: `對方原班：${requester_shift || '—'} · 你原班：${target_shift || '—'}`,
       footnote: '請到「簽核中心 > 排班」確認',
       btnLabel: '前往確認',
-      btnPath: '/approve',
+      btnPath: approveLink('shift_swap'),
     })
     await pushFlex(tgt.line_user_id, '換班申請', bubble, tgt.channel_code)
     return
@@ -200,7 +208,7 @@ export async function notifyShiftSwapEvent({ event, swap, reason }) {
       title: `${swapLabel}`,
       subtitle: '雙方已同意，等你核准',
       btnLabel: '前往核准',
-      btnPath: '/approve',
+      btnPath: approveLink('shift_swap'),
     })
     await pushFlex(tgt.line_user_id, '換班待核准', bubble, tgt.channel_code)
     // 同步通知申請人「對方已同意，進入主管關」
@@ -376,7 +384,7 @@ export async function notifyOffRequestEvent({ event, applicantEmpId, applicantNa
         title: `${applicantName || '員工'} 想休 ${date}`,
         subtitle: reason || '請到「簽核中心 > 排班」核准',
         btnLabel: '前往核准',
-        btnPath: '/approve',
+        btnPath: approveLink('off_request'),
       })
       await pushFlex(tgt.line_user_id, '希望休申請', bubble, tgt.channel_code)
     }
@@ -442,7 +450,7 @@ export async function notifyNewSubmission({ type, applicantEmpId, requestId, bri
       title: `「${typeLabel}」等待你簽核`,
       subtitle: briefText || null,
       btnLabel: '前往審核',
-      btnPath: '/approve',
+      btnPath: approveLink(type),
     })
     await pushFlex(target.line_user_id, `${typeLabel} 簽核請求`, bubble, target.channel_code)
   }
