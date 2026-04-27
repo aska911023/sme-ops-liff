@@ -428,7 +428,252 @@ export async function notifyTaskConfirmation({ action, taskTitle, executorEmpId,
   await pushFlex(target.line_user_id, `任務${isApproved ? '通過' : '退回'}`, bubble, target.channel_code)
 }
 
-// 新單送出時通知第一關
+// ── Rich approval card (跟 LINE BOT 端 flexApprovalRequest 對齊) ─────────────
+// 七種申請類型統一的簽核卡：含申請人/部門、欄位列、原因、附件、postback 按鈕。
+// 按 [✅ 核准] / [❌ 駁回] 會送 postback 到 webhook 的 approve:request / reject:request handler。
+
+const REQUEST_TYPE_PALETTE = {
+  leave:           { header: '#10b981', subtitle: '#A7F3D0', emoji: '🏖', label: '請假申請' },
+  overtime:        { header: '#f59e0b', subtitle: '#FDE68A', emoji: '⏰', label: '加班申請' },
+  trip:            { header: '#3b82f6', subtitle: '#BFDBFE', emoji: '✈️', label: '出差申請' },
+  expense:         { header: '#ec4899', subtitle: '#FBCFE8', emoji: '💰', label: '報帳申請' },
+  expense_request: { header: '#ec4899', subtitle: '#FBCFE8', emoji: '💳', label: '經費申請' },
+  correction:      { header: '#8b5cf6', subtitle: '#E9D5FF', emoji: '🔧', label: '補打卡申請' },
+  cover:           { header: '#06b6d4', subtitle: '#CFFAFE', emoji: '🔄', label: '代班邀請' },
+  off_request:     { header: '#84cc16', subtitle: '#D9F99D', emoji: '🌴', label: '希望休申請' },
+}
+
+const TABLE_MAP = {
+  leave: 'leave_requests',
+  overtime: 'overtime_requests',
+  trip: 'business_trips',
+  expense: 'expenses',
+  expense_request: 'expense_requests',
+  correction: 'clock_corrections',
+  cover: 'shift_cover_requests',
+  off_request: 'off_requests',
+}
+
+const REASON_FIELD = {
+  leave: 'reason', overtime: 'reason', trip: 'purpose',
+  expense: 'description', expense_request: 'description',
+  correction: 'reason', cover: 'reason', off_request: 'reason',
+}
+
+function fmtDate(d) {
+  if (!d) return null
+  const date = new Date(d)
+  if (isNaN(date.getTime())) return d
+  const wd = ['日','一','二','三','四','五','六'][date.getDay()]
+  return `${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')} (${wd})`
+}
+function fmtMoney(v) { if (v == null) return null; const n = Number(v); return Number.isFinite(n) ? `$ ${n.toLocaleString('zh-TW')}` : null }
+function fmtRange(s, e) { if (!s) return null; const sd = fmtDate(s); if (!e || e === s) return sd; return `${sd} – ${fmtDate(e)}` }
+function statusColor(s) { if (s === '已核准' || s === '已核銷') return '#16a34a'; if (s === '已退回' || s === '已駁回') return '#dc2626'; return '#4A4A4A' }
+
+function rowsForType(type, rec) {
+  const rows = []
+  const push = (label, value, color) => { if (value && value !== '—') rows.push({ label, value, color }) }
+
+  if (type === 'leave') {
+    push('假別', rec.type)
+    if (rec.start_time && rec.end_time) {
+      push('日期', fmtDate(rec.start_date)); push('時段', `${rec.start_time}–${rec.end_time}`)
+    } else { push('期間', fmtRange(rec.start_date, rec.end_date)) }
+    push('天數', rec.days != null ? `${rec.days} 天` : null)
+  } else if (type === 'overtime') {
+    push('日期', fmtDate(rec.date)); push('時數', rec.hours != null ? `${rec.hours} 小時` : null)
+  } else if (type === 'trip') {
+    push('目的地', rec.destination); push('期間', fmtRange(rec.start_date, rec.end_date)); push('預算', fmtMoney(rec.budget))
+  } else if (type === 'expense') {
+    push('類別', rec.category); push('金額', fmtMoney(rec.amount)); push('日期', fmtDate(rec.date))
+    if (rec.receipt) push('收據', '✓ 已附')
+  } else if (type === 'expense_request') {
+    push('用途', rec.title); push('預估金額', fmtMoney(rec.estimated_amount))
+    if (rec.actual_amount != null) push('實際金額', fmtMoney(rec.actual_amount))
+    push('科目', rec.account_name)
+  } else if (type === 'correction') {
+    push('日期', fmtDate(rec.date)); push('類型', rec.type); push('補登時間', rec.correction_time)
+  } else if (type === 'cover') {
+    push('代班日', fmtDate(rec.shift_date)); push('班別', rec.shift_label)
+    if (rec.actual_start && rec.actual_end) push('時段', `${rec.actual_start}–${rec.actual_end}`)
+    push('工時', rec.actual_hours != null ? `${rec.actual_hours} 小時` : null)
+    push('缺勤者', rec.absent_emp_name); push('發起人', rec.requester_name)
+  } else if (type === 'off_request') {
+    push('希望休日', fmtDate(rec.date))
+  }
+  push('申請日', fmtDate(rec.created_at))
+  push('狀態', rec.status, statusColor(rec.status))
+  return rows
+}
+
+function rowKv(label, value, color) {
+  return {
+    type: 'box', layout: 'horizontal', spacing: 'sm', margin: 'xs',
+    contents: [
+      { type: 'text', text: label, color: '#9CA3AF', size: 'xs', flex: 3 },
+      { type: 'text', text: value, color: color || '#333333', size: 'xs', flex: 6, weight: 'bold', wrap: true },
+    ],
+  }
+}
+
+async function fetchAttachmentsFor(type, requestId, rec) {
+  if (type === 'expense_request') {
+    const { data } = await supabase.from('expense_request_attachments')
+      .select('id, file_name, storage_path, file_type')
+      .eq('request_id', requestId).order('created_at', { ascending: true })
+    if (!data) return []
+    return data.map(r => {
+      const { data: u } = supabase.storage.from('attachments').getPublicUrl(r.storage_path)
+      return { name: r.file_name, url: u?.publicUrl, fileType: r.file_type }
+    })
+  }
+  if ((type === 'expense' || type === 'leave') && Array.isArray(rec?.attachments)) {
+    return rec.attachments.filter(u => typeof u === 'string').map((url, i) => ({
+      name: deriveFileName(url, i + 1),
+      url,
+      fileType: /\.(jpe?g|png|gif|webp|heic)/i.test(url) ? 'image/*' : null,
+    }))
+  }
+  return []
+}
+function deriveFileName(url, idx) {
+  try { const u = new URL(url); const last = u.pathname.split('/').filter(Boolean).pop(); if (last) return decodeURIComponent(last) }
+  catch { /* not URL */ }
+  return `附件 ${idx}`
+}
+
+// 主 builder：抓 record + 申請人 + 附件，組成完整 rich approval card bubble
+async function buildApprovalCardBubble(type, requestId, applicantEmpId) {
+  const palette = REQUEST_TYPE_PALETTE[type] || REQUEST_TYPE_PALETTE.leave
+  const table = TABLE_MAP[type]
+  if (!table) return null
+
+  const { data: rec } = await supabase.from(table).select('*').eq('id', requestId).maybeSingle()
+  if (!rec) return null
+
+  // 申請人 + 部門/門市
+  let applicantName = rec.employee || '員工'
+  let applicantDept = null
+  const empId = rec.employee_id || applicantEmpId
+  if (empId) {
+    const { data: e } = await supabase.from('employees').select('id, name, department_id, store_id').eq('id', empId).maybeSingle()
+    if (e) {
+      applicantName = e.name || applicantName
+      const parts = []
+      if (e.store_id) {
+        const { data: s } = await supabase.from('stores').select('name').eq('id', e.store_id).maybeSingle()
+        if (s?.name) parts.push(s.name)
+      }
+      if (e.department_id) {
+        const { data: d } = await supabase.from('departments').select('name').eq('id', e.department_id).maybeSingle()
+        if (d?.name) parts.push(d.name)
+      }
+      if (parts.length) applicantDept = parts.join(' / ')
+    }
+  }
+
+  const rows = rowsForType(type, rec)
+  const reason = rec[REASON_FIELD[type]] || null
+  const attachments = await fetchAttachmentsFor(type, requestId, rec)
+  const rejectReason = rec.reject_reason || rec.rejection_reason
+  const alerts = (rejectReason && rec.status === '已退回') ? [`⚠️ 上次駁回原因：${rejectReason}`] : []
+
+  // ── Body contents ──
+  const body = []
+  body.push({
+    type: 'box', layout: 'horizontal', spacing: 'sm',
+    contents: [
+      { type: 'text', text: '👤', size: 'lg', flex: 0 },
+      {
+        type: 'box', layout: 'vertical', flex: 7,
+        contents: [
+          { type: 'text', text: applicantName, weight: 'bold', size: 'md', color: '#111827' },
+          ...(applicantDept ? [{ type: 'text', text: applicantDept, size: 'xs', color: '#666666' }] : []),
+        ],
+      },
+    ],
+  })
+  body.push({ type: 'separator', margin: 'md' })
+  rows.forEach(r => body.push(rowKv(r.label, r.value, r.color)))
+
+  if (reason) {
+    body.push({ type: 'separator', margin: 'md' })
+    body.push({
+      type: 'box', layout: 'vertical', margin: 'sm', paddingAll: '10px',
+      backgroundColor: '#F9FAFB', cornerRadius: '8px',
+      contents: [
+        { type: 'text', text: '📝 申請原因', size: 'xxs', color: '#9CA3AF', weight: 'bold' },
+        { type: 'text', text: reason, size: 'sm', color: '#333333', wrap: true, margin: 'sm' },
+      ],
+    })
+  }
+
+  if (attachments.length > 0) {
+    body.push({ type: 'separator', margin: 'md' })
+    const firstImg = attachments.find(a => a.url && (a.fileType?.startsWith('image')))
+    const blocks = [{ type: 'text', text: `📎 附件（${attachments.length}）`, size: 'xxs', color: '#9CA3AF', weight: 'bold' }]
+    if (firstImg) {
+      blocks.push({
+        type: 'image', url: firstImg.url, size: 'full', aspectMode: 'cover', aspectRatio: '20:13', margin: 'sm',
+        action: { type: 'uri', label: firstImg.name, uri: firstImg.url },
+      })
+    }
+    attachments.slice(0, 6).forEach(a => blocks.push({
+      type: 'text', text: `• ${a.name}`, size: 'xs',
+      color: a.url ? '#0891b2' : '#666666', wrap: true, margin: 'xs',
+      ...(a.url ? { action: { type: 'uri', label: a.name, uri: a.url } } : {}),
+    }))
+    body.push({ type: 'box', layout: 'vertical', spacing: 'xs', margin: 'sm', contents: blocks })
+  }
+
+  if (alerts.length > 0) {
+    body.push({ type: 'separator', margin: 'md' })
+    alerts.forEach(a => body.push({ type: 'text', text: a, size: 'xs', color: '#f97316', wrap: true, margin: 'xs' }))
+  }
+
+  // ── Footer: postback approve/reject + LIFF detail ──
+  const liffDetailUri = LIFF_ID ? `https://liff.line.me/${LIFF_ID}?to=${encodeURIComponent(approveLink(type))}` : null
+  const footer = {
+    type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px',
+    contents: [
+      {
+        type: 'box', layout: 'horizontal', spacing: 'sm',
+        contents: [
+          { type: 'button', style: 'primary', color: '#16a34a', height: 'sm', flex: 1,
+            action: { type: 'postback', label: '✅ 核准', data: `action=approve&type=request&rt=${type}&id=${requestId}` } },
+          { type: 'button', style: 'primary', color: '#dc2626', height: 'sm', flex: 1,
+            action: { type: 'postback', label: '❌ 駁回', data: `action=reject&type=request&rt=${type}&id=${requestId}` } },
+        ],
+      },
+      ...(liffDetailUri ? [{
+        type: 'button', style: 'secondary', height: 'sm',
+        action: { type: 'uri', label: '📋 看完整詳情', uri: liffDetailUri },
+      }] : []),
+    ],
+  }
+
+  return {
+    type: 'bubble', size: 'kilo',
+    header: {
+      type: 'box', layout: 'vertical', paddingAll: '16px', backgroundColor: palette.header,
+      contents: [
+        {
+          type: 'box', layout: 'horizontal',
+          contents: [
+            { type: 'text', text: `${palette.emoji} ${palette.label}`, color: '#FFFFFF', weight: 'bold', size: 'lg', flex: 5 },
+            { type: 'text', text: '待你審核', color: '#FFFFFFAA', size: 'xs', align: 'end', gravity: 'center', flex: 3 },
+          ],
+        },
+        { type: 'text', text: `#${requestId}`, color: palette.subtitle, size: 'xs', margin: 'xs' },
+      ],
+    },
+    body: { type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '16px', contents: body },
+    footer,
+  }
+}
+
+// 新單送出時通知第一關（升級為 rich approval card with postback buttons）
 export async function notifyNewSubmission({ type, applicantEmpId, requestId, briefText }) {
   const typeLabel = TYPE_LABEL[type] || type
   let approvers = []
@@ -441,10 +686,18 @@ export async function notifyNewSubmission({ type, applicantEmpId, requestId, bri
     approvers = data || []
   }
 
-  for (const ap of approvers) {
-    const target = await getLineTarget(ap.emp_id)
-    if (!target.line_user_id) continue
-    const bubble = buildBubble({
+  if (approvers.length === 0) return
+
+  // 預先 build 一張 rich card（同一張會推給所有簽核者）
+  let bubble = null
+  try {
+    bubble = await buildApprovalCardBubble(type, requestId, applicantEmpId)
+  } catch (err) {
+    console.warn('buildApprovalCardBubble failed, fallback to simple bubble', err)
+  }
+  if (!bubble) {
+    // fallback：抓不到資料 → 退回舊版簡單 bubble
+    bubble = buildBubble({
       headerColor: '#8b5cf6',
       headerText: '📝 簽核請求',
       title: `「${typeLabel}」等待你簽核`,
@@ -452,6 +705,14 @@ export async function notifyNewSubmission({ type, applicantEmpId, requestId, bri
       btnLabel: '前往審核',
       btnPath: approveLink(type),
     })
-    await pushFlex(target.line_user_id, `${typeLabel} 簽核請求`, bubble, target.channel_code)
+  }
+
+  const palette = REQUEST_TYPE_PALETTE[type]
+  const altText = palette ? `${palette.emoji} ${palette.label} 等待你簽核` : `${typeLabel} 簽核請求`
+
+  for (const ap of approvers) {
+    const target = await getLineTarget(ap.emp_id)
+    if (!target.line_user_id) continue
+    await pushFlex(target.line_user_id, altText, bubble, target.channel_code)
   }
 }
