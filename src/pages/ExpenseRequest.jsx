@@ -103,11 +103,19 @@ export default function ExpenseRequest() {
       },
     })
 
+    setSubmitting(false)
+
+    // RPC 出錯（例：沒設定符合金額的簽核鏈）→ 跳 alert，不要沉默
+    if (error) {
+      alert(`提交失敗：${error.message || '未知錯誤'}`)
+      return
+    }
+
     if (data?.id && files.length > 0) {
       await uploadFiles(data.id, files, 'request')
     }
 
-    if (!error && employee?.id && data?.id) {
+    if (employee?.id && data?.id) {
       notifyNewSubmission({
         type: 'expense_request',
         applicantEmpId: employee.id,
@@ -116,14 +124,16 @@ export default function ExpenseRequest() {
       }).catch(err => console.warn('notify failed', err))
     }
 
-    setSubmitting(false)
-    if (!error) {
-      reload()
-      setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true })
-      setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
-      setFiles([])
-      setTab('list')
+    // 申請人是組織頂端 → RPC 已自動核准，跟使用者講
+    if (data?.auto_approved) {
+      alert('✅ 已自動核准（無更上層簽核者）')
     }
+
+    reload()
+    setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true })
+    setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
+    setFiles([])
+    setTab('list')
   }
 
   // Submit settlement
