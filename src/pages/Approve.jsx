@@ -32,7 +32,7 @@ const GROUPS = {
     ],
   },
   finance: {
-    label: '金費',
+    label: '經費',
     icon: Wallet,
     color: 'green',
     tabs: [
@@ -244,7 +244,7 @@ export default function Approve() {
         )}
       </div>
 
-      {/* ── Group toggle (人事 / 金費) ── */}
+      {/* ── Group toggle (人事 / 經費) ── */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
         {Object.entries(GROUPS).map(([key, g]) => {
           const Icon = g.icon
