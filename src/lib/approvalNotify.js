@@ -24,21 +24,12 @@ const TYPE_LABEL = {
 
 async function getLineTarget(empId) {
   if (!empId) return { line_user_id: null, channel_code: null }
-  const { data } = await supabase.from('employee_line_accounts')
-    .select('line_user_id, channel_id, line_channels(code, is_default, status)')
-    .eq('employee_id', empId)
-    .order('is_primary', { ascending: false })
-  if (!data?.length) return { line_user_id: null, channel_code: null }
-  // 優先 is_default 的 channel
-  const sorted = [...data].sort((a, b) => {
-    const aDef = a.line_channels?.is_default ? 1 : 0
-    const bDef = b.line_channels?.is_default ? 1 : 0
-    return bDef - aDef
-  })
-  const target = sorted.find(d => d.line_channels?.status === 'active') || sorted[0]
+  // 走 SECURITY DEFINER RPC 繞 RLS（直查 employee_line_accounts 在 anon 下被擋會回空）
+  const { data, error } = await supabase.rpc('liff_resolve_line_target', { p_emp_id: empId })
+  if (error) { console.warn('liff_resolve_line_target failed', error); return { line_user_id: null, channel_code: null } }
   return {
-    line_user_id: target?.line_user_id || null,
-    channel_code: target?.line_channels?.code || null,
+    line_user_id: data?.line_user_id || null,
+    channel_code: data?.channel_code || null,
   }
 }
 
