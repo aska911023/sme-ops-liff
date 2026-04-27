@@ -65,7 +65,7 @@ export default function Todo() {
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
-        <div className="header-title">📋 代辦項目</div>
+        <div className="header-title">📋 待辦項目</div>
       </div>
 
       {/* Tab bar */}
