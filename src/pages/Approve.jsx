@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight } from 'lucide-react'
+import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyApprovalEvent } from '../lib/approvalNotify'
+import { notifyApprovalEvent, notifyShiftSwapEvent } from '../lib/approvalNotify'
 
 const ERR_MSG = {
   EMPLOYEE_NOT_FOUND: '找不到員工資料，請重新綁定 LINE',
@@ -18,7 +18,7 @@ const ERR_MSG = {
   NOT_FOUND_OR_ALREADY_PROCESSED: '單據不存在或已被審過',
 }
 
-// 兩大分組
+// 三大分組
 const GROUPS = {
   hr: {
     label: '人事',
@@ -40,6 +40,15 @@ const GROUPS = {
       { key: 'expense_request', label: '申請', pendingStatus: '申請中' },
     ],
   },
+  schedule: {
+    label: '排班',
+    icon: Calendar,
+    color: 'purple',
+    tabs: [
+      { key: 'shift_swap_peer',    label: '換班-我同意', pendingStatus: '待對方同意' },
+      { key: 'shift_swap_manager', label: '換班-我核准', pendingStatus: '待主管核准' },
+    ],
+  },
 }
 
 export default function Approve() {
@@ -49,6 +58,7 @@ export default function Approve() {
   const [tab, setTab] = useState('leave')
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
+    shift_swaps_for_peer: [], shift_swaps_for_manager: [],
     can: { hr: false, finance: false },
   })
   const [loading, setLoading] = useState(true)
@@ -61,13 +71,15 @@ export default function Approve() {
     })
     if (error) { console.error('load approvals', error); setLoading(false); return }
     setData({
-      leaves:           rpc?.leaves           || [],
-      overtimes:        rpc?.overtimes        || [],
-      trips:            rpc?.trips            || [],
-      expenses:         rpc?.expenses         || [],
-      corrections:      rpc?.corrections      || [],
-      expense_requests: rpc?.expense_requests || [],
-      can:              rpc?.can              || { hr: false, finance: false },
+      leaves:                  rpc?.leaves                  || [],
+      overtimes:               rpc?.overtimes               || [],
+      trips:                   rpc?.trips                   || [],
+      expenses:                rpc?.expenses                || [],
+      corrections:             rpc?.corrections             || [],
+      expense_requests:        rpc?.expense_requests        || [],
+      shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
+      shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
+      can:                     rpc?.can                     || { hr: false, finance: false },
     })
     setLoading(false)
   }, [lineProfile?.lineUserId])
@@ -106,26 +118,84 @@ export default function Approve() {
     reload()
   }
 
+  // 班別交換 — B 同意/拒絕
+  const handleSwapPeer = async (swap, action) => {
+    let reason = null
+    if (action === 'reject') {
+      reason = prompt('拒絕原因（申請人會看到）：')
+      if (reason === null) return
+      if (!reason.trim()) { alert('請填寫拒絕原因'); return }
+    }
+    setProcessing(swap.id)
+    const { data: result, error } = await supabase.rpc('liff_respond_shift_swap_peer', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_swap_id: swap.id, p_action: action === 'approve' ? 'agree' : 'reject', p_reason: reason,
+    })
+    setProcessing(null)
+    if (error) { alert('系統錯誤：' + error.message); return }
+    if (!result?.ok) { alert(ERR_MSG[result?.error] || `失敗：${result?.error || 'unknown'}`); return }
+
+    notifyShiftSwapEvent({
+      event: result.event === 'agreed' ? 'peer_agreed' : 'peer_rejected',
+      swap: { ...swap, manager_emp_id: result.manager_emp_id },
+      reason,
+    }).catch(err => console.warn('notify failed', err))
+    reload()
+  }
+
+  // 班別交換 — 主管 核准/駁回
+  const handleSwapManager = async (swap, action) => {
+    let reason = null
+    if (action === 'reject') {
+      reason = prompt('駁回原因（A、B 都會看到）：')
+      if (reason === null) return
+      if (!reason.trim()) { alert('請填寫駁回原因'); return }
+    }
+    setProcessing(swap.id)
+    const { data: result, error } = await supabase.rpc('liff_approve_shift_swap_manager', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_swap_id: swap.id, p_action: action === 'approve' ? 'approve' : 'reject', p_reason: reason,
+    })
+    setProcessing(null)
+    if (error) { alert('系統錯誤：' + error.message); return }
+    if (!result?.ok) { alert(ERR_MSG[result?.error] || `失敗：${result?.error || 'unknown'}`); return }
+
+    notifyShiftSwapEvent({
+      event: result.event === 'approved' ? 'approved' : 'manager_rejected',
+      swap, reason,
+    }).catch(err => console.warn('notify failed', err))
+    reload()
+  }
+
   // tab 對應計數
   const counts = {
-    leave:           data.leaves.filter(l => l.status === '待審核').length,
-    overtime:        data.overtimes.filter(o => o.status === '待審核').length,
-    trip:            data.trips.filter(t => t.status === '待審核').length,
-    correction:      data.corrections.filter(c => c.status === '待審核').length,
-    expense:         data.expenses.filter(e => e.status === '待審核').length,
-    expense_request: data.expense_requests.filter(e => e.status === '申請中').length,
+    leave:               data.leaves.filter(l => l.status === '待審核').length,
+    overtime:            data.overtimes.filter(o => o.status === '待審核').length,
+    trip:                data.trips.filter(t => t.status === '待審核').length,
+    correction:          data.corrections.filter(c => c.status === '待審核').length,
+    expense:             data.expenses.filter(e => e.status === '待審核').length,
+    expense_request:     data.expense_requests.filter(e => e.status === '申請中').length,
+    shift_swap_peer:     data.shift_swaps_for_peer.length,
+    shift_swap_manager:  data.shift_swaps_for_manager.length,
   }
   const groupCounts = {
-    hr:      GROUPS.hr.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
-    finance: GROUPS.finance.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
+    hr:       GROUPS.hr.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
+    finance:  GROUPS.finance.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
+    schedule: GROUPS.schedule.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
   }
-  const totalPending = groupCounts.hr + groupCounts.finance
+  const totalPending = groupCounts.hr + groupCounts.finance + groupCounts.schedule
 
-  const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已退回' ? 'badge-red' : 'badge-orange'
-  const groupEnabled = { hr: data.can.hr, finance: data.can.finance }
+  const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已退回' || s === '已駁回' || s === '已拒絕' ? 'badge-red' : 'badge-orange'
+  // 排班：只要有 pending 就視為 enabled（peer 視角任何員工都可能收到）
+  const groupEnabled = {
+    hr:       data.can.hr,
+    finance:  data.can.finance,
+    schedule: groupCounts.schedule > 0 || true,  // 一律允許進入排班 group
+  }
   const tabEnabled = (k) =>
     ['leave','overtime','trip','correction'].includes(k) ? data.can.hr :
-    ['expense','expense_request'].includes(k) ? data.can.finance : false
+    ['expense','expense_request'].includes(k) ? data.can.finance :
+    ['shift_swap_peer','shift_swap_manager'].includes(k) ? true : false
 
   return (
     <div className="page">
@@ -209,13 +279,13 @@ export default function Approve() {
           <div>你的角色沒有權限審核此類單據</div>
         </div>
       ) : (
-        renderTab(tab, data, processing, handle, statusBadge)
+        renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager)
       )}
     </div>
   )
 }
 
-function renderTab(tab, data, processing, handle, statusBadge) {
+function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager) {
   const empty = (msg) => <div className="empty">{msg}</div>
 
   if (tab === 'leave') {
@@ -294,6 +364,24 @@ function renderTab(tab, data, processing, handle, statusBadge) {
       />
     ))
   }
+  if (tab === 'shift_swap_peer') {
+    if (data.shift_swaps_for_peer.length === 0) return empty('沒有等你回覆的換班申請')
+    return data.shift_swaps_for_peer.map(s => (
+      <SwapRow key={s.id} swap={s} role="peer" processing={processing} statusBadge={statusBadge}
+        onApprove={() => handleSwapPeer(s, 'approve')}
+        onReject={() => handleSwapPeer(s, 'reject')}
+      />
+    ))
+  }
+  if (tab === 'shift_swap_manager') {
+    if (data.shift_swaps_for_manager.length === 0) return empty('沒有等你核准的換班')
+    return data.shift_swaps_for_manager.map(s => (
+      <SwapRow key={s.id} swap={s} role="manager" processing={processing} statusBadge={statusBadge}
+        onApprove={() => handleSwapManager(s, 'approve')}
+        onReject={() => handleSwapManager(s, 'reject')}
+      />
+    ))
+  }
   if (tab === 'expense_request') {
     if (data.expense_requests.length === 0) return empty('沒有等你審的申請單')
     return data.expense_requests.map(er => (
@@ -325,6 +413,74 @@ function renderTab(tab, data, processing, handle, statusBadge) {
     ))
   }
   return null
+}
+
+function SwapRow({ swap, role, processing, statusBadge, onApprove, onReject }) {
+  const [expanded, setExpanded] = useState(false)
+  const isPeer = role === 'peer'
+  const detailFields = [
+    ['日期', swap.swap_date],
+    ['門市', swap.store || '—'],
+    ['申請人', `${swap.requester} (原班 ${swap.requester_shift || '—'})`],
+    ['對象', `${swap.target} (原班 ${swap.target_shift || '—'})`],
+    ['理由', swap.reason || '—'],
+    ['提交時間', swap.created_at?.replace('T', ' ').slice(0, 16) || '—'],
+  ]
+  if (swap.peer_response) detailFields.push(['對方回覆', `${swap.peer_response}${swap.peer_reject_reason ? ` (${swap.peer_reject_reason})` : ''}`])
+
+  return (
+    <div className="list-item">
+      <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{swap.requester} ↔ {swap.target}</span>
+          </div>
+          <span className={`badge ${statusBadge(swap.status)}`}>{swap.status}</span>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>
+          <span className="badge badge-purple" style={{ marginRight: 6 }}>{swap.swap_date}</span>
+          <span style={{ fontFamily: 'monospace' }}>{swap.requester_shift} ↔ {swap.target_shift}</span>
+        </div>
+        {swap.store && <div style={{ fontSize: 12, color: 'var(--t3)' }}>🏪 {swap.store}</div>}
+        {swap.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{swap.reason}</div>}
+        {!isPeer && swap.peer_response && (
+          <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 6, fontWeight: 600 }}>
+            ✓ 對方已同意 {swap.peer_responded_at?.slice(11, 16)}
+          </div>
+        )}
+      </div>
+
+      {expanded && (
+        <div style={{
+          marginTop: 10, padding: '10px 12px', borderRadius: 8,
+          background: 'var(--card)', border: '1px solid var(--border2)',
+        }}>
+          {detailFields.map(([k, v]) => (
+            <div key={k} style={{ display: 'flex', gap: 8, fontSize: 12, padding: '3px 0', borderBottom: '1px dashed var(--border2)' }}>
+              <span style={{ color: 'var(--t3)', minWidth: 70, flexShrink: 0 }}>{k}</span>
+              <span style={{ color: 'var(--t1)', wordBreak: 'break-all' }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button disabled={processing === swap.id} onClick={onApprove} style={{
+          flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+          background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          opacity: processing === swap.id ? 0.5 : 1,
+        }}><Check size={16} /> {isPeer ? '同意' : '核准'}</button>
+        <button disabled={processing === swap.id} onClick={onReject} style={{
+          flex: 1, padding: '10px', borderRadius: 10,
+          border: '1.5px solid var(--red)', background: 'transparent',
+          color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+        }}><X size={16} /> {isPeer ? '拒絕' : '駁回'}</button>
+      </div>
+    </div>
+  )
 }
 
 function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准' }) {

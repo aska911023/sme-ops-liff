@@ -171,6 +171,123 @@ export async function pushTaskApprovalRequest({ taskTitle, approvers }) {
   }
 }
 
+// 班別交換事件通知（兩段確認流程）
+//   event = 'requested'    → 推給 B（你被申請換班，等你確認）
+//   event = 'peer_agreed'  → 推給店長（B 已同意，等你核准）
+//   event = 'peer_rejected'→ 推給 A（B 拒絕了你的換班）
+//   event = 'approved'     → 推給 A 跟 B（換班成立）
+//   event = 'manager_rejected' → 推給 A 跟 B（駁回 + 理由）
+export async function notifyShiftSwapEvent({ event, swap, reason }) {
+  const { requester_id, target_id, requester, target, swap_date, requester_shift, target_shift, manager_emp_id } = swap || {}
+  const dateLabel = swap_date || ''
+  const swapLabel = `${dateLabel}（${requester || '申請人'} ${requester_shift || ''} ↔ ${target || '對方'} ${target_shift || ''}）`
+
+  if (event === 'requested') {
+    const target_emp = target_id || swap?.target_emp_id
+    const tgt = await getLineTarget(target_emp)
+    if (!tgt.line_user_id) return
+    const bubble = buildBubble({
+      headerColor: '#8b5cf6',
+      headerText: '🔁 換班申請',
+      title: `${requester || '同事'} 想跟你換 ${dateLabel} 班`,
+      subtitle: `對方原班：${requester_shift || '—'} · 你原班：${target_shift || '—'}`,
+      footnote: '請到「簽核中心 > 排班」確認',
+      btnLabel: '前往確認',
+      btnPath: '/approve',
+    })
+    await pushFlex(tgt.line_user_id, '換班申請', bubble, tgt.channel_code)
+    return
+  }
+
+  if (event === 'peer_agreed') {
+    if (!manager_emp_id) return
+    const tgt = await getLineTarget(manager_emp_id)
+    if (!tgt.line_user_id) return
+    const bubble = buildBubble({
+      headerColor: '#8b5cf6',
+      headerText: '🔁 換班待核准',
+      title: `${swapLabel}`,
+      subtitle: '雙方已同意，等你核准',
+      btnLabel: '前往核准',
+      btnPath: '/approve',
+    })
+    await pushFlex(tgt.line_user_id, '換班待核准', bubble, tgt.channel_code)
+    // 同步通知申請人「對方已同意，進入主管關」
+    if (requester_id) {
+      const reqTgt = await getLineTarget(requester_id)
+      if (reqTgt.line_user_id) {
+        const reqBubble = buildBubble({
+          headerColor: '#06b6d4',
+          headerText: '🔔 換班進度',
+          title: `${target || '對方'} 已同意你的換班`,
+          subtitle: `${swapLabel} · 等主管核准`,
+          btnLabel: '查看進度',
+          btnPath: '/approval-status',
+          btnColor: '#06b6d4',
+        })
+        await pushFlex(reqTgt.line_user_id, '換班進度', reqBubble, reqTgt.channel_code)
+      }
+    }
+    return
+  }
+
+  if (event === 'peer_rejected') {
+    if (!requester_id) return
+    const tgt = await getLineTarget(requester_id)
+    if (!tgt.line_user_id) return
+    const bubble = buildBubble({
+      headerColor: '#ef4444',
+      headerText: '❌ 換班被拒絕',
+      title: `${target || '對方'} 拒絕了你的換班`,
+      subtitle: swapLabel,
+      footnote: reason ? `理由：${reason}` : null,
+      btnLabel: '查看詳情',
+      btnPath: '/approval-status',
+      btnColor: '#ef4444',
+    })
+    await pushFlex(tgt.line_user_id, '換班被拒絕', bubble, tgt.channel_code)
+    return
+  }
+
+  if (event === 'approved') {
+    for (const empId of [requester_id, target_id]) {
+      if (!empId) continue
+      const tgt = await getLineTarget(empId)
+      if (!tgt.line_user_id) continue
+      const bubble = buildBubble({
+        headerColor: '#10b981',
+        headerText: '✅ 換班已成立',
+        title: `${swapLabel} 已核准`,
+        subtitle: '班表已自動更新',
+        btnLabel: '查看班表',
+        btnPath: '/my-schedule',
+        btnColor: '#10b981',
+      })
+      await pushFlex(tgt.line_user_id, '換班已成立', bubble, tgt.channel_code)
+    }
+    return
+  }
+
+  if (event === 'manager_rejected') {
+    for (const empId of [requester_id, target_id]) {
+      if (!empId) continue
+      const tgt = await getLineTarget(empId)
+      if (!tgt.line_user_id) continue
+      const bubble = buildBubble({
+        headerColor: '#ef4444',
+        headerText: '❌ 換班駁回',
+        title: `${swapLabel} 被主管駁回`,
+        subtitle: reason ? `理由：${reason}` : '請聯絡主管確認',
+        btnLabel: '查看詳情',
+        btnPath: '/approval-status',
+        btnColor: '#ef4444',
+      })
+      await pushFlex(tgt.line_user_id, '換班駁回', bubble, tgt.channel_code)
+    }
+    return
+  }
+}
+
 // 任務確認結果通知執行人
 export async function notifyTaskConfirmation({ action, taskTitle, executorEmpId, notes }) {
   const target = await getLineTarget(executorEmpId)

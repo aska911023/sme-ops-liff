@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Repeat, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { notifyShiftSwapEvent } from '../lib/approvalNotify'
 
 const DAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -26,6 +27,7 @@ export default function MySchedule() {
   const [holidays, setHolidays] = useState({}) // { '2026-04-04': '兒童節' }
   const [shiftDefs, setShiftDefs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [swapModal, setSwapModal] = useState(null) // { date, myShift }
 
   const weekDates = getWeekDates(weekOffset)
   const today = new Date().toISOString().slice(0, 10)
@@ -141,7 +143,18 @@ export default function MySchedule() {
                   padding: '10px 14px', borderRadius: 10,
                   background: colors.bg, border: `1px solid ${colors.border}`,
                 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: colors.color }}>{shift}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: colors.color }}>{shift}</div>
+                    {shift !== '休' && date >= today && (
+                      <button onClick={() => setSwapModal({ date, myShift: shift })} style={{
+                        background: 'var(--purple-dim)', color: 'var(--purple)', border: 'none',
+                        padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4,
+                      }}>
+                        <Repeat size={11} /> 換班
+                      </button>
+                    )}
+                  </div>
                   {def && (
                     <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
                       {def.start_time?.slice(0, 5)} ~ {def.end_time?.slice(0, 5)}
@@ -164,6 +177,130 @@ export default function MySchedule() {
           </div>
         )
       })}
+
+      {swapModal && (
+        <SwapModal modal={swapModal} lineUserId={lineProfile.lineUserId}
+          onClose={() => setSwapModal(null)}
+          onDone={() => setSwapModal(null)} />
+      )}
+    </div>
+  )
+}
+
+function SwapModal({ modal, lineUserId, onClose, onDone }) {
+  const [candidates, setCandidates] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [targetId, setTargetId] = useState(null)
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    supabase.rpc('liff_list_swap_candidates', { p_line_user_id: lineUserId, p_date: modal.date })
+      .then(({ data }) => {
+        setCandidates(Array.isArray(data) ? data : [])
+        setLoading(false)
+      })
+  }, [lineUserId, modal.date])
+
+  const handleSubmit = async () => {
+    if (!targetId) return
+    const target = candidates.find(c => c.emp_id === targetId)
+    setSubmitting(true)
+    const { data: result, error } = await supabase.rpc('liff_request_shift_swap', {
+      p_line_user_id: lineUserId,
+      p_payload: { target_id: targetId, swap_date: modal.date, reason: reason.trim() || null },
+    })
+    setSubmitting(false)
+    if (error) { alert('系統錯誤：' + error.message); return }
+    if (!result?.ok) {
+      const msg = {
+        TARGET_NOT_FOUND: '找不到對象', CANNOT_SWAP_WITH_SELF: '不能跟自己換',
+        INVALID_DATE: '日期無效（需為今日之後）', REQUESTER_NO_SHIFT: '你當天沒班',
+        TARGET_NO_SHIFT: '對方當天沒班', DIFFERENT_STORE: '不同門市，無法換班',
+        DUPLICATE_PENDING_SWAP: '已有未結案的換班申請',
+      }
+      alert(msg[result?.error] || `失敗：${result?.error}`)
+      return
+    }
+    notifyShiftSwapEvent({
+      event: 'requested',
+      swap: {
+        target_emp_id: targetId, target: target?.name,
+        requester: '你', requester_shift: modal.myShift, target_shift: target?.shift,
+        swap_date: modal.date,
+      },
+    }).catch(err => console.warn('notify failed', err))
+    alert(`✅ 換班申請已送出，等 ${target?.name} 回覆`)
+    onDone()
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000,
+      display: 'flex', alignItems: 'flex-end',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: '100%', maxHeight: '90vh', background: 'var(--bg)',
+        borderTopLeftRadius: 18, borderTopRightRadius: 18,
+        padding: 20, overflowY: 'auto',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>申請換班</div>
+            <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
+              {modal.date} · 你的班 <span style={{ fontFamily: 'monospace', color: 'var(--cyan)' }}>{modal.myShift}</span>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t3)' }}>
+            <X size={22} />
+          </button>
+        </div>
+
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--t2)' }}>
+          選擇要換的同事（同店、當天有班）
+        </div>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 20 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
+        ) : candidates.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 20, color: 'var(--t3)', fontSize: 13 }}>
+            當天沒有同店、有班的同事可換
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 16 }}>
+            {candidates.map(c => (
+              <button key={c.emp_id} onClick={() => setTargetId(c.emp_id)} style={{
+                padding: '12px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
+                border: targetId === c.emp_id ? '2px solid var(--purple)' : '1.5px solid var(--border2)',
+                background: targetId === c.emp_id ? 'var(--purple-dim)' : 'var(--card)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{c.name}</span>
+                <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--cyan)' }}>{c.shift}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, color: 'var(--t3)', display: 'block', marginBottom: 4 }}>理由（選填）</label>
+          <textarea value={reason} onChange={e => setReason(e.target.value)}
+            placeholder="例：那天家裡有事..."
+            style={{
+              width: '100%', minHeight: 60, padding: '10px 12px', borderRadius: 10,
+              border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--t1)',
+              fontSize: 13, fontFamily: 'inherit', resize: 'vertical',
+            }} />
+        </div>
+
+        <button disabled={!targetId || submitting} onClick={handleSubmit} style={{
+          width: '100%', padding: '14px', borderRadius: 12, border: 'none',
+          background: targetId ? 'var(--purple)' : 'var(--border2)',
+          color: '#fff', fontSize: 15, fontWeight: 800, cursor: targetId ? 'pointer' : 'not-allowed',
+          opacity: submitting ? 0.6 : 1,
+        }}>
+          {submitting ? '送出中...' : '送出換班申請'}
+        </button>
+      </div>
     </div>
   )
 }
