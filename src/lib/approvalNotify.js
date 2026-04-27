@@ -288,6 +288,85 @@ export async function notifyShiftSwapEvent({ event, swap, reason }) {
   }
 }
 
+// 代班 邀請式事件通知
+//   event = 'invited'   → 推給所有候選人「有代班可接」
+//   event = 'claimed'   → 推給主管「X 接單了」+ 推給其他候選人「已成立」
+//   event = 'cancelled' → 推給所有候選人「已取消」
+export async function notifyCoverEvent({ event, payload }) {
+  const { invited_emp_ids, shift_date, shift_label, absent_emp_name, requester_emp_id, claimer_name, requester_name, reason } = payload || {}
+
+  if (event === 'invited') {
+    for (const empId of invited_emp_ids || []) {
+      const tgt = await getLineTarget(empId)
+      if (!tgt.line_user_id) continue
+      const bubble = buildBubble({
+        headerColor: '#f59e0b',
+        headerText: '🆘 代班邀請',
+        title: `${shift_date} ${shift_label}`,
+        subtitle: `代 ${absent_emp_name || '同事'} 的班`,
+        footnote: '先搶先贏！到「待認領代班」確認',
+        btnLabel: '我可以接',
+        btnPath: '/cover-invitations',
+        btnColor: '#f59e0b',
+      })
+      await pushFlex(tgt.line_user_id, '代班邀請', bubble, tgt.channel_code)
+    }
+    return
+  }
+
+  if (event === 'claimed') {
+    // 通知主管
+    if (requester_emp_id) {
+      const tgt = await getLineTarget(requester_emp_id)
+      if (tgt.line_user_id) {
+        const bubble = buildBubble({
+          headerColor: '#10b981',
+          headerText: '✅ 代班成立',
+          title: `${claimer_name || '有人'} 接了 ${shift_date} ${shift_label}`,
+          subtitle: `代 ${absent_emp_name || '同事'} 的班 · 班表已自動更新`,
+          btnLabel: '查看班表',
+          btnPath: '/my-schedule',
+          btnColor: '#10b981',
+        })
+        await pushFlex(tgt.line_user_id, '代班成立', bubble, tgt.channel_code)
+      }
+    }
+    // 通知其他候選人
+    for (const empId of invited_emp_ids || []) {
+      const tgt = await getLineTarget(empId)
+      if (!tgt.line_user_id) continue
+      const bubble = buildBubble({
+        headerColor: '#8b8b8b',
+        headerText: '— 代班已成立',
+        title: `${shift_date} ${shift_label}`,
+        subtitle: `${claimer_name || '其他同事'} 已接單`,
+        btnLabel: '查看其他代班',
+        btnPath: '/cover-invitations',
+      })
+      await pushFlex(tgt.line_user_id, '代班已成立', bubble, tgt.channel_code)
+    }
+    return
+  }
+
+  if (event === 'cancelled') {
+    for (const empId of invited_emp_ids || []) {
+      const tgt = await getLineTarget(empId)
+      if (!tgt.line_user_id) continue
+      const bubble = buildBubble({
+        headerColor: '#8b8b8b',
+        headerText: '— 代班已取消',
+        title: `${shift_date} ${shift_label}`,
+        subtitle: `${requester_name || '主管'} 取消了代班需求`,
+        footnote: reason || null,
+        btnLabel: '查看其他代班',
+        btnPath: '/cover-invitations',
+      })
+      await pushFlex(tgt.line_user_id, '代班取消', bubble, tgt.channel_code)
+    }
+    return
+  }
+}
+
 // 任務確認結果通知執行人
 export async function notifyTaskConfirmation({ action, taskTitle, executorEmpId, notes }) {
   const target = await getLineTarget(executorEmpId)

@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 const MENUS = [
   { path: '/clock', icon: '⏰', label: '打卡', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
   { path: '/my-schedule', icon: '📅', label: '我的班表', color: 'var(--blue)', dim: 'var(--blue-dim)' },
+  { path: '/cover-invitations', icon: '🆘', label: '待認領代班', color: 'var(--orange)', dim: 'rgba(245,158,11,0.15)' },
   { path: '/off-request', icon: '🗓️', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
   { path: '/leave', icon: '📋', label: '請假', color: 'var(--blue)', dim: 'var(--blue-dim)' },
   { path: '/leave-balance', icon: '📊', label: '假期額度', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },

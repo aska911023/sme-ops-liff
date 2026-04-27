@@ -27,6 +27,7 @@ import ClockCorrection from './pages/ClockCorrection'
 import MySchedule from './pages/MySchedule'
 import ApprovalStatus from './pages/ApprovalStatus'
 import ExpenseRequest from './pages/ExpenseRequest'
+import CoverInvitations from './pages/CoverInvitations'
 import LeaveBalance from './pages/LeaveBalance'
 import Documents from './pages/Documents'
 import Benefits from './pages/Benefits'
@@ -193,6 +194,7 @@ export default function App() {
         <Route path="/my-schedule" element={<MySchedule />} />
         <Route path="/approval-status" element={<ApprovalStatus />} />
         <Route path="/expense-request" element={<ExpenseRequest />} />
+        <Route path="/cover-invitations" element={<CoverInvitations />} />
         <Route path="/leave-balance" element={<LeaveBalance />} />
         <Route path="/documents" element={<Documents />} />
         <Route path="/benefits" element={<Benefits />} />
