@@ -308,10 +308,36 @@ export async function notifyCoverEvent({ event, payload }) {
   const { invited_emp_ids, shift_date, shift_label, absent_emp_name, requester_emp_id, claimer_name, requester_name, reason } = payload || {}
 
   if (event === 'invited') {
+    // 用 buildApprovalCardBubble 組 rich card（type='cover'），footer 加自定 [🙋 我搶單] postback
+    const requestId = payload?.request_id
+    let richBubble = null
+    if (requestId) {
+      try { richBubble = await buildApprovalCardBubble('cover', requestId, null) } catch (err) { console.warn('rich card build failed', err) }
+    }
+
+    // 替換 footer 為 [🙋 我搶單] (postback claim:cover) + [📋 詳情→LIFF]
+    if (richBubble) {
+      const liffDetailUri = LIFF_ID ? `https://liff.line.me/${LIFF_ID}?to=${encodeURIComponent('/cover-invitations')}` : null
+      richBubble.footer = {
+        type: 'box', layout: 'vertical', spacing: 'sm', paddingAll: '12px',
+        contents: [
+          {
+            type: 'button', style: 'primary', color: '#f59e0b', height: 'sm',
+            action: { type: 'postback', label: '🙋 我搶單', data: `action=claim&type=cover&id=${requestId}` },
+          },
+          ...(liffDetailUri ? [{
+            type: 'button', style: 'secondary', height: 'sm',
+            action: { type: 'uri', label: '📋 看詳情', uri: liffDetailUri },
+          }] : []),
+        ],
+      }
+      richBubble.altText = `🆘 代班邀請：${shift_date} ${shift_label}`
+    }
+
     for (const empId of invited_emp_ids || []) {
       const tgt = await getLineTarget(empId)
       if (!tgt.line_user_id) continue
-      const bubble = buildBubble({
+      const bubble = richBubble || buildBubble({
         headerColor: '#f59e0b',
         headerText: '🆘 代班邀請',
         title: `${shift_date} ${shift_label}`,
@@ -321,7 +347,7 @@ export async function notifyCoverEvent({ event, payload }) {
         btnPath: '/cover-invitations',
         btnColor: '#f59e0b',
       })
-      await pushFlex(tgt.line_user_id, '代班邀請', bubble, tgt.channel_code)
+      await pushFlex(tgt.line_user_id, `🆘 代班邀請 ${shift_date}`, bubble, tgt.channel_code)
     }
     return
   }
@@ -383,15 +409,24 @@ export async function notifyCoverEvent({ event, payload }) {
 //   event = 'requested' → 推給主管「員工 X 提交希望休」
 //   event = 'approved'  → 推給員工「希望休已核准」
 //   event = 'rejected'  → 推給員工「希望休被駁回 + 理由」
-export async function notifyOffRequestEvent({ event, applicantEmpId, applicantName, date, reason }) {
+export async function notifyOffRequestEvent({ event, applicantEmpId, applicantName, date, reason, requestId }) {
   if (event === 'requested') {
     // 找 HR-style 簽核者
     const { data } = await supabase.rpc('liff_resolve_hr_approvers', { p_applicant_emp_id: applicantEmpId })
     const approvers = data || []
+    if (approvers.length === 0) return
+
+    // build rich card（type='off_request'），含 [✅核准][❌駁回] postback
+    let richBubble = null
+    if (requestId) {
+      try { richBubble = await buildApprovalCardBubble('off_request', requestId, applicantEmpId) }
+      catch (err) { console.warn('rich card build failed', err) }
+    }
+
     for (const ap of approvers) {
       const tgt = await getLineTarget(ap.emp_id)
       if (!tgt.line_user_id) continue
-      const bubble = buildBubble({
+      const bubble = richBubble || buildBubble({
         headerColor: '#8b5cf6',
         headerText: '🗓️ 希望休申請',
         title: `${applicantName || '員工'} 想休 ${date}`,
@@ -399,7 +434,7 @@ export async function notifyOffRequestEvent({ event, applicantEmpId, applicantNa
         btnLabel: '前往核准',
         btnPath: approveLink('off_request'),
       })
-      await pushFlex(tgt.line_user_id, '希望休申請', bubble, tgt.channel_code)
+      await pushFlex(tgt.line_user_id, `🌴 希望休申請 ${date}`, bubble, tgt.channel_code)
     }
     return
   }

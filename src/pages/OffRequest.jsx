@@ -117,6 +117,7 @@ export default function OffRequest() {
               applicantEmpId: employee.id,
               applicantName: employee.name,
               date,
+              requestId: data.id,
             }).catch(err => console.warn('notify failed', err))
           } else if (data.status === '已核准') {
             alert('✅ 已自動核准（無更上層簽核者）')
