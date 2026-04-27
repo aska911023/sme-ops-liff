@@ -119,8 +119,8 @@ export default function Approve() {
       alert(ERR_MSG[result?.error] || `審核失敗：${result?.error || 'unknown'}`)
       return
     }
-    // ★ 推 LINE 通知
-    notifyApprovalEvent({ type, action, result }).catch(err => console.warn('notify failed', err))
+    // ★ 推 LINE 通知（帶 requestId 以便 advanced 事件能 build 完整 rich card）
+    notifyApprovalEvent({ type, action, result, requestId: id }).catch(err => console.warn('notify failed', err))
     reload()
   }
 

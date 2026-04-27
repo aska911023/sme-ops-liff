@@ -91,7 +91,8 @@ function buildBubble({ headerColor, headerText, title, subtitle, footnote, btnLa
 // ── Public APIs ─────────────────────────────────────────────
 
 // 申請類事件（advanced/approved/rejected）
-export async function notifyApprovalEvent({ type, result }) {
+//   requestId: 帶進來讓 advanced 事件能 build rich card（RPC 回傳沒包）
+export async function notifyApprovalEvent({ type, result, requestId }) {
   if (!result?.ok) return
   const typeLabel = TYPE_LABEL[type] || type
   const event = result.event
@@ -117,13 +118,26 @@ export async function notifyApprovalEvent({ type, result }) {
     return
   }
 
-  // (2) 推進下一關
+  // (2) 推進下一關 — 下關簽核者推 rich card（可直接核准/駁回）
   if (event === 'advanced' && Array.isArray(result.next_approvers)) {
     const totalAtStep = result.advanced_to_step + 1
+    const applicantEmpId = result.applicant?.emp_id
+
+    // 預先 build rich card（同一張推給所有下關簽核者）
+    // requestId 由 caller 帶進來（RPC 回傳沒包）
+    let richBubble = null
+    if (requestId) {
+      try { richBubble = await buildApprovalCardBubble(type, requestId, applicantEmpId) }
+      catch (err) { console.warn('buildApprovalCardBubble (advanced) failed', err) }
+    }
+
+    const palette = REQUEST_TYPE_PALETTE[type]
+    const altText = palette ? `${palette.emoji} ${palette.label} 等待你簽核 (第${totalAtStep}關)` : `${typeLabel} 簽核請求`
+
     for (const ap of result.next_approvers) {
       const target = await getLineTarget(ap.emp_id)
       if (!target.line_user_id) continue
-      const bubble = buildBubble({
+      const bubble = richBubble || buildBubble({
         headerColor: '#8b5cf6',
         headerText: '📝 簽核請求',
         title: `「${typeLabel}」等待你簽核`,
@@ -131,12 +145,11 @@ export async function notifyApprovalEvent({ type, result }) {
         btnLabel: '前往審核',
         btnPath: approveLink(type),
       })
-      await pushFlex(target.line_user_id, `${typeLabel} 簽核請求`, bubble, target.channel_code)
+      await pushFlex(target.line_user_id, altText, bubble, target.channel_code)
     }
-    // 通知申請人進度
-    const applicantId = result.applicant?.emp_id
-    if (applicantId) {
-      const target = await getLineTarget(applicantId)
+    // 通知申請人進度（保持簡單卡 — 申請人不用做動作，純通知）
+    if (applicantEmpId) {
+      const target = await getLineTarget(applicantEmpId)
       if (target.line_user_id) {
         const bubble = buildBubble({
           headerColor: '#06b6d4',
