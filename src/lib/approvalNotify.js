@@ -367,6 +367,51 @@ export async function notifyCoverEvent({ event, payload }) {
   }
 }
 
+// 希望休 簽核事件通知
+//   event = 'requested' → 推給主管「員工 X 提交希望休」
+//   event = 'approved'  → 推給員工「希望休已核准」
+//   event = 'rejected'  → 推給員工「希望休被駁回 + 理由」
+export async function notifyOffRequestEvent({ event, applicantEmpId, applicantName, date, reason }) {
+  if (event === 'requested') {
+    // 找 HR-style 簽核者
+    const { data } = await supabase.rpc('liff_resolve_hr_approvers', { p_applicant_emp_id: applicantEmpId })
+    const approvers = data || []
+    for (const ap of approvers) {
+      const tgt = await getLineTarget(ap.emp_id)
+      if (!tgt.line_user_id) continue
+      const bubble = buildBubble({
+        headerColor: '#8b5cf6',
+        headerText: '🗓️ 希望休申請',
+        title: `${applicantName || '員工'} 想休 ${date}`,
+        subtitle: reason || '請到「簽核中心 > 排班」核准',
+        btnLabel: '前往核准',
+        btnPath: '/approve',
+      })
+      await pushFlex(tgt.line_user_id, '希望休申請', bubble, tgt.channel_code)
+    }
+    return
+  }
+
+  if (event === 'approved' || event === 'rejected') {
+    const tgt = await getLineTarget(applicantEmpId)
+    if (!tgt.line_user_id) return
+    const isApproved = event === 'approved'
+    const bubble = buildBubble({
+      headerColor: isApproved ? '#10b981' : '#ef4444',
+      headerText: isApproved ? '✅ 希望休核准' : '❌ 希望休被駁回',
+      title: `${date} ${isApproved ? '已核准' : '被駁回'}`,
+      subtitle: isApproved
+        ? '排班時會優先考慮你這天希望休'
+        : (reason ? `理由：${reason}` : '請聯絡主管確認'),
+      btnLabel: '查看詳情',
+      btnPath: '/off-request',
+      btnColor: isApproved ? '#10b981' : '#ef4444',
+    })
+    await pushFlex(tgt.line_user_id, isApproved ? '希望休核准' : '希望休駁回', bubble, tgt.channel_code)
+    return
+  }
+}
+
 // 任務確認結果通知執行人
 export async function notifyTaskConfirmation({ action, taskTitle, executorEmpId, notes }) {
   const target = await getLineTarget(executorEmpId)

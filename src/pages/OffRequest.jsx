@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { notifyOffRequestEvent } from '../lib/approvalNotify'
 
 const DAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
@@ -38,7 +39,7 @@ function getMonthDates(year, month) {
 }
 
 export default function OffRequest() {
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
   const navigate = useNavigate()
 
   const now = new Date()
@@ -81,27 +82,50 @@ export default function OffRequest() {
     })
   }, [lineProfile, monthStart, monthEnd])
 
-  const isRequested = (date) => myRequests.some(r => r.date === date)
+  const getRequest = (date) => myRequests.find(r => r.date === date)
   const getSchedule = (date) => mySchedules.find(s => s.date === date)?.shift || ''
 
   const toggleDay = async (date) => {
     if (!lineProfile?.lineUserId) return
+    const existing = getRequest(date)
     setSaving(true)
-    if (isRequested(date)) {
-      await supabase.rpc('liff_delete_off_request', {
-        p_line_user_id: lineProfile.lineUserId,
-        p_date: date,
-      })
-      setMyRequests(prev => prev.filter(r => r.date !== date))
-    } else {
-      const { data } = await supabase.rpc('liff_insert_off_request', {
-        p_line_user_id: lineProfile.lineUserId,
-        p_date: date,
-        p_reason: null,
-      })
-      if (data?.id) setMyRequests(prev => [...prev, { id: data.id, date }])
+    try {
+      if (existing) {
+        if (existing.status === '已核准') {
+          alert('此希望休已核准，無法直接取消。請聯絡主管。')
+          return
+        }
+        const { data: del } = await supabase.rpc('liff_delete_off_request', {
+          p_line_user_id: lineProfile.lineUserId, p_date: date,
+        })
+        if (del?.ok === false) { alert('取消失敗：' + (del.error || 'unknown')); return }
+        setMyRequests(prev => prev.filter(r => r.date !== date))
+      } else {
+        const { data } = await supabase.rpc('liff_insert_off_request', {
+          p_line_user_id: lineProfile.lineUserId, p_date: date, p_reason: null,
+        })
+        if (data?.error) {
+          alert('提交失敗：' + (data.error === 'PAST_DATE' ? '不能申請過去日期' : data.error))
+          return
+        }
+        if (data?.id) {
+          setMyRequests(prev => [...prev, { id: data.id, date, status: data.status || '待審核' }])
+          // 待審核 → 推 LINE 給主管
+          if (data.status === '待審核' && employee?.id) {
+            notifyOffRequestEvent({
+              event: 'requested',
+              applicantEmpId: employee.id,
+              applicantName: employee.name,
+              date,
+            }).catch(err => console.warn('notify failed', err))
+          } else if (data.status === '已核准') {
+            alert('✅ 已自動核准（無更上層簽核者）')
+          }
+        }
+      }
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const totalRequested = myRequests.filter(r => {
@@ -149,7 +173,6 @@ export default function OffRequest() {
       {/* Calendar Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 20 }}>
         {monthDates.map(({ date, currentMonth }) => {
-          const requested = isRequested(date)
           const schedule = getSchedule(date)
           const isRest = schedule === '休'
           const isPast = date < todayStr
@@ -157,6 +180,12 @@ export default function OffRequest() {
           const dayNum = parseInt(date.slice(8))
           const dow = new Date(date).getDay()
           const isWeekend = dow === 0 || dow === 6
+
+          const req = getRequest(date)
+          const reqStatus = req?.status || null
+          // 顏色：待審核=橘 / 已核准=綠 / 已駁回=紅 / 排休=綠 / 今天=藍
+          const reqColor = reqStatus === '已核准' ? 'green' : reqStatus === '已駁回' ? 'red' : reqStatus === '待審核' ? 'orange' : null
+          const reqLabel = reqStatus === '已核准' ? '✓ 已核准' : reqStatus === '已駁回' ? '✗ 駁回' : reqStatus === '待審核' ? '⏳ 待審' : null
 
           return (
             <button
@@ -166,15 +195,15 @@ export default function OffRequest() {
               style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 gap: 2, padding: '10px 2px', borderRadius: 12, cursor: (isPast || !currentMonth) ? 'default' : 'pointer',
-                background: requested
-                  ? 'var(--orange-dim)'
+                background: reqColor
+                  ? `var(--${reqColor}-dim)`
                   : isToday
                     ? 'var(--cyan-dim)'
                     : isRest
                       ? 'var(--green-dim)'
                       : 'var(--card)',
-                border: requested
-                  ? '2px solid var(--orange)'
+                border: reqColor
+                  ? `2px solid var(--${reqColor})`
                   : isToday
                     ? '2px solid var(--cyan)'
                     : '1px solid var(--border)',
@@ -185,15 +214,15 @@ export default function OffRequest() {
             >
               <div style={{
                 fontSize: 15, fontWeight: 800,
-                color: requested ? 'var(--orange)' : isToday ? 'var(--cyan)' : isWeekend && currentMonth ? 'var(--orange)' : 'var(--t1)',
+                color: reqColor ? `var(--${reqColor})` : isToday ? 'var(--cyan)' : isWeekend && currentMonth ? 'var(--orange)' : 'var(--t1)',
               }}>
                 {dayNum}
               </div>
               <div style={{
                 fontSize: 9, fontWeight: 600,
-                color: requested ? 'var(--orange)' : isRest ? 'var(--green)' : schedule ? 'var(--cyan)' : 'transparent',
+                color: reqColor ? `var(--${reqColor})` : isRest ? 'var(--green)' : schedule ? 'var(--cyan)' : 'transparent',
               }}>
-                {requested ? '希望休' : schedule || '-'}
+                {reqLabel || schedule || '-'}
               </div>
             </button>
           )

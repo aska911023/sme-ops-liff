@@ -3,7 +3,7 @@ import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, 
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyApprovalEvent, notifyShiftSwapEvent } from '../lib/approvalNotify'
+import { notifyApprovalEvent, notifyShiftSwapEvent, notifyOffRequestEvent } from '../lib/approvalNotify'
 
 const ERR_MSG = {
   EMPLOYEE_NOT_FOUND: '找不到員工資料，請重新綁定 LINE',
@@ -45,6 +45,7 @@ const GROUPS = {
     icon: Calendar,
     color: 'purple',
     tabs: [
+      { key: 'off_request',        label: '希望休',      pendingStatus: '待審核' },
       { key: 'shift_swap_peer',    label: '換班-我同意', pendingStatus: '待對方同意' },
       { key: 'shift_swap_manager', label: '換班-我核准', pendingStatus: '待主管核准' },
     ],
@@ -58,7 +59,7 @@ export default function Approve() {
   const [tab, setTab] = useState('leave')
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
-    shift_swaps_for_peer: [], shift_swaps_for_manager: [],
+    shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
     can: { hr: false, finance: false },
   })
   const [loading, setLoading] = useState(true)
@@ -79,6 +80,7 @@ export default function Approve() {
       expense_requests:        rpc?.expense_requests        || [],
       shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
       shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
+      off_requests:            rpc?.off_requests            || [],
       can:                     rpc?.can                     || { hr: false, finance: false },
     })
     setLoading(false)
@@ -115,6 +117,33 @@ export default function Approve() {
     }
     // ★ 推 LINE 通知
     notifyApprovalEvent({ type, action, result }).catch(err => console.warn('notify failed', err))
+    reload()
+  }
+
+  // 希望休 — 主管核准/駁回
+  const handleOffRequest = async (off, action) => {
+    let reason = null
+    if (action === 'reject') {
+      reason = prompt('駁回原因（員工會看到）：')
+      if (reason === null) return
+      if (!reason.trim()) { alert('請填寫駁回原因'); return }
+    }
+    setProcessing(off.id)
+    const { data: result, error } = await supabase.rpc('liff_approve_off_request', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_id: off.id, p_action: action, p_reason: reason,
+    })
+    setProcessing(null)
+    if (error) { alert('系統錯誤：' + error.message); return }
+    if (!result?.ok) { alert(ERR_MSG[result?.error] || `失敗：${result?.error}`); return }
+
+    notifyOffRequestEvent({
+      event: action === 'approve' ? 'approved' : 'rejected',
+      applicantEmpId: result.applicant_emp_id,
+      applicantName: off.employee,
+      date: result.date,
+      reason,
+    }).catch(err => console.warn('notify failed', err))
     reload()
   }
 
@@ -177,6 +206,7 @@ export default function Approve() {
     expense_request:     data.expense_requests.filter(e => e.status === '申請中').length,
     shift_swap_peer:     data.shift_swaps_for_peer.length,
     shift_swap_manager:  data.shift_swaps_for_manager.length,
+    off_request:         data.off_requests.length,
   }
   const groupCounts = {
     hr:       GROUPS.hr.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
@@ -195,7 +225,7 @@ export default function Approve() {
   const tabEnabled = (k) =>
     ['leave','overtime','trip','correction'].includes(k) ? data.can.hr :
     ['expense','expense_request'].includes(k) ? data.can.finance :
-    ['shift_swap_peer','shift_swap_manager'].includes(k) ? true : false
+    ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true : false
 
   return (
     <div className="page">
@@ -279,14 +309,46 @@ export default function Approve() {
           <div>你的角色沒有權限審核此類單據</div>
         </div>
       ) : (
-        renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager)
+        renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest)
       )}
     </div>
   )
 }
 
-function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager) {
+function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest) {
   const empty = (msg) => <div className="empty">{msg}</div>
+
+  if (tab === 'off_request') {
+    if (data.off_requests.length === 0) return empty('沒有等你審的希望休')
+    return data.off_requests.map(o => (
+      <div key={o.id} className="list-item">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 15, fontWeight: 800 }}>{o.employee}</span>
+          <span className={`badge ${statusBadge(o.status)}`}>{o.status}</span>
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>
+          <span className="badge badge-purple" style={{ marginRight: 6 }}>希望休</span>
+          {o.date}
+        </div>
+        {o.store && <div style={{ fontSize: 12, color: 'var(--t3)' }}>🏪 {o.store}</div>}
+        {o.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{o.reason}</div>}
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <button disabled={processing === o.id} onClick={() => handleOffRequest(o, 'approve')} style={{
+            flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+            background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            opacity: processing === o.id ? 0.5 : 1,
+          }}><Check size={16} /> 核准</button>
+          <button disabled={processing === o.id} onClick={() => handleOffRequest(o, 'reject')} style={{
+            flex: 1, padding: '10px', borderRadius: 10,
+            border: '1.5px solid var(--red)', background: 'transparent',
+            color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+          }}><X size={16} /> 駁回</button>
+        </div>
+      </div>
+    ))
+  }
 
   if (tab === 'leave') {
     if (data.leaves.length === 0) return empty('沒有等你審的請假單')
