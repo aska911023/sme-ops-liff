@@ -421,7 +421,7 @@ export function TaskAttachments({ taskId, attachments = [], lineUserId, onChange
       for (const file of files) {
         const ext = file.name.split('.').pop()
         const path = `tasks/${taskId}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
-        const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: false })
+        const { error: upErr } = await supabase.storage.from('task-attachments').upload(path, file, { upsert: false })
         if (upErr) { console.warn('upload err', upErr); alert('上傳失敗：' + upErr.message); continue }
         const { data, error } = await supabase.rpc('liff_insert_task_attachment', {
           p_line_user_id: lineUserId,
@@ -443,7 +443,7 @@ export function TaskAttachments({ taskId, attachments = [], lineUserId, onChange
 
   const handleDelete = async (att) => {
     if (!confirm(`刪除附件「${att.file_name}」？`)) return
-    await supabase.storage.from('attachments').remove([att.storage_path]).catch(() => {})
+    await supabase.storage.from('task-attachments').remove([att.storage_path]).catch(() => {})
     const { data } = await supabase.rpc('liff_delete_task_attachment', {
       p_line_user_id: lineUserId, p_id: att.id,
     })
@@ -452,7 +452,7 @@ export function TaskAttachments({ taskId, attachments = [], lineUserId, onChange
   }
 
   const viewFile = (att) => {
-    const { data } = supabase.storage.from('attachments').getPublicUrl(att.storage_path)
+    const { data } = supabase.storage.from('task-attachments').getPublicUrl(att.storage_path)
     if (data?.publicUrl) window.open(data.publicUrl, '_blank')
   }
 
