@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { notifyNewSubmission } from '../lib/approvalNotify'
@@ -22,6 +22,8 @@ export default function Overtime() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
+  const [searchParams] = useSearchParams()
+  const resubmitId = searchParams.get('resubmit')
   const [step, setStep] = useState(0.5)  // 廠商設定的最小單位
   const [form, setForm] = useState({ date: '', hours: 1, reason: '' })
   const [submitting, setSubmitting] = useState(false)
@@ -49,6 +51,14 @@ export default function Overtime() {
   }, [lineProfile])
 
   useEffect(() => { reload() }, [lineProfile])
+
+  // 自動進入編輯模式（從 ApprovalStatus 的「編輯重送」按鈕跳過來）
+  useEffect(() => {
+    if (!resubmitId || editingId || records.length === 0) return
+    const target = records.find(r => String(r.id) === String(resubmitId))
+    if (target) handleEdit(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resubmitId, records.length])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -108,6 +118,21 @@ export default function Overtime() {
     }
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
+
+    // 編輯重送：UPDATE 完之後叫 RPC 重啟駁回那關 + 推 LINE
+    if (editingId && resubmitId && String(editingId) === String(resubmitId)) {
+      try {
+        await supabase.rpc('liff_resubmit_request', {
+          p_line_user_id: lineProfile.lineUserId,
+          p_type: 'overtime',
+          p_id: editingId,
+          p_changes: null,
+        })
+      } catch (e) { console.error('[liff_resubmit] failed:', e) }
+      alert('已重新送審，主管會收到通知')
+      navigate('/approval-status')
+      return
+    }
 
     if (!editingId && employee?.id) {
       notifyNewSubmission({

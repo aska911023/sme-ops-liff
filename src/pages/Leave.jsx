@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, Plus, Pencil, Trash2, FileText, ChevronDown, ChevronUp, Paperclip, Image, X } from 'lucide-react'
 import { jsPDF } from 'jspdf'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { notifyNewSubmission } from '../lib/approvalNotify'
@@ -97,6 +97,8 @@ export default function Leave() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null) // null = new, id = editing
+  const [searchParams] = useSearchParams()
+  const resubmitId = searchParams.get('resubmit')
   const [form, setForm] = useState({ type: TYPES[0], start_date: '', end_date: '', start_time: '09:00', end_time: '18:00', unit: 'day', reason: '' })
   const [submitting, setSubmitting] = useState(false)
   const [showAllBalances, setShowAllBalances] = useState(false)
@@ -159,6 +161,14 @@ export default function Leave() {
   }
 
   useEffect(() => { reload() }, [lineProfile, employee])
+
+  // 自動進入編輯模式（從 ApprovalStatus 的「編輯重送」按鈕跳過來）
+  useEffect(() => {
+    if (!resubmitId || editingId || records.length === 0) return
+    const target = records.find(r => String(r.id) === String(resubmitId))
+    if (target) handleEdit(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resubmitId, records.length])
 
   // 載入「請假最小單位」設定（廠商在主系統設定的 step）
   useEffect(() => {
@@ -308,6 +318,21 @@ export default function Leave() {
     }
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
+
+    // 編輯重送：UPDATE 完之後叫 RPC 重啟駁回那關 + 推 LINE
+    if (editingId && resubmitId && String(editingId) === String(resubmitId)) {
+      try {
+        await supabase.rpc('liff_resubmit_request', {
+          p_line_user_id: lineProfile.lineUserId,
+          p_type: 'leave',
+          p_id: editingId,
+          p_changes: null,
+        })
+      } catch (e) { console.error('[liff_resubmit] failed:', e) }
+      alert('已重新送審，主管會收到通知')
+      navigate('/approval-status')
+      return
+    }
 
     // 附件上傳流程走 Supabase Storage（bucket-level RLS，與資料表 RLS 分離）
     if (attachFiles.length > 0) {

@@ -6,17 +6,17 @@ import { supabase } from '../lib/supabase'
 
 // 把 status 分到三大類：進行中 / 已通過 / 已退回
 const PASS_STATUSES = ['已核准', '已核銷', '已通過']
-// '已退回' = 可重送（B2）；'已拒絕' / '已駁回' = legacy 不可重送
-const RESUBMIT_STATUS = '已退回'
+// 任何一種 reject 都可以編輯重送（後端 RPC 已支援 3 種變體）
+const RESUBMIT_STATUSES = ['已退回', '已駁回', '已拒絕']
 const FAIL_STATUSES = ['已拒絕', '已駁回', '已退回']
 
 const TYPE_META = {
-  leaves:           { label: '請假',   icon: '🏖️', color: 'cyan',   rpcType: 'leave' },
-  overtimes:        { label: '加班',   icon: '⏰', color: 'orange', rpcType: 'overtime' },
-  trips:            { label: '出差',   icon: '🚗', color: 'purple', rpcType: 'trip' },
-  expenses:         { label: '報帳',   icon: '💰', color: 'green',  rpcType: 'expense' },
-  corrections:      { label: '補打卡', icon: '✏️', color: 'cyan',   rpcType: 'correction' },
-  expense_requests: { label: '申請',   icon: '📝', color: 'green',  rpcType: 'expense_request' },
+  leaves:           { label: '請假',   icon: '🏖️', color: 'cyan',   rpcType: 'leave',           editPath: '/leave' },
+  overtimes:        { label: '加班',   icon: '⏰', color: 'orange', rpcType: 'overtime',        editPath: '/overtime' },
+  trips:            { label: '出差',   icon: '🚗', color: 'purple', rpcType: 'trip',            editPath: '/business-trip' },
+  expenses:         { label: '報帳',   icon: '💰', color: 'green',  rpcType: 'expense',         editPath: '/expenses' },
+  corrections:      { label: '補打卡', icon: '✏️', color: 'cyan',   rpcType: 'correction',      editPath: '/clock-correction' },
+  expense_requests: { label: '申請',   icon: '📝', color: 'green',  rpcType: 'expense_request', editPath: '/expense-request' },
 }
 
 export default function ApprovalStatus() {
@@ -25,7 +25,6 @@ export default function ApprovalStatus() {
   const [tab, setTab] = useState('pending') // pending | passed | failed
   const [data, setData] = useState({ leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [] })
   const [loading, setLoading] = useState(true)
-  const [resubmitting, setResubmitting] = useState(null)
 
   const reload = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
@@ -42,21 +41,6 @@ export default function ApprovalStatus() {
   }, [lineProfile?.lineUserId])
 
   useEffect(() => { reload() }, [reload])
-
-  const handleResubmit = async (row) => {
-    if (!confirm(`確定要將「${row._meta.label}」重新送審？`)) return
-    setResubmitting(`${row._type}-${row.id}`)
-    const { data: result, error } = await supabase.rpc('liff_resubmit_request', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_type: row._meta.rpcType,
-      p_id: row.id,
-      p_changes: null,
-    })
-    setResubmitting(null)
-    if (error) { alert('系統錯誤：' + error.message); return }
-    if (!result?.ok) { alert(result?.error === 'NOT_FOUND_OR_NOT_REJECTED' ? '單據已不是退回狀態' : `重送失敗：${result?.error}`); return }
-    reload()
-  }
 
   // 把所有 type 的 records 攤平成統一格式
   const flatten = () => {
@@ -208,19 +192,17 @@ export default function ApprovalStatus() {
               簽核人：{r.approver}
             </div>
           )}
-          {r._status === RESUBMIT_STATUS && (
+          {RESUBMIT_STATUSES.includes(r._status) && r._meta.editPath && r._type !== 'expense_requests' && r._type !== 'corrections' && (
             <button
-              onClick={() => handleResubmit(r)}
-              disabled={resubmitting === `${r._type}-${r.id}`}
+              onClick={() => navigate(`${r._meta.editPath}?resubmit=${r.id}`)}
               style={{
                 marginTop: 8, marginLeft: 24, padding: '8px 14px', borderRadius: 8,
-                border: '1.5px solid var(--cyan)', background: 'var(--cyan-dim)',
-                color: 'var(--cyan)', fontSize: 12, fontWeight: 700,
+                border: '1.5px solid var(--orange)', background: 'rgba(251,146,60,0.1)',
+                color: 'var(--orange)', fontSize: 12, fontWeight: 700,
                 cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
-                opacity: resubmitting === `${r._type}-${r.id}` ? 0.5 : 1,
               }}
             >
-              <RotateCcw size={12} /> 修改後重新送審
+              <RotateCcw size={12} /> ✏️ 編輯並重送
             </button>
           )}
         </div>
