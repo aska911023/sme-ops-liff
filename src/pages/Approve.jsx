@@ -93,13 +93,41 @@ export default function Approve() {
   useEffect(() => { reload() }, [reload])
 
   // 切到沒待辦的 tab → 自動跳到群組中第一個有待辦的
+  // 加碼：若用戶沒帶 ?group= 而當前 group 沒待辦、別的 group 有 → 自動切 group
   useEffect(() => {
     if (loading) return
     const tabs = GROUPS[group].tabs
+    const userPickedGroup = !!searchParams.get('group')
+
+    // 計算各 group 的待辦數（重複 below 的邏輯，但 useEffect 在 groupCounts 算完之前跑）
+    const cnt = {
+      hr: GROUPS.hr.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
+      finance: GROUPS.finance.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
+      schedule: GROUPS.schedule.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
+    }
+
+    // 當前 group 沒待辦 → 找有待辦的 group 自動切（除非用戶明確帶了 ?group=）
+    if (!userPickedGroup && (cnt[group] || 0) === 0) {
+      const target = ['finance', 'hr', 'schedule'].find(g => g !== group && (cnt[g] || 0) > 0)
+      if (target) {
+        setGroup(target)
+        setTab(GROUPS[target].tabs[0].key)
+        return
+      }
+    }
+
     if (!tabs.some(t => t.key === tab)) {
       setTab(tabs[0].key)
     }
-  }, [group, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [group, loading, data]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // tab.key → data 屬性名 對應（如 leave → leaves）
+  function mapKey(k) {
+    return ({ leave: 'leaves', overtime: 'overtimes', trip: 'trips', correction: 'corrections',
+              expense: 'expenses', expense_request: 'expense_requests',
+              shift_swap_peer: 'shift_swaps_for_peer', shift_swap_manager: 'shift_swaps_for_manager',
+              off_request: 'off_requests' })[k] || k
+  }
 
   const handle = async (type, id, action) => {
     let reason = null
