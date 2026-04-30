@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import FontSizeControl from '../components/FontSizeControl'
 
 const MENUS = [
   { path: '/clock', icon: '⏰', label: '打卡', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
@@ -59,6 +60,11 @@ export default function HRHub() {
             <div className="menu-label">{m.label}</div>
           </Link>
         ))}
+      </div>
+
+      {/* 字體大小調整 */}
+      <div style={{ marginTop: 20 }}>
+        <FontSizeControl />
       </div>
     </div>
   )
