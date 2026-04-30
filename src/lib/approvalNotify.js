@@ -600,23 +600,17 @@ async function buildApprovalCardBubble(type, requestId, applicantEmpId) {
   const { data: rec } = await supabase.from(table).select('*').eq('id', requestId).maybeSingle()
   if (!rec) return null
 
-  // 申請人 + 部門/門市
+  // 申請人 + 部門/門市（走 SECURITY DEFINER RPC，避免 anon 被 RLS 擋）
   let applicantName = rec.employee || '員工'
   let applicantDept = null
   const empId = rec.employee_id || applicantEmpId
   if (empId) {
-    const { data: e } = await supabase.from('employees').select('id, name, department_id, store_id').eq('id', empId).maybeSingle()
-    if (e) {
-      applicantName = e.name || applicantName
+    const { data: meta } = await supabase.rpc('liff_get_applicant_meta', { p_emp_id: empId })
+    if (meta) {
+      applicantName = meta.name || applicantName
       const parts = []
-      if (e.store_id) {
-        const { data: s } = await supabase.from('stores').select('name').eq('id', e.store_id).maybeSingle()
-        if (s?.name) parts.push(s.name)
-      }
-      if (e.department_id) {
-        const { data: d } = await supabase.from('departments').select('name').eq('id', e.department_id).maybeSingle()
-        if (d?.name) parts.push(d.name)
-      }
+      if (meta.store_name) parts.push(meta.store_name)
+      if (meta.department_name) parts.push(meta.department_name)
       if (parts.length) applicantDept = parts.join(' / ')
     }
   }

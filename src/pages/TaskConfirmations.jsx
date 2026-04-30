@@ -66,10 +66,10 @@ export default function TaskConfirmations() {
     setProcessing(null)
     if (!data?.ok) { alert(ERR_MSG[data?.error] || `失敗：${data?.error || 'unknown'}`); return }
     if (tc.task_assignee) {
-      const { data: exec } = await supabase.from('employees')
-        .select('id').eq('name', tc.task_assignee).maybeSingle()
-      if (exec?.id) {
-        notifyTaskConfirmation({ action, taskTitle: tc.task_title, executorEmpId: exec.id, notes }).catch(() => {})
+      // 透過 SECURITY DEFINER RPC 查 employee_id（避免 anon RLS 擋）
+      const { data: execId } = await supabase.rpc('liff_get_employee_id_by_name', { p_name: tc.task_assignee })
+      if (execId) {
+        notifyTaskConfirmation({ action, taskTitle: tc.task_title, executorEmpId: execId, notes }).catch(() => {})
       }
     }
     reload()
