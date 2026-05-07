@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronDown, ChevronRight, Check, Send, Plus, Paperclip, I
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { pushTaskApprovalRequest } from '../lib/approvalNotify'
 
 const SCOPES = [
   { key: 'active',    label: '進行中' },
@@ -114,9 +113,9 @@ export default function Tasks() {
     }
     if (!data?.ok) { alert(ERR_MSG[data?.error] || `完成失敗：${data?.error || 'unknown'}`); return }
 
-    // 有審批人 → 推 LINE
+    // 不再 client-side push 給審批人 —
+    // 主系統 trg_notify_task_confirmation_inserted (INSERT trigger) 會自動推 step_assigned LINE 給第 0 關所有 approvers
     if (data.has_pending_confirmations && Array.isArray(data.approvers) && data.approvers.length > 0) {
-      pushTaskApprovalRequest({ taskTitle: data.task_title, approvers: data.approvers }).catch(err => console.warn('notify failed', err))
       alert(`已標記完成，等 ${data.approvers.length} 位審批人通過`)
     }
 

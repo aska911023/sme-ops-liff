@@ -3,7 +3,6 @@ import { ChevronLeft, ChevronDown, ChevronRight, Check, X, ClipboardCheck } from
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyTaskConfirmation } from '../lib/approvalNotify'
 import { TaskAttachments } from './Tasks'
 
 const ERR_MSG = {
@@ -65,13 +64,10 @@ export default function TaskConfirmations() {
     })
     setProcessing(null)
     if (!data?.ok) { alert(ERR_MSG[data?.error] || `失敗：${data?.error || 'unknown'}`); return }
-    if (tc.task_assignee) {
-      // 透過 SECURITY DEFINER RPC 查 employee_id（避免 anon RLS 擋）
-      const { data: execId } = await supabase.rpc('liff_get_employee_id_by_name', { p_name: tc.task_assignee })
-      if (execId) {
-        notifyTaskConfirmation({ action, taskTitle: tc.task_title, executorEmpId: execId, notes }).catch(() => {})
-      }
-    }
+    // 不再 client-side push notification —
+    // 主系統 trg_sync_task_confirmation_status (UPDATE trigger) 會處理：
+    //   - 還有下一關 → 推 step_assigned 給下關 approvers
+    //   - 最後一關 / 退回 → 推 task_done / task_rejected 給任務負責人
     reload()
   }
 
