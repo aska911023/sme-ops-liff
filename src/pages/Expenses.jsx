@@ -3,7 +3,7 @@ import { ChevronLeft, Plus, Pencil, Trash2, Paperclip, Image, X } from 'lucide-r
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyNewSubmission } from '../lib/approvalNotify'
+// notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
 const CATEGORIES = ['交通', '住宿', '餐飲', '設備', '其他']
 
@@ -148,13 +148,7 @@ export default function Expenses() {
       return
     }
 
-    if (!editingId && employee?.id) {
-      notifyNewSubmission({
-        type: 'expense',
-        applicantEmpId: employee.id,
-        briefText: `${form.category} NT$${form.amount}`,
-      }).catch(err => console.warn('notify failed', err))
-    }
+    // ★ 2026-05-08：client-side notifyNewSubmission 已拔除，由主系統 DB trigger 推送
 
     reload()
     resetForm()

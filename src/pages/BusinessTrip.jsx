@@ -3,10 +3,10 @@ import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyNewSubmission } from '../lib/approvalNotify'
+// notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
 export default function BusinessTrip() {
-  const { lineProfile, employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -91,13 +91,7 @@ export default function BusinessTrip() {
       return
     }
 
-    if (!editingId && employee?.id) {
-      notifyNewSubmission({
-        type: 'trip',
-        applicantEmpId: employee.id,
-        briefText: `${form.destination} ${form.start_date}~${form.end_date}`,
-      }).catch(err => console.warn('notify failed', err))
-    }
+    // ★ 2026-05-08：client-side notifyNewSubmission 已拔除，由主系統 DB trigger 推送
 
     reload()
     resetForm()

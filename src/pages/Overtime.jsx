@@ -3,7 +3,7 @@ import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyNewSubmission } from '../lib/approvalNotify'
+// notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
 // 依 step 產生 0.5 ~ 12 的所有可選時數
 function buildHourOptions(step) {
@@ -16,7 +16,7 @@ function buildHourOptions(step) {
 }
 
 export default function Overtime() {
-  const { lineProfile, employee } = useAuth()
+  const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
@@ -134,13 +134,7 @@ export default function Overtime() {
       return
     }
 
-    if (!editingId && employee?.id) {
-      notifyNewSubmission({
-        type: 'overtime',
-        applicantEmpId: employee.id,
-        briefText: `${form.date} ${form.hours}h`,
-      }).catch(err => console.warn('notify failed', err))
-    }
+    // ★ 2026-05-08：client-side notifyNewSubmission 已拔除，由主系統 DB trigger 推送
 
     reload()
     resetForm()
