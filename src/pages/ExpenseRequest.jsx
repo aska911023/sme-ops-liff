@@ -3,7 +3,9 @@ import { ChevronLeft, Plus, Upload, Image, FileText, X, Eye, Send } from 'lucide
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyNewSubmission } from '../lib/approvalNotify'
+// notifyNewSubmission 已拔除 — expense_request 簽核 LINE 統一走主系統 DB trigger
+// (sme-ops-system: 20260508110000_expense_request_chain_db_trigger.sql)
+// 其他 type (leave/overtime/...) trigger 還沒補，先保留 import 給其他頁面用
 
 const STATUS_COLORS = {
   '申請中': 'var(--blue)',
@@ -115,14 +117,12 @@ export default function ExpenseRequest() {
       await uploadFiles(data.id, files, 'request')
     }
 
-    if (employee?.id && data?.id) {
-      notifyNewSubmission({
-        type: 'expense_request',
-        applicantEmpId: employee.id,
-        requestId: data.id,
-        briefText: `${form.title} NT$${total}`,
-      }).catch(err => console.warn('notify failed', err))
-    }
+    // ★ 2026-05-08：client-side notifyNewSubmission 已拔除
+    // expense_request 簽核 LINE 通知由主系統 DB trigger 統一處理：
+    //   - AFTER INSERT expense_requests → 推第 0 關 approvers
+    //   - AFTER UPDATE current_step ↑   → 推下一關 approvers
+    //   - AFTER UPDATE status 終態      → 推申請人結果
+    // (見 sme-ops-system migration 20260508110000)
 
     // 申請人是組織頂端 → RPC 已自動核准，跟使用者講
     if (data?.auto_approved) {
