@@ -3,7 +3,10 @@ import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, 
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { notifyApprovalEvent, notifyShiftSwapEvent, notifyOffRequestEvent } from '../lib/approvalNotify'
+// notifyApprovalEvent 已拔除 — leave/overtime/trip/expense/expense_request/correction 簽核 LINE 統一走主系統 DB trigger
+// (sme-ops-system: 20260508110000 expense_request + 20260508130000 hr_a_chain)
+// notifyShiftSwapEvent/notifyOffRequestEvent 暫時保留（off_request / shift_swap 還沒做 trigger）
+import { notifyShiftSwapEvent, notifyOffRequestEvent } from '../lib/approvalNotify'
 
 const ERR_MSG = {
   EMPLOYEE_NOT_FOUND: '找不到員工資料，請重新綁定 LINE',
@@ -147,8 +150,11 @@ export default function Approve() {
       alert(ERR_MSG[result?.error] || `審核失敗：${result?.error || 'unknown'}`)
       return
     }
-    // ★ 推 LINE 通知（帶 requestId 以便 advanced 事件能 build 完整 rich card）
-    notifyApprovalEvent({ type, action, result, requestId: id }).catch(err => console.warn('notify failed', err))
+    // ★ 2026-05-08：client-side notifyApprovalEvent 已拔除
+    // 推進 LINE 通知由主系統 DB trigger 處理：
+    //   - expense_request: AFTER UPDATE current_step → 推下一關 / 終態
+    //   - leave/overtime/trip/expense/correction: AFTER UPDATE tasks.assignee_id → 推下一關
+    //                                              AFTER UPDATE workflow_instances.status → 推終態
     reload()
   }
 
