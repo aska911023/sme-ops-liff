@@ -102,6 +102,8 @@ export default function ExpenseRequest() {
         description: form.description || null,
         estimated_amount: total,
         store: form.store || null,
+        supplier: form.supplier || null,
+        items: validItems,
       },
     })
 

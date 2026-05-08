@@ -489,35 +489,212 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
   if (tab === 'expense_request') {
     if (data.expense_requests.length === 0) return empty('沒有等你審的申請單')
     return data.expense_requests.map(er => (
-      <Row key={er.id} item={er} type="expense_request" processing={processing} handle={handle} statusBadge={statusBadge}
-        extraExpanded={<ExpenseAttachments requestId={er.id} />}
-        body={<>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
-          <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 4 }}>
-            NT$ {Number(er.estimated_amount || 0).toLocaleString()}
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--t3)' }}>
-            {er.account_name && <span>{er.account_name} · </span>}
-            {er.department && <span>{er.department} · </span>}
-            {er.store && <span>{er.store}</span>}
-          </div>
-          {er.description && (
-            <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{er.description}</div>
-          )}
-          {er.chain_name && (
-            <div style={{
-              marginTop: 6, padding: '4px 8px', borderRadius: 6,
-              background: 'var(--purple-dim)', color: 'var(--purple)',
-              fontSize: 11, fontWeight: 600,
-            }}>
-              🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps} 關（{er.current_step_target || er.current_step_label || '—'}）
-            </div>
-          )}
-        </>}
-      />
+      <ExpenseRequestRow key={er.id} er={er} processing={processing} handle={handle} statusBadge={statusBadge} />
     ))
   }
   return null
+}
+
+// ── 專屬 expense_request row：上方摘要 / 下方左右 2-TAB（基本資訊 / 細節與附件） ──
+function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
+  const [expanded, setExpanded] = useState(false)
+  const [tab, setTab] = useState('basic')   // 'basic' | 'detail'
+  const isPending = er.status === '申請中'
+
+  const items = Array.isArray(er.items) ? er.items : []
+  const hasItems = items.length > 0
+  const hasSupplier = er.supplier && er.supplier.trim()
+
+  return (
+    <div className="list-item" style={{
+      borderLeft: er.status === '已退回' ? '3px solid var(--red)' : undefined,
+    }}>
+      {/* Header (clickable) */}
+      <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{er.employee}</span>
+          </div>
+          <span className={`badge ${statusBadge(er.status)}`}>{er.status}</span>
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
+        <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 4 }}>
+          NT$ {Number(er.estimated_amount || 0).toLocaleString()}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--t3)' }}>
+          {er.account_name && <span>{er.account_name} · </span>}
+          {er.department && <span>{er.department} · </span>}
+          {er.store && <span>{er.store}</span>}
+        </div>
+        {er.chain_name && (
+          <div style={{
+            marginTop: 6, padding: '4px 8px', borderRadius: 6,
+            background: 'var(--purple-dim)', color: 'var(--purple)',
+            fontSize: 11, fontWeight: 600,
+          }}>
+            🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps} 關（{er.current_step_target || er.current_step_label || '—'}）
+          </div>
+        )}
+      </div>
+
+      {/* 退回原因（醒目） */}
+      {er.reject_reason && (
+        <div style={{
+          marginTop: 8, padding: '8px 12px', borderRadius: 8,
+          background: 'rgba(248,113,113,0.12)', border: '1px solid var(--red)',
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 2 }}>🔄 退回原因</div>
+          <div style={{ fontSize: 13, color: 'var(--red)', whiteSpace: 'pre-wrap' }}>{er.reject_reason}</div>
+        </div>
+      )}
+
+      {/* 展開內容 — 左右 2 TAB */}
+      {expanded && (
+        <div style={{ marginTop: 10 }}>
+          {/* TabBar（左右各占一半）*/}
+          <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderBottom: '1px solid var(--border2)' }}>
+            <button
+              onClick={() => setTab('basic')}
+              style={{
+                flex: 1, padding: '8px 12px', fontSize: 13, fontWeight: 700,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: tab === 'basic' ? 'var(--cyan)' : 'var(--t3)',
+                borderBottom: tab === 'basic' ? '2px solid var(--cyan)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >📋 基本資訊</button>
+            <button
+              onClick={() => setTab('detail')}
+              style={{
+                flex: 1, padding: '8px 12px', fontSize: 13, fontWeight: 700,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: tab === 'detail' ? 'var(--cyan)' : 'var(--t3)',
+                borderBottom: tab === 'detail' ? '2px solid var(--cyan)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >📦 細節與附件</button>
+          </div>
+
+          {/* TAB 1：基本資訊 */}
+          {tab === 'basic' && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              {er.created_at && (
+                <KvRow k="提交時間" v={er.created_at.replace('T', ' ').slice(0, 16)} />
+              )}
+              <KvRow k="申請人" v={er.employee} />
+              {er.department && <KvRow k="部門" v={er.department} />}
+              {er.store && <KvRow k="門市" v={er.store} />}
+              <KvRow k="預估金額" v={`NT$ ${Number(er.estimated_amount || 0).toLocaleString()}`} highlight />
+              {er.account_code && (
+                <KvRow k="會計科目" v={`${er.account_code} ${er.account_name || ''}`} />
+              )}
+              {er.chain_name && (
+                <KvRow k="簽核鏈" v={`${er.chain_name} (第 ${er.current_step + 1}/${er.chain_total_steps} 關)`} />
+              )}
+            </div>
+          )}
+
+          {/* TAB 2：細節與附件 */}
+          {tab === 'detail' && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              <KvRow k="項目" v={er.title || '—'} />
+              {hasSupplier && <KvRow k="供應商" v={er.supplier} />}
+              {er.description && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>📝 說明</div>
+                  <div style={{ fontSize: 13, color: 'var(--t1)', whiteSpace: 'pre-wrap',
+                    padding: 8, background: 'var(--bg)', borderRadius: 6 }}>{er.description}</div>
+                </div>
+              )}
+
+              {/* 品項明細 table */}
+              {hasItems && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>🛒 品項明細</div>
+                  <div style={{ border: '1px solid var(--border2)', borderRadius: 6, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--bg)' }}>
+                          <th style={{ padding: '5px 6px', textAlign: 'left', color: 'var(--t3)' }}>品名</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--t3)', width: 50 }}>數量</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--t3)', width: 80 }}>單價</th>
+                          <th style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--t3)', width: 90 }}>小計</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {items.map((li, i) => (
+                          <tr key={i} style={{ borderTop: '1px solid var(--border2)' }}>
+                            <td style={{ padding: '4px 6px' }}>{li.name}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>{li.qty}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>
+                              NT$ {Number(li.unit_price || 0).toLocaleString()}
+                            </td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
+                              NT$ {Number(li.subtotal || 0).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 附件 */}
+              <div style={{ marginTop: 10 }}>
+                <ExpenseAttachments requestId={er.id} />
+              </div>
+
+              {!hasItems && !hasSupplier && !er.description && (
+                <div style={{ textAlign: 'center', color: 'var(--t3)', fontSize: 12, padding: 20 }}>
+                  此筆無細節資料
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 核准 / 退回按鈕 */}
+      {isPending && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'approve')} style={{
+            flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+            background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            opacity: processing === er.id ? 0.5 : 1,
+          }}><Check size={16} /> 核准</button>
+          <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'reject')} style={{
+            flex: 1, padding: '10px', borderRadius: 10,
+            border: '1.5px solid var(--red)', background: 'transparent',
+            color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+          }}><X size={16} /> 退回</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 小 helper：key/value row
+function KvRow({ k, v, highlight }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, fontSize: 12, padding: '4px 0', borderBottom: '1px dashed var(--border2)' }}>
+      <span style={{ color: 'var(--t3)', minWidth: 70, flexShrink: 0 }}>{k}</span>
+      <span style={{
+        color: highlight ? 'var(--cyan)' : 'var(--t1)',
+        fontWeight: highlight ? 700 : 400,
+        wordBreak: 'break-all', whiteSpace: 'pre-wrap',
+      }}>{v}</span>
+    </div>
+  )
 }
 
 function SwapRow({ swap, role, processing, statusBadge, onApprove, onReject }) {
