@@ -13,7 +13,8 @@ export default function ClockCorrection() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   // clock_corrections 實際欄位：type (上班打卡/下班打卡) + correction_time
-  const [form, setForm] = useState({ date: '', type: '上班打卡', correction_time: '', reason: '' })
+  const [form, setForm] = useState({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '' })
+  const [stores, setStores] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
   const reload = () => {
@@ -24,10 +25,16 @@ export default function ClockCorrection() {
 
   useEffect(() => { reload() }, [lineProfile])
 
+  useEffect(() => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_list_stores', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => { if (Array.isArray(data)) setStores(data) })
+  }, [lineProfile])
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', type: '上班打卡', correction_time: '', reason: '' })
+    setForm({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '' })
     setEditingId(null)
     setShowForm(false)
   }
@@ -38,6 +45,7 @@ export default function ClockCorrection() {
       type: r.type || '上班打卡',
       correction_time: r.correction_time || '',
       reason: r.reason || '',
+      store: r.store || '',
     })
     setEditingId(r.id)
     setShowForm(true)
@@ -52,6 +60,7 @@ export default function ClockCorrection() {
   const handleSubmit = async () => {
     if (!form.date || !form.reason) { alert('請填寫日期和原因'); return }
     if (!form.correction_time) { alert('請填寫補正的時間'); return }
+    if (!form.store) { alert('請選擇補打卡門市'); return }
     if (editingId) { alert('目前不支援編輯；請刪除後重新申請'); return }
     setSubmitting(true)
 
@@ -62,6 +71,7 @@ export default function ClockCorrection() {
         type: form.type,
         correction_time: form.correction_time,
         reason: form.reason,
+        store: form.store,
       },
     })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
@@ -90,6 +100,16 @@ export default function ClockCorrection() {
           <div className="form-group">
             <label className="form-label">補打卡日期</label>
             <input className="form-input" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">補打卡門市</label>
+            <select className="form-input" value={form.store} onChange={e => set('store', e.target.value)}>
+              <option value="">— 選擇實際門市 —</option>
+              {stores.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+              💡 跨門市支援請選實際門市
+            </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div className="form-group">

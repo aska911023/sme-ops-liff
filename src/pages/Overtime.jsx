@@ -25,8 +25,16 @@ export default function Overtime() {
   const [searchParams] = useSearchParams()
   const resubmitId = searchParams.get('resubmit')
   const [step, setStep] = useState(0.5)  // 廠商設定的最小單位
-  const [form, setForm] = useState({ date: '', hours: 1, reason: '' })
+  const [form, setForm] = useState({ date: '', hours: 1, reason: '', store: '' })
+  const [stores, setStores] = useState([])
   const [submitting, setSubmitting] = useState(false)
+
+  // 載入該員工 org 的 stores
+  useEffect(() => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_list_stores', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => { if (Array.isArray(data)) setStores(data) })
+  }, [lineProfile])
 
   const hourOptions = buildHourOptions(step)
 
@@ -63,7 +71,7 @@ export default function Overtime() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', hours: step, reason: '' })
+    setForm({ date: '', hours: step, reason: '', store: '' })
     setEditingId(null)
     setShowForm(false)
   }
@@ -71,7 +79,7 @@ export default function Overtime() {
   const handleEdit = (r) => {
     // 把舊值對齊到當前 step（往上找最近的合法值）
     const aligned = hourOptions.find(o => o >= r.hours) || hourOptions[hourOptions.length - 1]
-    setForm({ date: r.date, hours: aligned, reason: r.reason || '' })
+    setForm({ date: r.date, hours: aligned, reason: r.reason || '', store: r.store || '' })
     setEditingId(r.id)
     setShowForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -90,6 +98,7 @@ export default function Overtime() {
   const handleSubmit = async () => {
     if (!form.date) { alert('請選擇日期'); return }
     if (!form.hours || form.hours <= 0) { alert('請輸入加班時數'); return }
+    if (!form.store) { alert('請選擇加班門市'); return }
 
     // Check duplicate date
     const dup = records.find(r => r.id !== editingId && r.date === form.date && r.status !== '已拒絕')
@@ -101,6 +110,7 @@ export default function Overtime() {
       date: form.date,
       hours: parseFloat(form.hours),
       reason: form.reason,
+      store: form.store,
     }
 
     let error
@@ -164,6 +174,16 @@ export default function Overtime() {
           <div className="form-group">
             <label className="form-label">加班日期</label>
             <input className="form-input" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">加班門市</label>
+            <select className="form-input" value={form.store} onChange={e => set('store', e.target.value)}>
+              <option value="">— 選擇加班門市 —</option>
+              {stores.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+            </select>
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+              💡 跨門市加班請選實際支援門市
+            </div>
           </div>
           <div className="form-group">
             <label className="form-label">加班時數</label>
