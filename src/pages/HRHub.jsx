@@ -26,8 +26,8 @@ const MENUS = [
 // 任務確認 (2026-05-09) 整合進「簽核中心 > 任務 tab」(/approve/task)，
 // 此處不再獨立列出。/task-confirmations 路由仍保留供 LINE deep link 用。
 const MANAGER_MENUS = [
+  { path: '/dashboard', icon: '📊', label: '儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
   { path: '/approve', icon: '✅', label: '簽核中心', color: 'var(--green)', dim: 'var(--green-dim)' },
-  { path: '/dashboard', icon: '📊', label: '營運儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
 ]
 
 export default function HRHub() {
