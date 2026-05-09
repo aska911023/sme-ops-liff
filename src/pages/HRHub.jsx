@@ -23,9 +23,10 @@ const MENUS = [
   { path: '/documents', icon: '📁', label: '公司文件', color: 'var(--blue)', dim: 'var(--blue-dim)' },
 ]
 
+// 任務確認 (2026-05-09) 整合進「簽核中心 > 任務 tab」(/approve?group=task)，
+// 此處不再獨立列出。/task-confirmations 路由仍保留供 LINE deep link 用。
 const MANAGER_MENUS = [
   { path: '/approve', icon: '✅', label: '簽核中心', color: 'var(--green)', dim: 'var(--green-dim)' },
-  { path: '/task-confirmations', icon: '✔️', label: '任務確認', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
   { path: '/dashboard', icon: '📊', label: '營運儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
 ]
 

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar, FileText, Eye } from 'lucide-react'
+import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar, FileText, Eye, ClipboardCheck } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import TaskConfirmationList from '../components/TaskConfirmationList'
 // notifyApprovalEvent 已拔除 — leave/overtime/trip/expense/expense_request/correction 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508110000 expense_request + 20260508130000 hr_a_chain)
 // notifyShiftSwapEvent/notifyOffRequestEvent 暫時保留（off_request / shift_swap 還沒做 trigger）
@@ -53,6 +54,14 @@ const GROUPS = {
       { key: 'shift_swap_manager', label: '換班-我核准', pendingStatus: '待主管核准' },
     ],
   },
+  task: {
+    label: '任務',
+    icon: ClipboardCheck,
+    color: 'orange',
+    tabs: [
+      { key: 'task_confirmation', label: '任務確認', pendingStatus: '待確認' },
+    ],
+  },
 }
 
 export default function Approve() {
@@ -60,13 +69,14 @@ export default function Approve() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   // 從 URL ?group= 讀初始 group（LINE 卡片深連結用）
-  const initialGroup = ['hr', 'finance', 'schedule'].includes(searchParams.get('group'))
+  const initialGroup = ['hr', 'finance', 'schedule', 'task'].includes(searchParams.get('group'))
     ? searchParams.get('group') : 'hr'
   const [group, setGroup] = useState(initialGroup)
   const [tab, setTab] = useState('leave')
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
     shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
+    task_confirmations: [],
     can: { hr: false, finance: false },
   })
   const [loading, setLoading] = useState(true)
@@ -76,9 +86,10 @@ export default function Approve() {
 
   const reload = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
-    const { data: rpc, error } = await supabase.rpc('liff_list_pending_approvals', {
-      p_line_user_id: lineProfile.lineUserId,
-    })
+    const [{ data: rpc, error }, { data: taskConfs }] = await Promise.all([
+      supabase.rpc('liff_list_pending_approvals', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_my_task_confirmations', { p_line_user_id: lineProfile.lineUserId }),
+    ])
     if (error) { console.error('load approvals', error); setLoading(false); return }
     setData({
       leaves:                  rpc?.leaves                  || [],
@@ -90,6 +101,7 @@ export default function Approve() {
       shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
       shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
       off_requests:            rpc?.off_requests            || [],
+      task_confirmations:      Array.isArray(taskConfs) ? taskConfs : [],
       can:                     rpc?.can                     || { hr: false, finance: false },
     })
     setLoading(false)
@@ -108,10 +120,11 @@ export default function Approve() {
       hr:       GROUPS.hr.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
       finance:  GROUPS.finance.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
       schedule: GROUPS.schedule.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
+      task:     GROUPS.task.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
     }
 
     if ((cnt[group] || 0) === 0) {
-      const target = ['finance', 'hr', 'schedule'].find(g => g !== group && (cnt[g] || 0) > 0)
+      const target = ['finance', 'hr', 'schedule', 'task'].find(g => g !== group && (cnt[g] || 0) > 0)
       if (target) {
         setGroup(target)
         setTab(GROUPS[target].tabs[0].key)
@@ -133,7 +146,8 @@ export default function Approve() {
     return ({ leave: 'leaves', overtime: 'overtimes', trip: 'trips', correction: 'corrections',
               expense: 'expenses', expense_request: 'expense_requests',
               shift_swap_peer: 'shift_swaps_for_peer', shift_swap_manager: 'shift_swaps_for_manager',
-              off_request: 'off_requests' })[k] || k
+              off_request: 'off_requests',
+              task_confirmation: 'task_confirmations' })[k] || k
   }
 
   const handle = async (type, id, action) => {
@@ -249,25 +263,29 @@ export default function Approve() {
     shift_swap_peer:     data.shift_swaps_for_peer.length,
     shift_swap_manager:  data.shift_swaps_for_manager.length,
     off_request:         data.off_requests.length,
+    task_confirmation:   data.task_confirmations.length,
   }
   const groupCounts = {
     hr:       GROUPS.hr.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
     finance:  GROUPS.finance.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
     schedule: GROUPS.schedule.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
+    task:     GROUPS.task.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
   }
-  const totalPending = groupCounts.hr + groupCounts.finance + groupCounts.schedule
+  const totalPending = groupCounts.hr + groupCounts.finance + groupCounts.schedule + groupCounts.task
 
   const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已退回' || s === '已駁回' || s === '已拒絕' ? 'badge-red' : 'badge-orange'
-  // 排班：只要有 pending 就視為 enabled（peer 視角任何員工都可能收到）
+  // 排班 / 任務：只要有 pending 就視為 enabled（任何員工都可能收到）
   const groupEnabled = {
     hr:       data.can.hr,
     finance:  data.can.finance,
     schedule: groupCounts.schedule > 0 || true,  // 一律允許進入排班 group
+    task:     true,                              // 任何員工都可能收到「任務確認」
   }
   const tabEnabled = (k) =>
     ['leave','overtime','trip','correction'].includes(k) ? data.can.hr :
     ['expense','expense_request'].includes(k) ? data.can.finance :
-    ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true : false
+    ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true :
+    ['task_confirmation'].includes(k) ? true : false
 
   return (
     <div className="page">
@@ -351,14 +369,25 @@ export default function Approve() {
           <div>你的角色沒有權限審核此類單據</div>
         </div>
       ) : (
-        renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest)
+        renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest, lineProfile?.lineUserId, reload)
       )}
     </div>
   )
 }
 
-function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest) {
+function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest, lineUserId, reload) {
   const empty = (msg) => <div className="empty">{msg}</div>
+
+  if (tab === 'task_confirmation') {
+    return (
+      <TaskConfirmationList
+        confs={data.task_confirmations}
+        lineUserId={lineUserId}
+        onReload={reload}
+        emptyText="沒有等你確認的任務"
+      />
+    )
+  }
 
   if (tab === 'off_request') {
     if (data.off_requests.length === 0) return empty('沒有等你審的希望休')
