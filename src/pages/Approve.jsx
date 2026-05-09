@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import TaskConfirmationList from '../components/TaskConfirmationList'
+import ChainTimeline from '../components/ChainTimeline'
 // notifyApprovalEvent 已拔除 — leave/overtime/trip/expense/expense_request/correction 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508110000 expense_request + 20260508130000 hr_a_chain)
 // notifyShiftSwapEvent/notifyOffRequestEvent 暫時保留（off_request / shift_swap 還沒做 trigger）
@@ -559,11 +560,22 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
   return null
 }
 
-// ── 專屬 expense_request row：上方摘要 / 下方左右 2-TAB（基本資訊 / 細節與附件） ──
+// ── 專屬 expense_request row：上方摘要 / 下方 3 TAB（基本 / 細節 / 進度） ──
 function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
   const [expanded, setExpanded] = useState(false)
-  const [tab, setTab] = useState('basic')   // 'basic' | 'detail'
+  const [tab, setTab] = useState('basic')   // 'basic' | 'detail' | 'progress'
+  const [chainSteps, setChainSteps] = useState(null)  // null = 未載入；array = 已載入
+  const [chainLoading, setChainLoading] = useState(false)
   const isPending = er.status === '申請中'
+
+  // 切到「進度」tab 才 lazy fetch chain steps（避免不展開的 row 也送 RPC）
+  useEffect(() => {
+    if (tab !== 'progress' || !expanded || chainSteps !== null) return
+    setChainLoading(true)
+    supabase.rpc('liff_get_expense_request_chain_status', { p_id: er.id })
+      .then(({ data }) => setChainSteps(Array.isArray(data) ? data : []))
+      .finally(() => setChainLoading(false))
+  }, [tab, expanded, chainSteps, er.id])
 
   const items = Array.isArray(er.items) ? er.items : []
   const hasItems = items.length > 0
@@ -638,6 +650,16 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
                 marginBottom: -1,
               }}
             >📦 細節與附件</button>
+            <button
+              onClick={() => setTab('progress')}
+              style={{
+                flex: 1, padding: '8px 12px', fontSize: 13, fontWeight: 700,
+                background: 'transparent', border: 'none', cursor: 'pointer',
+                color: tab === 'progress' ? 'var(--cyan)' : 'var(--t3)',
+                borderBottom: tab === 'progress' ? '2px solid var(--cyan)' : '2px solid transparent',
+                marginBottom: -1,
+              }}
+            >🔐 簽核進度</button>
           </div>
 
           {/* TAB 1：基本資訊 */}
@@ -721,6 +743,16 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
                   此筆無細節資料
                 </div>
               )}
+            </div>
+          )}
+
+          {/* TAB 3：簽核進度（時間軸） */}
+          {tab === 'progress' && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              <ChainTimeline steps={chainSteps} loading={chainLoading} />
             </div>
           )}
         </div>
