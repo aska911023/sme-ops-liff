@@ -75,17 +75,22 @@ export default function TaskConfirmationList({ confs, lineUserId, onReload, empt
           <div key={tc.id} className="list-item" style={{ marginBottom: 10 }}>
             {/* Header (clickable) */}
             <div onClick={() => toggleExpand(tc)} style={{ cursor: 'pointer' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  <span style={{ fontSize: 15, fontWeight: 800 }}>{tc.task_title}</span>
+              {/* 1. 任務確認 badge + 標題 + status */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ marginBottom: 4 }}>
+                    <span className="badge badge-orange" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>任務確認</span>
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--t1)' }}>{tc.task_title}</div>
                 </div>
                 <span className="badge badge-orange" style={{ flexShrink: 0 }}>待確認</span>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 4 }}>
-                {tc.workflow_name && <span>📋 {tc.workflow_name} · </span>}
-                執行：{tc.task_assignee || '—'}
-                {tc.task_store && <span> · 📍 {tc.task_store}</span>}
+              {/* 2. 執行人 + 門市 + workflow */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6, fontSize: 12, color: 'var(--t3)', flexWrap: 'wrap' }}>
+                {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                <span style={{ fontWeight: 600, color: 'var(--t2)' }}>{tc.task_assignee || '—'}</span>
+                {tc.task_store && <span>· {tc.task_store}</span>}
+                {tc.workflow_name && <span>· {tc.workflow_name}</span>}
               </div>
               {tc.task_description && (
                 <div style={{ fontSize: 13, color: 'var(--t2)', marginTop: 6, whiteSpace: 'pre-wrap' }}>
