@@ -429,21 +429,16 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.off_requests.length === 0) return empty('沒有等你審的希望休')
     return data.off_requests.map(o => (
       <div key={o.id} className="list-item">
-        {/* 1. headline + status */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
-            <span className="badge badge-purple" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>希望休</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{o.date}</span>
-          </div>
-          <span className={`badge ${statusBadge(o.status)}`} style={{ flexShrink: 0 }}>{o.status}</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <span style={{ fontSize: 15, fontWeight: 800 }}>{o.employee}</span>
+          <span className={`badge ${statusBadge(o.status)}`}>{o.status}</span>
         </div>
-        {/* 2. 申請人 + 門市 */}
-        <div style={{ marginBottom: 6, fontSize: 12, color: 'var(--t3)' }}>
-          <span style={{ fontWeight: 600, color: 'var(--t2)' }}>{o.employee}</span>
-          {o.store && <span> · {o.store}</span>}
+        <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>
+          <span className="badge badge-purple" style={{ marginRight: 6 }}>希望休</span>
+          {o.date}
         </div>
-        {/* 3. body */}
-        {o.reason && <div style={{ fontSize: 13, color: 'var(--t2)' }}>{o.reason}</div>}
+        {o.store && <div style={{ fontSize: 12, color: 'var(--t3)' }}>🏪 {o.store}</div>}
+        {o.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{o.reason}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <button disabled={processing === o.id} onClick={() => handleOffRequest(o, 'approve')} style={{
             flex: 3, padding: '10px', borderRadius: 10, border: 'none',
@@ -466,16 +461,16 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.leaves.length === 0) return empty('沒有等你審的請假單')
     return data.leaves.map(l => (
       <Row key={l.id} item={l} type="leave" processing={processing} handle={handle} statusBadge={statusBadge}
-        headline={<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="badge badge-cyan" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>{l.type}</span>
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>
+            <span className="badge badge-cyan" style={{ marginRight: 6 }}>{l.type}</span>
             {l.start_date}{l.end_date !== l.start_date ? ` ~ ${l.end_date}` : ''}
-          </span>
-          <span style={{ fontSize: 12, color: 'var(--t3)' }}>
-            · {l.hours && l.hours < 8 ? `${l.hours}h` : `${l.days}天`}
-          </span>
-        </div>}
-        body={l.reason && <div style={{ fontSize: 13, color: 'var(--t2)' }}>{l.reason}</div>}
+            <span style={{ marginLeft: 8, color: 'var(--t3)' }}>
+              {l.hours && l.hours < 8 ? `${l.hours}h` : `${l.days}天`}
+            </span>
+          </div>
+          {l.reason && <div style={{ fontSize: 12, color: 'var(--t3)' }}>{l.reason}</div>}
+        </>}
       />
     ))
   }
@@ -483,12 +478,12 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.overtimes.length === 0) return empty('沒有等你審的加班單')
     return data.overtimes.map(o => (
       <Row key={o.id} item={o} type="overtime" processing={processing} handle={handle} statusBadge={statusBadge}
-        headline={<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="badge badge-orange" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>加班</span>
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{o.date}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cyan)' }}>· {o.hours} h</span>
-        </div>}
-        body={o.reason && <div style={{ fontSize: 13, color: 'var(--t2)' }}>{o.reason}</div>}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            {o.date} · <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>{o.hours}h</span>
+          </div>
+          {o.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{o.reason}</div>}
+        </>}
       />
     ))
   }
@@ -496,13 +491,12 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.trips.length === 0) return empty('沒有等你審的出差單')
     return data.trips.map(t => (
       <Row key={t.id} item={t} type="trip" processing={processing} handle={handle} statusBadge={statusBadge}
-        headline={<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="badge badge-blue" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>出差</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{t.destination}</span>
-          <span style={{ fontSize: 12, color: 'var(--t3)' }}>· {t.start_date} ~ {t.end_date}</span>
-        </div>}
         body={<>
-          {t.purpose && <div style={{ fontSize: 13, color: 'var(--t2)' }}>{t.purpose}</div>}
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>{t.destination}</span>
+            <span> · {t.start_date} ~ {t.end_date}</span>
+          </div>
+          {t.purpose && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{t.purpose}</div>}
           {t.budget > 0 && <div style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 600, marginTop: 4 }}>預算：NT$ {Number(t.budget).toLocaleString()}</div>}
         </>}
       />
@@ -513,15 +507,13 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     return data.corrections.map(c => (
       <Row key={c.id} item={c} type="correction" processing={processing} handle={handle} statusBadge={statusBadge}
         approveLabel="核准並修正"
-        headline={<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="badge badge-purple" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>
-            {c.type === 'clock_in' || c.type === '上班打卡' ? '上班補登' :
-             c.type === 'clock_out' || c.type === '下班打卡' ? '下班補登' : (c.type || '補打卡')}
-          </span>
-          <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{c.date}</span>
-          {c.correction_time && <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cyan)' }}>· {c.correction_time}</span>}
-        </div>}
-        body={c.reason && <div style={{ fontSize: 13, color: 'var(--t2)' }}>{c.reason}</div>}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>{c.date}</div>
+          <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 600, marginTop: 2 }}>
+            {c.type || '上班打卡'}：{c.correction_time || '未填'}
+          </div>
+          {c.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{c.reason}</div>}
+        </>}
       />
     ))
   }
@@ -530,12 +522,14 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     return data.expenses.map(e => (
       <Row key={e.id} item={e} type="expense" processing={processing} handle={handle} statusBadge={statusBadge}
         approveLabel="核銷"
-        headline={<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span className="badge badge-yellow" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>{e.category}</span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--green)' }}>NT$ {Number(e.amount).toLocaleString()}</span>
-          <span style={{ fontSize: 12, color: 'var(--t3)' }}>· {e.date}</span>
-        </div>}
-        body={e.description && <div style={{ fontSize: 13, color: 'var(--t2)' }}>{e.description}</div>}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span className="badge badge-cyan" style={{ marginRight: 6 }}>{e.category}</span>
+            <span style={{ fontWeight: 700 }}>NT$ {Number(e.amount).toLocaleString()}</span>
+            <span style={{ color: 'var(--t3)' }}> · {e.date}</span>
+          </div>
+          {e.description && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{e.description}</div>}
+        </>}
       />
     ))
   }
@@ -593,28 +587,25 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
     }}>
       {/* Header (clickable) */}
       <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
-        {/* 1. 申請 + 標題 + 金額 + status */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-              <span className="badge badge-yellow" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>費用申請</span>
-              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--green)' }}>NT$ {Number(er.estimated_amount || 0).toLocaleString()}</span>
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{er.title}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{er.employee}</span>
           </div>
-          <span className={`badge ${statusBadge(er.status)}`} style={{ flexShrink: 0 }}>{er.status}</span>
+          <span className={`badge ${statusBadge(er.status)}`}>{er.status}</span>
         </div>
-        {/* 2. 申請人 + 部門/門市 + 科目 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6, fontSize: 12, color: 'var(--t3)', flexWrap: 'wrap' }}>
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span style={{ fontWeight: 600, color: 'var(--t2)' }}>{er.employee}</span>
-          {(er.store || er.department) && <span>· {er.store || er.department}</span>}
-          {er.account_name && <span>· {er.account_name}</span>}
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
+        <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 4 }}>
+          NT$ {Number(er.estimated_amount || 0).toLocaleString()}
         </div>
-        {/* 3. 簽核鏈進度 */}
+        <div style={{ fontSize: 12, color: 'var(--t3)' }}>
+          {er.account_name && <span>{er.account_name} · </span>}
+          {er.department && <span>{er.department} · </span>}
+          {er.store && <span>{er.store}</span>}
+        </div>
         {er.chain_name && (
           <div style={{
-            padding: '4px 8px', borderRadius: 6,
+            marginTop: 6, padding: '4px 8px', borderRadius: 6,
             background: 'var(--purple-dim)', color: 'var(--purple)',
             fontSize: 11, fontWeight: 600,
           }}>
@@ -818,25 +809,19 @@ function SwapRow({ swap, role, processing, statusBadge, onApprove, onReject }) {
   return (
     <div className="list-item">
       <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
-        {/* 1. 換班 + 日期 + 班別 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
-            <span className="badge badge-purple" style={{ fontSize: 14, fontWeight: 700, padding: '4px 12px' }}>換班</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)' }}>{swap.swap_date}</span>
-            <span style={{ fontSize: 13, fontFamily: 'monospace', color: 'var(--cyan)', fontWeight: 600 }}>
-              · {swap.requester_shift} ↔ {swap.target_shift}
-            </span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{swap.requester} ↔ {swap.target}</span>
           </div>
-          <span className={`badge ${statusBadge(swap.status)}`} style={{ flexShrink: 0 }}>{swap.status}</span>
+          <span className={`badge ${statusBadge(swap.status)}`}>{swap.status}</span>
         </div>
-        {/* 2. 申請人 ↔ 對方 + 門市 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6, fontSize: 12, color: 'var(--t3)' }}>
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span style={{ fontWeight: 600, color: 'var(--t2)' }}>{swap.requester} ↔ {swap.target}</span>
-          {swap.store && <span>· {swap.store}</span>}
+        <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>
+          <span className="badge badge-purple" style={{ marginRight: 6 }}>{swap.swap_date}</span>
+          <span style={{ fontFamily: 'monospace' }}>{swap.requester_shift} ↔ {swap.target_shift}</span>
         </div>
-        {/* 3. 理由 / 對方回覆 */}
-        {swap.reason && <div style={{ fontSize: 13, color: 'var(--t2)' }}>{swap.reason}</div>}
+        {swap.store && <div style={{ fontSize: 12, color: 'var(--t3)' }}>🏪 {swap.store}</div>}
+        {swap.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{swap.reason}</div>}
         {!isPeer && swap.peer_response && (
           <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 6, fontWeight: 600 }}>
             ✓ 對方已同意 {swap.peer_responded_at?.slice(11, 16)}
@@ -957,7 +942,7 @@ function ExpenseAttachments({ requestId }) {
   )
 }
 
-function Row({ item, type, processing, handle, statusBadge, headline, body, approveLabel = '核准', extraExpanded = null }) {
+function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准', extraExpanded = null }) {
   const [expanded, setExpanded] = useState(false)
   const isPending = item.status === '待審核' || item.status === '申請中'
 
@@ -988,28 +973,15 @@ function Row({ item, type, processing, handle, statusBadge, headline, body, appr
     <div className="list-item" style={{
       borderLeft: item.status === '已退回' ? '3px solid var(--red)' : undefined,
     }}>
-      {/* Header (clickable to expand)
-          視覺階層：
-          1. 「事情」(假別/類型/金額) — 最大、最上面
-          2. 申請人 + 門市/部門 — 灰色 sub-info
-          3. body (期間/原因 等) */}
+      {/* Header (clickable to expand) */}
       <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
-        {/* 1. headline + status */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {headline}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{item.employee}</span>
           </div>
-          <span className={`badge ${statusBadge(item.status)}`} style={{ flexShrink: 0 }}>{item.status}</span>
+          <span className={`badge ${statusBadge(item.status)}`}>{item.status}</span>
         </div>
-        {/* 2. 申請人 + 門市/部門 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6, fontSize: 12, color: 'var(--t3)' }}>
-          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span style={{ fontWeight: 600, color: 'var(--t2)' }}>{item.employee}</span>
-          {(item.store || item.department) && (
-            <span>· {item.store || item.department}</span>
-          )}
-        </div>
-        {/* 3. body */}
         {body}
       </div>
 
