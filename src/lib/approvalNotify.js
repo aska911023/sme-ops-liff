@@ -22,13 +22,13 @@ const TYPE_LABEL = {
   expense_request: '申請',
 }
 
-// 簽核中心三個分頁，type → group
-const TYPE_GROUP = {
-  leave: 'hr', overtime: 'hr', trip: 'hr', correction: 'hr',
-  expense: 'finance', expense_request: 'finance',
-  shift_swap: 'schedule', off_request: 'schedule',
+// type → 簽核中心 sub-tab slug（路徑式 deep link）
+const TYPE_SLUG = {
+  leave: 'leave', overtime: 'overtime', trip: 'trip', correction: 'correction',
+  expense: 'expense', expense_request: 'expense-request',
+  shift_swap: 'swap-peer', off_request: 'off',
 }
-const approveLink = (type) => `/approve?group=${TYPE_GROUP[type] || 'hr'}`
+const approveLink = (type) => `/approve/${TYPE_SLUG[type] || 'leave'}`
 
 async function getLineTarget(empId) {
   if (!empId) return { line_user_id: null, channel_code: null }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar, FileText, Eye, ClipboardCheck } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import TaskConfirmationList from '../components/TaskConfirmationList'
@@ -67,28 +67,42 @@ const GROUPS = {
 export default function Approve() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  // 從 URL ?group=&tab= 讀初始狀態（LINE 卡片深連結 + 使用者複製分享 URL 用）
-  const initialGroup = ['hr', 'finance', 'schedule', 'task'].includes(searchParams.get('group'))
-    ? searchParams.get('group') : 'hr'
-  const initialTab = (() => {
-    const t = searchParams.get('tab')
-    if (t && GROUPS[initialGroup]?.tabs.some(x => x.key === t)) return t
-    return GROUPS[initialGroup]?.tabs[0]?.key || 'leave'
-  })()
+  // URL 用短英文 slug，內部還是用原本 key（往下相容）
+  // /approve            → 預設
+  // /approve/leave      → 人事/請假
+  // /approve/off        → 排班/希望休
+  // /approve/task       → 任務/任務確認
+  const TAB_TO_SLUG = {
+    leave: 'leave', overtime: 'overtime', trip: 'trip', correction: 'correction',
+    expense: 'expense', expense_request: 'expense-request',
+    off_request: 'off', shift_swap_peer: 'swap-peer', shift_swap_manager: 'swap-manager',
+    task_confirmation: 'task',
+  }
+  const SLUG_TO_TAB = Object.fromEntries(Object.entries(TAB_TO_SLUG).map(([k, v]) => [v, k]))
+
+  const findGroupByTab = (tabKey) => {
+    for (const [g, def] of Object.entries(GROUPS)) {
+      if (def.tabs.some(t => t.key === tabKey)) return g
+    }
+    return null
+  }
+
+  const { tabSlug } = useParams()
+  const initialTab = (tabSlug && SLUG_TO_TAB[tabSlug]) || 'leave'
+  const initialGroup = findGroupByTab(initialTab) || 'hr'
   const [group, setGroup] = useState(initialGroup)
   const [tab, setTab] = useState(initialTab)
 
-  // 切 group / tab 時同步寫回 URL（{ replace: true } 不增加 history entry）
+  // 切 group / tab → navigate 到對應 slug 路徑（{ replace: true } 不增加 history entry）
   const changeGroup = (key) => {
     const firstTab = GROUPS[key]?.tabs[0]?.key
     setGroup(key)
     setTab(firstTab)
-    setSearchParams({ group: key, tab: firstTab }, { replace: true })
+    navigate(`/approve/${TAB_TO_SLUG[firstTab] || firstTab}`, { replace: true })
   }
   const changeTab = (key) => {
     setTab(key)
-    setSearchParams({ group, tab: key }, { replace: true })
+    navigate(`/approve/${TAB_TO_SLUG[key] || key}`, { replace: true })
   }
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
@@ -130,8 +144,8 @@ export default function Approve() {
   // 用戶後續手動切 group 不會再被自動踢回 → 修「跳一下跳一下」bug
   useEffect(() => {
     if (loading || autoSwitched) return
-    const userPickedGroup = !!searchParams.get('group')
-    if (userPickedGroup) { setAutoSwitched(true); return }
+    // 使用者透過 URL 指定 tab → 不自動切
+    if (tabSlug) { setAutoSwitched(true); return }
 
     const cnt = {
       hr:       GROUPS.hr.tabs.reduce((s, t) => s + ((data[mapKey(t.key)] || []).length), 0),
@@ -146,7 +160,7 @@ export default function Approve() {
         const firstTab = GROUPS[target].tabs[0].key
         setGroup(target)
         setTab(firstTab)
-        setSearchParams({ group: target, tab: firstTab }, { replace: true })
+        navigate(`/approve/${TAB_TO_SLUG[firstTab] || firstTab}`, { replace: true })
       }
     }
     setAutoSwitched(true)
@@ -158,7 +172,7 @@ export default function Approve() {
     if (!tabs.some(t => t.key === tab)) {
       const firstTab = tabs[0].key
       setTab(firstTab)
-      setSearchParams({ group, tab: firstTab }, { replace: true })
+      navigate(`/approve/${TAB_TO_SLUG[firstTab] || firstTab}`, { replace: true })
     }
   }, [group, tab]) // eslint-disable-line react-hooks/exhaustive-deps
 

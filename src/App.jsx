@@ -190,6 +190,7 @@ export default function App() {
         <Route path="/business-trip" element={<BusinessTrip />} />
         <Route path="/overtime" element={<Overtime />} />
         <Route path="/approve" element={<Approve />} />
+        <Route path="/approve/:tabSlug" element={<Approve />} />
         <Route path="/task-confirmations" element={<TaskConfirmations />} />
         <Route path="/clock-correction" element={<ClockCorrection />} />
         <Route path="/my-schedule" element={<MySchedule />} />
