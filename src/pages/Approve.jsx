@@ -430,14 +430,20 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     return data.off_requests.map(o => (
       <div key={o.id} className="list-item">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <span style={{ fontSize: 15, fontWeight: 800 }}>{o.employee}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{o.employee}</span>
+            {(o.store || o.department) && (
+              <span style={{ fontSize: 12, color: 'var(--t3)', fontWeight: 500 }}>
+                · {o.store || o.department}
+              </span>
+            )}
+          </div>
           <span className={`badge ${statusBadge(o.status)}`}>{o.status}</span>
         </div>
         <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>
           <span className="badge badge-purple" style={{ marginRight: 6 }}>希望休</span>
           {o.date}
         </div>
-        {o.store && <div style={{ fontSize: 12, color: 'var(--t3)' }}>🏪 {o.store}</div>}
         {o.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{o.reason}</div>}
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <button disabled={processing === o.id} onClick={() => handleOffRequest(o, 'approve')} style={{
@@ -979,6 +985,11 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <span style={{ fontSize: 15, fontWeight: 800 }}>{item.employee}</span>
+            {(item.store || item.department) && (
+              <span style={{ fontSize: 12, color: 'var(--t3)', fontWeight: 500 }}>
+                · {item.store || item.department}
+              </span>
+            )}
           </div>
           <span className={`badge ${statusBadge(item.status)}`}>{item.status}</span>
         </div>
