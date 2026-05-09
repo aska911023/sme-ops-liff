@@ -12,7 +12,7 @@ const MENUS = [
   { path: '/salary', icon: '💰', label: '查薪水', color: 'var(--green)', dim: 'var(--green-dim)', desc: '本月薪資' },
   { path: '/leave', icon: '📋', label: '請假', color: 'var(--blue)', dim: 'var(--blue-dim)', desc: '假單申請' },
   { path: '/inventory', icon: '📦', label: '查庫存', color: 'var(--orange)', dim: 'var(--orange-dim)', desc: '即時庫存' },
-  { path: '/tasks', icon: '⚙️', label: '流程回報', color: 'var(--purple)', dim: 'var(--purple-dim)', desc: '任務進度' },
+  { path: '/tasks', icon: '⚙️', label: '我的任務', color: 'var(--purple)', dim: 'var(--purple-dim)', desc: '任務進度' },
   { path: '/expenses', icon: '🧾', label: '報帳', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)', desc: '費用報銷' },
   { path: '/my-schedule', icon: '📅', label: '我的班表', color: 'var(--blue)', dim: 'var(--blue-dim)', desc: '查看排班' },
   { path: '/off-request', icon: '🗓️', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)', desc: '排休選日' },

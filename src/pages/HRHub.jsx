@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext'
 import FontSizeControl from '../components/FontSizeControl'
 
 const MENUS = [
+  { path: '/tasks', icon: '⚙️', label: '我的任務', color: 'var(--purple)', dim: 'var(--purple-dim)' },
   { path: '/clock', icon: '⏰', label: '打卡', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
   { path: '/my-schedule', icon: '📅', label: '我的班表', color: 'var(--blue)', dim: 'var(--blue-dim)' },
   { path: '/cover-invitations', icon: '🆘', label: '待認領代班', color: 'var(--orange)', dim: 'rgba(245,158,11,0.15)' },
@@ -16,7 +17,6 @@ const MENUS = [
   { path: '/expenses', icon: '🧾', label: '報帳', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
   { path: '/expense-request', icon: '📝', label: '申請（事項/採購）', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
   { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)' },
-  { path: '/tasks', icon: '⚙️', label: '流程回報', color: 'var(--purple)', dim: 'var(--purple-dim)' },
   { path: '/training', icon: '🎓', label: '教育訓練', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
   { path: '/performance', icon: '📈', label: '我的績效', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
   { path: '/benefits', icon: '🎁', label: '我的福利', color: 'var(--green)', dim: 'var(--green-dim)' },
