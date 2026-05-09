@@ -67,12 +67,29 @@ const GROUPS = {
 export default function Approve() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  // 從 URL ?group= 讀初始 group（LINE 卡片深連結用）
+  const [searchParams, setSearchParams] = useSearchParams()
+  // 從 URL ?group=&tab= 讀初始狀態（LINE 卡片深連結 + 使用者複製分享 URL 用）
   const initialGroup = ['hr', 'finance', 'schedule', 'task'].includes(searchParams.get('group'))
     ? searchParams.get('group') : 'hr'
+  const initialTab = (() => {
+    const t = searchParams.get('tab')
+    if (t && GROUPS[initialGroup]?.tabs.some(x => x.key === t)) return t
+    return GROUPS[initialGroup]?.tabs[0]?.key || 'leave'
+  })()
   const [group, setGroup] = useState(initialGroup)
-  const [tab, setTab] = useState('leave')
+  const [tab, setTab] = useState(initialTab)
+
+  // 切 group / tab 時同步寫回 URL（{ replace: true } 不增加 history entry）
+  const changeGroup = (key) => {
+    const firstTab = GROUPS[key]?.tabs[0]?.key
+    setGroup(key)
+    setTab(firstTab)
+    setSearchParams({ group: key, tab: firstTab }, { replace: true })
+  }
+  const changeTab = (key) => {
+    setTab(key)
+    setSearchParams({ group, tab: key }, { replace: true })
+  }
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
     shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
@@ -126,8 +143,10 @@ export default function Approve() {
     if ((cnt[group] || 0) === 0) {
       const target = ['finance', 'hr', 'schedule', 'task'].find(g => g !== group && (cnt[g] || 0) > 0)
       if (target) {
+        const firstTab = GROUPS[target].tabs[0].key
         setGroup(target)
-        setTab(GROUPS[target].tabs[0].key)
+        setTab(firstTab)
+        setSearchParams({ group: target, tab: firstTab }, { replace: true })
       }
     }
     setAutoSwitched(true)
@@ -137,9 +156,11 @@ export default function Approve() {
   useEffect(() => {
     const tabs = GROUPS[group].tabs
     if (!tabs.some(t => t.key === tab)) {
-      setTab(tabs[0].key)
+      const firstTab = tabs[0].key
+      setTab(firstTab)
+      setSearchParams({ group, tab: firstTab }, { replace: true })
     }
-  }, [group, tab])
+  }, [group, tab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // tab.key → data 屬性名 對應（如 leave → leaves）
   function mapKey(k) {
@@ -308,7 +329,7 @@ export default function Approve() {
           const enabled = groupEnabled[key]
           const count = groupCounts[key]
           return (
-            <button key={key} onClick={() => setTab(g.tabs[0].key) || setGroup(key)} style={{
+            <button key={key} onClick={() => changeGroup(key)} style={{
               flex: 1, padding: '12px', borderRadius: 12, fontSize: 14, fontWeight: 700,
               border: `2px solid ${active ? `var(--${g.color})` : 'var(--border2)'}`,
               background: active ? `var(--${g.color}-dim)` : 'var(--card)',
@@ -339,7 +360,7 @@ export default function Approve() {
           const enabled = tabEnabled(t.key)
           const count = counts[t.key] || 0
           return (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
+            <button key={t.key} onClick={() => changeTab(t.key)} style={{
               flex: 1, padding: '8px 6px', borderRadius: 8, fontSize: 12, fontWeight: 700,
               border: `1.5px solid ${tab === t.key ? 'var(--cyan)' : 'var(--border2)'}`,
               background: tab === t.key ? 'var(--cyan-dim)' : 'var(--card)',
