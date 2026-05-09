@@ -1,21 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { computeAllBalances, parseBenefitExtras, LEAVE_INFO } from '../lib/leaveBalanceCalc'
 
-const LEAVE_LABEL = {
-  annual: '特休', sick: '病假', personal: '事假',
-  marriage: '婚假', bereavement: '喪假', maternity: '產假',
-  paternity: '陪產假', menstrual: '生理假', family: '家庭照顧假',
-  official: '公假', injury: '公傷假',
-}
-const LEAVE_COLOR = {
-  annual: 'var(--cyan)', sick: 'var(--orange)', personal: 'var(--blue)',
-  marriage: 'var(--red)', bereavement: 'var(--t2)', maternity: 'var(--purple)',
-  paternity: 'var(--purple)', menstrual: 'var(--red)', family: 'var(--green)',
-  official: 'var(--green)', injury: 'var(--orange)',
-}
 const STATUS_STYLE = {
   '待審核': { bg: 'rgba(251,146,60,0.15)', color: 'var(--orange)' },
   '已核准': { bg: 'var(--green-dim)',     color: 'var(--green)' },
@@ -37,7 +26,7 @@ function getMonthDates(year, month) {
 }
 
 export default function LeaveBalance() {
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee: ctxEmployee } = useAuth()
   const navigate = useNavigate()
   const [tab, setTab] = useState('balance') // 'balance' | 'calendar'
 
@@ -51,19 +40,35 @@ export default function LeaveBalance() {
   const [myLeaves, setMyLeaves] = useState([])
   const [loading, setLoading] = useState(true)
 
+  const employee = ctxEmployee
+
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
-    supabase.rpc('liff_get_my_leave_balances', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_year: year,
-    }).then(({ data }) => {
-      if (data?.ok) {
-        setBalances(data.balances || [])
-        setTotals(data.totals || totals)
-      }
+    setLoading(true)
+    // 跟 Leave.jsx 同一套：用 employee.join_date + leave_requests + benefit_policies client-side 算
+    Promise.all([
+      supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([reqRes, polRes]) => {
+      const reqs = Array.isArray(reqRes.data) ? reqRes.data : []
+      const policies = Array.isArray(polRes.data) ? polRes.data : []
+      const benefitExtras = parseBenefitExtras(policies)
+      const all = computeAllBalances({
+        joinDate: ctxEmployee?.join_date,
+        leaveRequests: reqs,
+        benefitExtras,
+        calendarYear: year,
+      })
+      setBalances(all)
+      const total = all.reduce((s, b) => s + (b.total || 0), 0)
+      const used = all.reduce((s, b) => s + (b.used || 0), 0)
+      setTotals({ total, used, remaining: total - used })
+      setLoading(false)
+    }).catch(err => {
+      console.error('load balances failed', err)
       setLoading(false)
     })
-  }, [lineProfile, year])
+  }, [lineProfile, ctxEmployee, year])
 
   useEffect(() => {
     if (!lineProfile?.lineUserId || tab !== 'calendar') return
@@ -171,52 +176,72 @@ export default function LeaveBalance() {
             </div>
           </div>
 
-          {/* 各假別 */}
+          {/* 各假別 — 跟 Leave.jsx 假期餘額同步 */}
           {balances.length === 0 ? (
             <div className="empty">
               <div style={{ fontSize: 48 }}>📭</div>
-              <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 8 }}>{year} 年還沒設定額度</div>
-              <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>請聯絡 HR 設定</div>
+              <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 8 }}>找不到員工資料或還沒到職</div>
             </div>
           ) : (
             balances.map(b => {
-              const remaining = Number(b.remaining || 0)
-              const total = Number(b.total_days || 0) + Number(b.carry_over_days || 0)
-              const usedPct = total > 0 ? (Number(b.used_days || 0) / total * 100) : 0
-              const c = LEAVE_COLOR[b.leave_type] || 'var(--cyan)'
+              const remaining = (b.total || 0) - (b.used || 0)
+              const total = b.total || 0
+              const usedPct = total > 0 ? ((b.used || 0) / total * 100) : 0
+              const info = LEAVE_INFO[b.label]
+              const isAnnual = b.label === '特休'
+              const c = remaining <= 0 ? 'var(--red)' : isAnnual ? 'var(--cyan)' : 'var(--green)'
               return (
-                <div key={b.leave_type} style={{
+                <div key={b.label} style={{
                   padding: '14px 16px', marginBottom: 8, borderRadius: 14,
                   background: 'var(--card)', border: '1px solid var(--border)',
                 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>
-                      {LEAVE_LABEL[b.leave_type] || b.leave_type}
+                      {b.label}
+                      {info && (
+                        <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 400, marginLeft: 6 }}>
+                          {info.paid} · {info.law}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: c }}>
-                      {remaining.toFixed(1)} <span style={{ fontSize: 11, color: 'var(--t3)' }}>/ {total.toFixed(1)} 天</span>
+                      剩 {remaining} <span style={{ fontSize: 11, color: 'var(--t3)' }}>/ {total} 天</span>
+                      {b.extra > 0 && <span style={{ color: 'var(--cyan)', fontSize: 10, marginLeft: 4 }}>(+{b.extra})</span>}
                     </div>
                   </div>
-                  <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.05)', overflow: 'hidden' }}>
+                  <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.05)', overflow: 'hidden', marginTop: 4 }}>
                     <div style={{ height: '100%', width: `${Math.min(100, usedPct)}%`, background: c }} />
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 10, color: 'var(--t3)' }}>
-                    <span>已用 {Number(b.used_days || 0).toFixed(1)} 天</span>
-                    {Number(b.carry_over_days || 0) > 0 && <span>含轉結 {Number(b.carry_over_days).toFixed(1)} 天</span>}
-                  </div>
-                  {b.expiring_soon && b.expires_at && (
-                    <div style={{
-                      marginTop: 8, padding: '6px 10px', borderRadius: 6,
-                      background: 'rgba(248,113,113,0.1)', color: 'var(--red)',
-                      fontSize: 11, display: 'flex', alignItems: 'center', gap: 4,
-                    }}>
-                      <AlertCircle size={11} /> {b.expires_at} 到期，請盡快使用
-                    </div>
+                  {info?.note && (
+                    <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>{info.note}</div>
                   )}
                 </div>
               )
             })
           )}
+
+          {/* 年資 + 特休週期 footer */}
+          {employee?.join_date && (() => {
+            const yrs = Math.round((new Date() - new Date(employee.join_date)) / (365.25 * 86400000) * 10) / 10
+            const join = new Date(employee.join_date)
+            const now = new Date()
+            const thisAnniv = new Date(now.getFullYear(), join.getMonth(), join.getDate())
+            const annualStart = thisAnniv > now
+              ? new Date(now.getFullYear() - 1, join.getMonth(), join.getDate())
+              : thisAnniv
+            const annualEnd = new Date(annualStart)
+            annualEnd.setFullYear(annualEnd.getFullYear() + 1)
+            annualEnd.setDate(annualEnd.getDate() - 1)
+            return (
+              <div style={{ marginTop: 12, padding: '10px 14px', borderRadius: 10, background: 'var(--card)', fontSize: 11, color: 'var(--t3)' }}>
+                <div>年資 {yrs} 年</div>
+                <div style={{ marginTop: 2 }}>
+                  特休週期：{annualStart.toLocaleDateString('zh-TW')} ~ {annualEnd.toLocaleDateString('zh-TW')}
+                  <span style={{ marginLeft: 6 }}>｜其他假別：{year} 年度</span>
+                </div>
+              </div>
+            )
+          })()}
         </>
       )}
 
