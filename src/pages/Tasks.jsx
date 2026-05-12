@@ -256,20 +256,32 @@ export default function Tasks() {
                   </div>
                 ) : (
                   <>
-                    {/* Complete */}
-                    <button
-                      disabled={processing === t.id}
-                      onClick={() => handleComplete(t.id)}
-                      style={{
-                        width: '100%', padding: '10px', borderRadius: 10,
-                        border: 'none', background: 'var(--green)', color: '#fff',
-                        fontSize: 14, fontWeight: 700, cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                        opacity: processing === t.id ? 0.5 : 1,
-                      }}
-                    >
-                      <Check size={16} /> 回報完成
-                    </button>
+                    {/* Complete — 已回報過 (待確認/待簽核) 時 disabled，避免重複回報 */}
+                    {(() => {
+                      const s = detail.task.status
+                      const isAwaiting = s === '待確認' || s === '待簽核'
+                      return (
+                        <button
+                          disabled={isAwaiting || processing === t.id}
+                          onClick={() => !isAwaiting && handleComplete(t.id)}
+                          style={{
+                            width: '100%', padding: '10px', borderRadius: 10,
+                            border: 'none',
+                            background: isAwaiting ? 'var(--t3)' : 'var(--green)',
+                            color: '#fff',
+                            fontSize: 14, fontWeight: 700,
+                            cursor: isAwaiting ? 'not-allowed' : 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                            opacity: (isAwaiting || processing === t.id) ? 0.6 : 1,
+                          }}
+                        >
+                          <Check size={16} />
+                          {s === '待確認' ? '等待確認中…'
+                            : s === '待簽核' ? '等待簽核中…'
+                            : '回報完成'}
+                        </button>
+                      )
+                    })()}
 
                     {/* ★ 退回原因 (task 被審批人退回時顯示) */}
                     {detail.task.status === '已退回' && Array.isArray(detail.confirmations) && detail.confirmations.filter(c => c.status === 'rejected').map(c => (
