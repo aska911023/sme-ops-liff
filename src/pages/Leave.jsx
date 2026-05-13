@@ -224,6 +224,16 @@ export default function Leave() {
         urls.push(data.publicUrl)
       }
     }
+    // ★ 補：URL 寫回 leave_requests.attachments，不然審核人/申請人列表看不到
+    // 舊 bug：liff_insert_leave_request RPC 跟主系統 INSERT 都沒帶 attachments 欄位，
+    //         上傳後 storage 有檔案但 DB attachments 永遠 NULL → 兩端都顯示「無附件」
+    if (urls.length > 0 && leaveId) {
+      const { error: updErr } = await supabase
+        .from('leave_requests')
+        .update({ attachments: urls })
+        .eq('id', leaveId)
+      if (updErr) console.warn('attach urls update fail:', updErr)
+    }
     return urls
   }
 
