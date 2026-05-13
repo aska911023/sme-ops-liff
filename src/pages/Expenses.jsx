@@ -104,6 +104,14 @@ export default function Expenses() {
         urls.push(data.publicUrl)
       }
     }
+    // ★ 補：URL 寫回 expenses.attachments（跟 Leave 同個慘案 — 之前 storage 有檔但 DB 沒寫）
+    if (urls.length > 0 && expenseId) {
+      const { error: updErr } = await supabase
+        .from('expenses')
+        .update({ attachments: urls })
+        .eq('id', expenseId)
+      if (updErr) console.warn('attach urls update fail:', updErr)
+    }
     return urls
   }
 
