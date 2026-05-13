@@ -625,7 +625,9 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
             background: 'var(--purple-dim)', color: 'var(--purple)',
             fontSize: 11, fontWeight: 600,
           }}>
-            🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps} 關（{er.current_step_target || er.current_step_label || '—'}）
+            🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps} 關（{
+              [er.current_step_target || er.current_step_label, er.current_step_approver].filter(Boolean).join(' · ') || '—'
+            }）
           </div>
         )}
       </div>
@@ -857,7 +859,9 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
             background: 'var(--purple-dim)', color: 'var(--purple)',
             fontSize: 11, fontWeight: 600,
           }}>
-            🔐 {er.chain_name} · 第 {er.settle_current_step + 1} / {er.chain_total_steps} 關（{er.current_step_target || er.current_step_label || '—'}）
+            🔐 {er.chain_name} · 第 {er.settle_current_step + 1} / {er.chain_total_steps} 關（{
+              [er.current_step_target || er.current_step_label, er.current_step_approver].filter(Boolean).join(' · ') || '—'
+            }）
           </div>
         )}
       </div>
