@@ -43,6 +43,7 @@ const GROUPS = {
     tabs: [
       { key: 'expense',         label: '報帳', pendingStatus: '待審核' },
       { key: 'expense_request', label: '申請', pendingStatus: '申請中' },
+      { key: 'expense_settle',  label: '核銷', pendingStatus: '待核銷' },
     ],
   },
   schedule: {
@@ -75,7 +76,7 @@ export default function Approve() {
   // /approve/task       → 任務/任務確認
   const TAB_TO_SLUG = {
     leave: 'leave', overtime: 'overtime', trip: 'trip', correction: 'correction',
-    expense: 'expense', expense_request: 'expense-request',
+    expense: 'expense', expense_request: 'expense-request', expense_settle: 'expense-settle',
     off_request: 'off', shift_swap_peer: 'swap-peer', shift_swap_manager: 'swap-manager',
     task_confirmation: 'task',
   }
@@ -107,6 +108,7 @@ export default function Approve() {
   }
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
+    expense_settles: [],
     shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
     task_confirmations: [],
     can: { hr: false, finance: false },
@@ -130,6 +132,7 @@ export default function Approve() {
       expenses:                rpc?.expenses                || [],
       corrections:             rpc?.corrections             || [],
       expense_requests:        rpc?.expense_requests        || [],
+      expense_settles:         rpc?.expense_settles         || [],
       shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
       shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
       off_requests:            rpc?.off_requests            || [],
@@ -180,7 +183,7 @@ export default function Approve() {
   // tab.key → data 屬性名 對應（如 leave → leaves）
   function mapKey(k) {
     return ({ leave: 'leaves', overtime: 'overtimes', trip: 'trips', correction: 'corrections',
-              expense: 'expenses', expense_request: 'expense_requests',
+              expense: 'expenses', expense_request: 'expense_requests', expense_settle: 'expense_settles',
               shift_swap_peer: 'shift_swaps_for_peer', shift_swap_manager: 'shift_swaps_for_manager',
               off_request: 'off_requests',
               task_confirmation: 'task_confirmations' })[k] || k
@@ -296,6 +299,7 @@ export default function Approve() {
     correction:          data.corrections.filter(c => c.status === '待審核').length,
     expense:             data.expenses.filter(e => e.status === '待審核').length,
     expense_request:     data.expense_requests.filter(e => e.status === '申請中').length,
+    expense_settle:      data.expense_settles.filter(e => e.status === '待核銷').length,
     shift_swap_peer:     data.shift_swaps_for_peer.length,
     shift_swap_manager:  data.shift_swaps_for_manager.length,
     off_request:         data.off_requests.length,
@@ -319,7 +323,7 @@ export default function Approve() {
   }
   const tabEnabled = (k) =>
     ['leave','overtime','trip','correction'].includes(k) ? data.can.hr :
-    ['expense','expense_request'].includes(k) ? data.can.finance :
+    ['expense','expense_request','expense_settle'].includes(k) ? data.can.finance :
     ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true :
     ['task_confirmation'].includes(k) ? true : false
 
@@ -563,6 +567,12 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
       <ExpenseRequestRow key={er.id} er={er} processing={processing} handle={handle} statusBadge={statusBadge} />
     ))
   }
+  if (tab === 'expense_settle') {
+    if (data.expense_settles.length === 0) return empty('沒有等你審的核銷單')
+    return data.expense_settles.map(er => (
+      <ExpenseSettleRow key={er.id} er={er} processing={processing} handle={handle} statusBadge={statusBadge} />
+    ))
+  }
   return null
 }
 
@@ -779,6 +789,190 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
             opacity: processing === er.id ? 0.5 : 1,
           }}><Check size={16} /> 核准</button>
           <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'reject')} style={{
+            flex: 1, padding: '10px', borderRadius: 10,
+            border: '1.5px solid var(--red)', background: 'transparent',
+            color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+          }}><X size={16} /> 退回</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 專屬 expense_settle row：實際 vs 申請金額 + chain 進度 ──
+function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
+  const [expanded, setExpanded] = useState(false)
+  const [tab, setTab] = useState('basic')
+  const [chainSteps, setChainSteps] = useState(null)
+  const [chainLoading, setChainLoading] = useState(false)
+  const isPending = er.status === '待核銷'
+  const diff = (Number(er.actual_amount) || 0) - (Number(er.estimated_amount) || 0)
+
+  useEffect(() => {
+    if (tab !== 'progress' || !expanded || chainSteps !== null) return
+    setChainLoading(true)
+    supabase.rpc('liff_get_expense_settle_chain_status', { p_id: er.id })
+      .then(({ data }) => setChainSteps(Array.isArray(data) ? data : []))
+      .finally(() => setChainLoading(false))
+  }, [tab, expanded, chainSteps, er.id])
+
+  return (
+    <div className="list-item" style={{
+      borderLeft: er.status === '核銷已退回' ? '3px solid var(--red)' : undefined,
+    }}>
+      {/* Header (clickable) */}
+      <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <span style={{ fontSize: 15, fontWeight: 800 }}>{er.employee}</span>
+            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
+              background: 'var(--cyan-dim)', color: 'var(--cyan)', fontWeight: 700 }}>🧾 核銷</span>
+          </div>
+          <span className={`badge ${statusBadge(er.status)}`}>{er.status}</span>
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
+        <div style={{ display: 'flex', gap: 12, fontSize: 13, marginBottom: 4 }}>
+          <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>
+            實際 NT$ {Number(er.actual_amount || 0).toLocaleString()}
+          </span>
+          <span style={{ color: 'var(--t3)' }}>
+            (申請 {Number(er.estimated_amount || 0).toLocaleString()})
+          </span>
+          {diff !== 0 && (
+            <span style={{ color: diff > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
+              {diff > 0 ? '+' : ''}{diff.toLocaleString()}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--t3)' }}>
+          {er.account_name && <span>{er.account_name} · </span>}
+          {er.department && <span>{er.department} · </span>}
+          {er.store && <span>{er.store}</span>}
+        </div>
+        {er.chain_name && (
+          <div style={{
+            marginTop: 6, padding: '4px 8px', borderRadius: 6,
+            background: 'var(--purple-dim)', color: 'var(--purple)',
+            fontSize: 11, fontWeight: 600,
+          }}>
+            🔐 {er.chain_name} · 第 {er.settle_current_step + 1} / {er.chain_total_steps} 關（{er.current_step_target || er.current_step_label || '—'}）
+          </div>
+        )}
+      </div>
+
+      {/* 退回原因 */}
+      {er.settle_reject_reason && (
+        <div style={{
+          marginTop: 8, padding: '8px 12px', borderRadius: 8,
+          background: 'rgba(248,113,113,0.12)', border: '1px solid var(--red)',
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 2 }}>🔄 退回原因</div>
+          <div style={{ fontSize: 13, color: 'var(--red)', whiteSpace: 'pre-wrap' }}>{er.settle_reject_reason}</div>
+        </div>
+      )}
+
+      {/* 展開內容 */}
+      {expanded && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderBottom: '1px solid var(--border2)' }}>
+            <button onClick={() => setTab('basic')} style={{
+              flex: 1, padding: '8px 12px', fontSize: 13, fontWeight: 700,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: tab === 'basic' ? 'var(--cyan)' : 'var(--t3)',
+              borderBottom: tab === 'basic' ? '2px solid var(--cyan)' : '2px solid transparent',
+              marginBottom: -1,
+            }}>📋 基本</button>
+            <button onClick={() => setTab('detail')} style={{
+              flex: 1, padding: '8px 12px', fontSize: 13, fontWeight: 700,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: tab === 'detail' ? 'var(--cyan)' : 'var(--t3)',
+              borderBottom: tab === 'detail' ? '2px solid var(--cyan)' : '2px solid transparent',
+              marginBottom: -1,
+            }}>📦 細節與附件</button>
+            <button onClick={() => setTab('progress')} style={{
+              flex: 1, padding: '8px 12px', fontSize: 13, fontWeight: 700,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              color: tab === 'progress' ? 'var(--cyan)' : 'var(--t3)',
+              borderBottom: tab === 'progress' ? '2px solid var(--cyan)' : '2px solid transparent',
+              marginBottom: -1,
+            }}>🔐 簽核進度</button>
+          </div>
+
+          {tab === 'basic' && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              <KvRow k="申請人" v={er.employee} />
+              {er.department && <KvRow k="部門" v={er.department} />}
+              {er.store && <KvRow k="門市" v={er.store} />}
+              <KvRow k="實際金額" v={`NT$ ${Number(er.actual_amount || 0).toLocaleString()}`} highlight />
+              <KvRow k="申請金額" v={`NT$ ${Number(er.estimated_amount || 0).toLocaleString()}`} />
+              {diff !== 0 && (
+                <KvRow k="差額" v={`${diff > 0 ? '+' : ''}NT$ ${diff.toLocaleString()}`} />
+              )}
+              {er.account_code && (
+                <KvRow k="會計科目" v={`${er.account_code} ${er.account_name || ''}`} />
+              )}
+              {er.chain_name && (
+                <KvRow k="核銷簽核鏈" v={`${er.chain_name} (第 ${er.settle_current_step + 1}/${er.chain_total_steps} 關)`} />
+              )}
+            </div>
+          )}
+
+          {tab === 'detail' && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              <KvRow k="項目" v={er.title || '—'} />
+              {er.description && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>📝 申請說明</div>
+                  <div style={{ fontSize: 13, color: 'var(--t1)', whiteSpace: 'pre-wrap',
+                    padding: 8, background: 'var(--bg)', borderRadius: 6 }}>{er.description}</div>
+                </div>
+              )}
+              {er.notes && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>📝 核銷說明</div>
+                  <div style={{ fontSize: 13, color: 'var(--t1)', whiteSpace: 'pre-wrap',
+                    padding: 8, background: 'var(--bg)', borderRadius: 6 }}>{er.notes}</div>
+                </div>
+              )}
+              <div style={{ marginTop: 10 }}>
+                <ExpenseAttachments requestId={er.id} />
+              </div>
+            </div>
+          )}
+
+          {tab === 'progress' && (
+            <div style={{
+              padding: '10px 12px', borderRadius: 8,
+              background: 'var(--card)', border: '1px solid var(--border2)',
+            }}>
+              <ChainTimeline
+                steps={chainSteps}
+                loading={chainLoading}
+                requestType="expense_settle"
+                requestId={er.id}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      {isPending && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+          <button disabled={processing === er.id} onClick={() => handle('expense_settle', er.id, 'approve')} style={{
+            flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+            background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            opacity: processing === er.id ? 0.5 : 1,
+          }}><Check size={16} /> 核准核銷</button>
+          <button disabled={processing === er.id} onClick={() => handle('expense_settle', er.id, 'reject')} style={{
             flex: 1, padding: '10px', borderRadius: 10,
             border: '1.5px solid var(--red)', background: 'transparent',
             color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
