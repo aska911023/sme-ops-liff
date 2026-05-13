@@ -1,4 +1,6 @@
+import { useEffect, useMemo, useState } from 'react'
 import { Check, X, Clock, Circle } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 /**
  * 垂直簽核時間軸（LIFF mobile-first）
@@ -6,8 +8,40 @@ import { Check, X, Clock, Circle } from 'lucide-react'
  * @param {Array} steps  資料 shape: [{ step_order, label, name, status, reject_reason }]
  *                       status: 'completed' | 'current' | 'rejected' | 'pending'
  * @param {boolean} loading
+ * @param {string} [requestType] 傳入 'leave'/'overtime'/'trip'/'correction'/'expense'/'expense_request' 自動 fetch 停留時間
+ * @param {number} [requestId]
  */
-export default function ChainTimeline({ steps, loading = false }) {
+export default function ChainTimeline({ steps, loading = false, requestType, requestId }) {
+  // 廠商 #7：簽核每關停留時間 — 自動 fetch approval_step_history audit
+  const [timeline, setTimeline] = useState([])
+  useEffect(() => {
+    if (!requestType || !requestId) { setTimeline([]); return }
+    let cancelled = false
+    supabase.rpc('get_approval_timeline', {
+      p_request_type: requestType,
+      p_request_id: Number(requestId),
+    }).then(({ data, error }) => {
+      if (cancelled) return
+      if (error) { console.warn('get_approval_timeline failed:', error); return }
+      setTimeline(Array.isArray(data) ? data : [])
+    })
+    return () => { cancelled = true }
+  }, [requestType, requestId])
+
+  // 合併 duration_text 到 steps
+  const mergedSteps = useMemo(() => {
+    if (!timeline.length) return steps
+    return (steps || []).map((s, idx) => {
+      const t = timeline.find(x => x.step_order === (s.step_order ?? idx)) || timeline[idx]
+      if (!t) return s
+      return { ...s, duration_text: t.duration_text }
+    })
+  }, [steps, timeline])
+
+  return _renderTimeline(mergedSteps, loading)
+}
+
+function _renderTimeline(steps, loading) {
   if (loading) {
     return (
       <div style={{ padding: 12, textAlign: 'center' }}>
@@ -67,6 +101,16 @@ export default function ChainTimeline({ steps, loading = false }) {
               {s.name && (
                 <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 2 }}>
                   {s.name}
+                </div>
+              )}
+              {s.duration_text && (
+                <div style={{
+                  fontSize: 10, color: 'var(--t2)', marginTop: 3,
+                  display: 'inline-flex', alignItems: 'center', gap: 3,
+                  padding: '1px 6px', borderRadius: 3,
+                  background: s.status === 'current' ? 'rgba(251,146,60,0.10)' : 'var(--card)',
+                }}>
+                  ⏱ 停留 {s.duration_text}
                 </div>
               )}
               {s.status === 'rejected' && s.reject_reason && (

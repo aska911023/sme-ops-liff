@@ -758,7 +758,12 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
               padding: '10px 12px', borderRadius: 8,
               background: 'var(--card)', border: '1px solid var(--border2)',
             }}>
-              <ChainTimeline steps={chainSteps} loading={chainLoading} />
+              <ChainTimeline
+                steps={chainSteps}
+                loading={chainLoading}
+                requestType="expense_request"
+                requestId={er.id}
+              />
             </div>
           )}
         </div>
