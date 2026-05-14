@@ -5,14 +5,16 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
-// 依 step 產生 0.5 ~ 12 的所有可選時數
-function buildHourOptions(step) {
-  const s = Number(step) || 0.5
-  const opts = []
-  for (let v = s; v <= 12 + 1e-9; v += s) {
-    opts.push(Math.round(v * 100) / 100)
-  }
-  return opts
+// 算加班時數：依起訖時間 + 商店最小單位（step）
+// 跨日：end <= start 自動 +24h（例 22:00 -> 02:00 = 4 小時）
+function computeOvertimeHours(start, end, step = 0.5) {
+  if (!start || !end) return 0
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  let mins = (eh * 60 + em) - (sh * 60 + sm)
+  if (mins <= 0) mins += 24 * 60
+  const hours = mins / 60
+  return Math.round(hours / step) * step
 }
 
 export default function Overtime() {
@@ -25,7 +27,7 @@ export default function Overtime() {
   const [searchParams] = useSearchParams()
   const resubmitId = searchParams.get('resubmit')
   const [step, setStep] = useState(0.5)  // 廠商設定的最小單位
-  const [form, setForm] = useState({ date: '', hours: 1, reason: '', store: '' })
+  const [form, setForm] = useState({ date: '', start_time: '', end_time: '', hours: 0, reason: '', store: '' })
   const [stores, setStores] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
@@ -35,8 +37,6 @@ export default function Overtime() {
     supabase.rpc('liff_list_stores', { p_line_user_id: lineProfile.lineUserId })
       .then(({ data }) => { if (Array.isArray(data)) setStores(data) })
   }, [lineProfile])
-
-  const hourOptions = buildHourOptions(step)
 
   const reload = () => {
     if (!lineProfile?.lineUserId) return
@@ -71,15 +71,20 @@ export default function Overtime() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', hours: step, reason: '', store: '' })
+    setForm({ date: '', start_time: '', end_time: '', hours: 0, reason: '', store: '' })
     setEditingId(null)
     setShowForm(false)
   }
 
   const handleEdit = (r) => {
-    // 把舊值對齊到當前 step（往上找最近的合法值）
-    const aligned = hourOptions.find(o => o >= r.hours) || hourOptions[hourOptions.length - 1]
-    setForm({ date: r.date, hours: aligned, reason: r.reason || '', store: r.store || '' })
+    setForm({
+      date: r.date,
+      start_time: r.start_time || '',
+      end_time: r.end_time || '',
+      hours: r.hours || 0,
+      reason: r.reason || '',
+      store: r.store || '',
+    })
     setEditingId(r.id)
     setShowForm(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -97,7 +102,8 @@ export default function Overtime() {
 
   const handleSubmit = async () => {
     if (!form.date) { alert('請選擇日期'); return }
-    if (!form.hours || form.hours <= 0) { alert('請輸入加班時數'); return }
+    if (!form.start_time || !form.end_time) { alert('請選擇加班起訖時間'); return }
+    if (!form.hours || form.hours <= 0) { alert('加班時數計算為 0，請檢查起訖時間'); return }
     if (!form.store) { alert('請選擇加班門市'); return }
 
     // Check duplicate date
@@ -108,6 +114,8 @@ export default function Overtime() {
 
     const payload = {
       date: form.date,
+      start_time: form.start_time,
+      end_time: form.end_time,
       hours: parseFloat(form.hours),
       reason: form.reason,
       store: form.store,
@@ -185,23 +193,42 @@ export default function Overtime() {
               💡 跨門市加班請選實際支援門市
             </div>
           </div>
+          <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label className="form-label">加班起時</label>
+              <input className="form-input" type="time"
+                value={form.start_time}
+                onChange={e => {
+                  const v = e.target.value
+                  setForm(f => ({ ...f, start_time: v, hours: computeOvertimeHours(v, f.end_time, step) }))
+                }} />
+            </div>
+            <div>
+              <label className="form-label">加班訖時</label>
+              <input className="form-input" type="time"
+                value={form.end_time}
+                onChange={e => {
+                  const v = e.target.value
+                  setForm(f => ({ ...f, end_time: v, hours: computeOvertimeHours(f.start_time, v, step) }))
+                }} />
+            </div>
+          </div>
           <div className="form-group">
-            <label className="form-label">加班時數</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <select
-                className="form-input"
-                value={form.hours}
-                onChange={e => set('hours', Number(e.target.value))}
-                style={{ flex: 1 }}
-              >
-                {hourOptions.map(h => (
-                  <option key={h} value={h}>{h}</option>
-                ))}
-              </select>
-              <span style={{ fontSize: 13, color: 'var(--t3)', whiteSpace: 'nowrap' }}>小時</span>
+            <label className="form-label">總時數</label>
+            <div style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: form.hours > 0 ? 'rgba(34,211,238,0.12)' : 'var(--card)',
+              color: form.hours > 0 ? 'var(--cyan)' : 'var(--t3)',
+              fontWeight: 700, fontSize: 18,
+              border: '1px solid var(--border2)',
+            }}>
+              {form.hours > 0 ? `${form.hours} 小時` : '請選擇起訖時間'}
+              {form.start_time && form.end_time && form.end_time <= form.start_time && (
+                <span style={{ fontSize: 11, fontWeight: 500, marginLeft: 8, color: 'var(--orange)' }}>（跨日）</span>
+              )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
-              本店加班最小單位 {step} 小時
+              本店加班最小單位 {step} 小時 · 訖時 ≤ 起時自動視為跨日
             </div>
             {form.hours > 4 && (
               <div style={{ fontSize: 11, color: 'var(--orange)', marginTop: 4 }}>
