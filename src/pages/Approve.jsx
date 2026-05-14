@@ -926,12 +926,17 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
             </div>
           )}
 
-          {tab === 'detail' && (
+          {tab === 'detail' && (() => {
+            const settleItems = Array.isArray(er.items) ? er.items : []
+            const hasSettleItems = settleItems.length > 0
+            const hasSettleSupplier = er.supplier && er.supplier.trim()
+            return (
             <div style={{
               padding: '10px 12px', borderRadius: 8,
               background: 'var(--card)', border: '1px solid var(--border2)',
             }}>
               <KvRow k="項目" v={er.title || '—'} />
+              {hasSettleSupplier && <KvRow k="供應商" v={er.supplier} />}
               {er.description && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>📝 申請說明</div>
@@ -946,11 +951,42 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
                     padding: 8, background: 'var(--bg)', borderRadius: 6 }}>{er.notes}</div>
                 </div>
               )}
+
+              {/* 品項明細 table（對齊申請段渲染）*/}
+              {hasSettleItems && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>🛒 品項明細</div>
+                  <div style={{ border: '1px solid var(--border2)', borderRadius: 6, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                      <thead style={{ background: 'var(--bg)' }}>
+                        <tr>
+                          <th style={{ padding: '4px 6px', textAlign: 'left', color: 'var(--t3)', fontWeight: 600 }}>品名</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right', color: 'var(--t3)', fontWeight: 600 }}>數量</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right', color: 'var(--t3)', fontWeight: 600 }}>單價</th>
+                          <th style={{ padding: '4px 6px', textAlign: 'right', color: 'var(--t3)', fontWeight: 600 }}>小計</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {settleItems.map((li, i) => (
+                          <tr key={i} style={{ borderTop: '1px solid var(--border2)' }}>
+                            <td style={{ padding: '4px 6px' }}>{li.name}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>{li.qty}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>NT$ {Number(li.unit_price || 0).toLocaleString()}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>NT$ {Number(li.subtotal || 0).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <div style={{ marginTop: 10 }}>
                 <ExpenseAttachments requestId={er.id} />
               </div>
             </div>
-          )}
+            )
+          })()}
 
           {tab === 'progress' && (
             <div style={{
