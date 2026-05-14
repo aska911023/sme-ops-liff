@@ -267,6 +267,15 @@ export default function Leave() {
   const handleSubmit = async () => {
     if (!form.start_date) return
 
+    // 特休年資檢查（勞基法 §38：須滿 6 個月）
+    if (form.type === '特休') {
+      const entitlement = calcAnnualLeave(employee?.join_date)
+      if (entitlement === 0) {
+        alert('未滿 6 個月年資，尚無特休資格，無法申請特休')
+        return
+      }
+    }
+
     // Check date overlap with existing leaves
     const startD = new Date(form.start_date)
     const endD = new Date(form.end_date || form.start_date)
