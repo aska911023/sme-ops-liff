@@ -724,16 +724,28 @@ export default function Leave() {
       })()}
 
       {/* Stats */}
-      <div className="stat-row">
-        <div className="stat-box">
-          <div className="stat-num" style={{ color: 'var(--orange)' }}>{records.filter(r => r.status === '待審核').length}</div>
-          <div className="stat-label">待審核</div>
-        </div>
-        <div className="stat-box">
-          <div className="stat-num" style={{ color: 'var(--green)' }}>{records.filter(r => r.status === '已核准').length}</div>
-          <div className="stat-label">已核准</div>
-        </div>
-      </div>
+      {(() => {
+        const thisMonth = new Date().toISOString().slice(0, 7)
+        const monthApprovedDays = records
+          .filter(r => r.start_date?.startsWith(thisMonth) && r.status === '已核准')
+          .reduce((s, r) => s + (Number(r.days) || 0), 0)
+        return (
+          <div className="stat-row">
+            <div className="stat-box">
+              <div className="stat-num" style={{ color: 'var(--cyan)' }}>{monthApprovedDays}</div>
+              <div className="stat-label">本月天數</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-num" style={{ color: 'var(--orange)' }}>{records.filter(r => r.status === '待審核').length}</div>
+              <div className="stat-label">待審核</div>
+            </div>
+            <div className="stat-box">
+              <div className="stat-num" style={{ color: 'var(--green)' }}>{records.filter(r => r.status === '已核准').length}</div>
+              <div className="stat-label">已核准</div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* List */}
       {loading ? (
