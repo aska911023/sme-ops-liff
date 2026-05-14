@@ -596,6 +596,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
   const items = Array.isArray(er.items) ? er.items : []
   const hasItems = items.length > 0
   const hasSupplier = er.supplier && er.supplier.trim()
+  const isNonExpense = er.is_expense === false
 
   return (
     <div className="list-item" style={{
@@ -610,14 +611,21 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
           </div>
           <span className={`badge ${statusBadge(er.status)}`}>{er.status}</span>
         </div>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
-        <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 4 }}>
-          NT$ {Number(er.estimated_amount || 0).toLocaleString()}
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>
+          {er.title}
+          {isNonExpense && (
+            <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(168,85,247,0.15)', color: 'var(--purple)', fontWeight: 700 }}>非費用</span>
+          )}
         </div>
+        {!isNonExpense && (
+          <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 4 }}>
+            NT$ {Number(er.estimated_amount || 0).toLocaleString()}
+          </div>
+        )}
         <div style={{ fontSize: 12, color: 'var(--t3)' }}>
-          {er.account_name && <span>{er.account_name} · </span>}
+          {!isNonExpense && er.account_name && <span>{er.account_name} · </span>}
           {er.department && <span>{er.department} · </span>}
-          {er.store && <span>{er.store}</span>}
+          {!isNonExpense && er.store && <span>{er.store}</span>}
         </div>
         {er.chain_name && (
           <div style={{
@@ -691,9 +699,12 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
               )}
               <KvRow k="申請人" v={er.employee} />
               {er.department && <KvRow k="部門" v={er.department} />}
-              {er.store && <KvRow k="門市" v={er.store} />}
-              <KvRow k="預估金額" v={`NT$ ${Number(er.estimated_amount || 0).toLocaleString()}`} highlight />
-              {er.account_code && (
+              {!isNonExpense && er.store && <KvRow k="門市" v={er.store} />}
+              {isNonExpense
+                ? <KvRow k="類型" v="非費用申請" highlight />
+                : <KvRow k="預估金額" v={`NT$ ${Number(er.estimated_amount || 0).toLocaleString()}`} highlight />
+              }
+              {!isNonExpense && er.account_code && (
                 <KvRow k="會計科目" v={`${er.account_code} ${er.account_name || ''}`} />
               )}
               {er.chain_name && (
@@ -708,8 +719,8 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
               padding: '10px 12px', borderRadius: 8,
               background: 'var(--card)', border: '1px solid var(--border2)',
             }}>
-              <KvRow k="項目" v={er.title || '—'} />
-              {hasSupplier && <KvRow k="供應商" v={er.supplier} />}
+              <KvRow k={isNonExpense ? '主旨' : '項目'} v={er.title || '—'} />
+              {!isNonExpense && hasSupplier && <KvRow k="供應商" v={er.supplier} />}
               {er.description && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>📝 說明</div>
@@ -718,8 +729,8 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
                 </div>
               )}
 
-              {/* 品項明細 table */}
-              {hasItems && (
+              {/* 品項明細 table — 非費用隱藏 */}
+              {!isNonExpense && hasItems && (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>🛒 品項明細</div>
                   <div style={{ border: '1px solid var(--border2)', borderRadius: 6, overflow: 'hidden' }}>
