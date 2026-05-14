@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronRight, Check, X, ClipboardCheck } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { TaskAttachments } from '../pages/Tasks'
+import ChainTimeline from './ChainTimeline'
 
 const ERR_MSG = {
   EMPLOYEE_NOT_FOUND: '找不到員工資料，請重新綁定 LINE',
@@ -9,6 +10,41 @@ const ERR_MSG = {
   REASON_REQUIRED: '請填寫退回原因',
   NOT_FOUND_OR_ALREADY_PROCESSED: '此任務已被審過或不存在',
   FORBIDDEN: '沒有權限查看',
+}
+
+/**
+ * 把 chain_steps + confirmations 合併成 ChainTimeline 期望的 steps shape
+ *
+ * @param {Array} chainSteps - liff_get_task_detail.chain_steps（chain 全部 step）
+ * @param {Array} confirmations - liff_get_task_detail.confirmations（已 spawn 的 approver rows）
+ * @param {Object} task - liff_get_task_detail.task
+ * @returns {Array} steps for <ChainTimeline />
+ */
+function buildTimelineSteps(chainSteps, confirmations, task) {
+  const confByStep = {}
+  ;(confirmations || []).forEach(c => { confByStep[c.step_order] = c })
+  const taskDone = task?.status === '已完成'
+  return (chainSteps || []).map(cs => {
+    const conf = confByStep[cs.step_order]
+    let status = 'pending'
+    let name = ''
+    let reject_reason = null
+    if (conf) {
+      name = conf.approver || ''
+      if (conf.status === 'approved') status = 'completed'
+      else if (conf.status === 'rejected') { status = 'rejected'; reject_reason = conf.notes || null }
+      else status = 'current'
+    } else if (taskDone) {
+      status = 'completed'  // 任務已全結束，未 spawn 的 step 也視為完成
+    }
+    return {
+      step_order: cs.step_order,
+      label: cs.label || cs.role_name || `第 ${cs.step_order + 1} 關`,
+      name,
+      status,
+      reject_reason,
+    }
+  })
 }
 
 /**
@@ -117,6 +153,15 @@ export default function TaskConfirmationList({ confs, lineUserId, onReload, empt
                   </div>
                 ) : (
                   <>
+                    {/* 🔐 簽核進度條（如果有 chain）— 對齊 HR 表單做法 */}
+                    {Array.isArray(d.chain_steps) && d.chain_steps.length > 0 && (
+                      <div style={{ marginBottom: 12, paddingBottom: 10, borderBottom: '1px dashed var(--border2)' }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>
+                          🔐 簽核進度
+                        </div>
+                        <ChainTimeline steps={buildTimelineSteps(d.chain_steps, d.confirmations, d.task)} />
+                      </div>
+                    )}
                     {d.checklists && d.checklists.length > 0 && d.checklists.map(cl => (
                       <div key={cl.id} style={{ marginBottom: 10 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>
