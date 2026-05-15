@@ -90,20 +90,26 @@ export default function ExpenseRequest() {
   const handleSubmit = async () => {
     const validItems = lineItems.filter(li => li.name && li.qty > 0)
     const total = validItems.length > 0 ? validItems.reduce((s, li) => s + (li.subtotal || 0), 0) : Number(form.estimated_amount)
-    if (!form.account_code || !form.title || !total) return
+    // 非費用：只要主旨；費用：要主旨 + 科目 + 金額
+    if (form.is_expense) {
+      if (!form.account_code || !form.title || !total) return
+    } else {
+      if (!form.title) return
+    }
     setSubmitting(true)
-    const acc = accounts.find(a => a.code === form.account_code)
+    const acc = form.is_expense ? accounts.find(a => a.code === form.account_code) : null
     const { data, error } = await supabase.rpc('liff_insert_expense_request', {
       p_line_user_id: lineProfile.lineUserId,
       p_payload: {
-        account_code: form.account_code,
-        account_name: acc?.name || '',
+        is_expense: form.is_expense,
+        account_code: form.is_expense ? form.account_code : null,
+        account_name: form.is_expense ? (acc?.name || '') : null,
         title: form.title,
         description: form.description || null,
-        estimated_amount: total,
-        store: form.store || null,
-        supplier: form.supplier || null,
-        items: validItems,
+        estimated_amount: form.is_expense ? total : null,
+        store: form.is_expense ? (form.store || null) : null,
+        supplier: form.is_expense ? (form.supplier || null) : null,
+        items: form.is_expense ? validItems : null,
       },
     })
 
@@ -115,8 +121,10 @@ export default function ExpenseRequest() {
       return
     }
 
-    if (data?.id && files.length > 0) {
-      await uploadFiles(data.id, files, 'request')
+    // 3-slot 可能有 gap（slot 1 沒填但 0 跟 2 有），先 filter
+    const filesToUpload = files.filter(Boolean)
+    if (data?.id && filesToUpload.length > 0) {
+      await uploadFiles(data.id, filesToUpload, 'request')
     }
 
     // ★ 2026-05-08：client-side notifyNewSubmission 已拔除
@@ -223,7 +231,12 @@ export default function ExpenseRequest() {
             <div key={r.id} className="card" style={{ marginBottom: 10, padding: 14, cursor: 'pointer' }}
               onClick={() => openDetail(r)}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{r.title}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {r.is_expense === false && (
+                    <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(167,139,250,0.15)', color: 'var(--purple)', fontWeight: 700 }}>非費用</span>
+                  )}
+                  {r.title}
+                </div>
                 <span style={{
                   padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
                   color: STATUS_COLORS[r.status] || 'var(--t3)',
@@ -231,10 +244,10 @@ export default function ExpenseRequest() {
                 }}>{r.status}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)' }}>
-                <span>{r.account_code} {r.account_name}</span>
-                <span style={{ fontWeight: 700, color: 'var(--t1)' }}>{fmt(r.estimated_amount)}</span>
+                <span>{r.is_expense === false ? '—' : `${r.account_code || ''} ${r.account_name || ''}`}</span>
+                <span style={{ fontWeight: 700, color: 'var(--t1)' }}>{r.is_expense === false ? '—' : fmt(r.estimated_amount)}</span>
               </div>
-              {r.actual_amount != null && (
+              {r.is_expense !== false && r.actual_amount != null && (
                 <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
                   實際：{fmt(r.actual_amount)}
                   {r.difference != null && r.difference !== 0 && (
@@ -274,34 +287,35 @@ export default function ExpenseRequest() {
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">會計科目 *</label>
-            <select className="form-input" value={form.account_code} onChange={e => set('account_code', e.target.value)}>
-              <option value="">請選擇</option>
-              {Object.entries(
-                filteredAccounts.reduce((groups, a) => {
-                  // Group by: parent accounts vs sub-accounts, and by type
-                  const group = a.parent_code ? `${a.type} ─ 子科目` : a.type || '其他'
-                  if (!groups[group]) groups[group] = []
-                  groups[group].push(a)
-                  return groups
-                }, {})
-              ).map(([group, items]) => (
-                <optgroup key={group} label={`── ${group} ──`}>
-                  {items.map(a => (
-                    <option key={a.code} value={a.code}>
-                      {a.parent_code ? '  └ ' : ''}{a.code}  {a.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
+          {form.is_expense && (
+            <div className="form-group">
+              <label className="form-label">會計科目 *</label>
+              <select className="form-input" value={form.account_code} onChange={e => set('account_code', e.target.value)}>
+                <option value="">請選擇</option>
+                {Object.entries(
+                  filteredAccounts.reduce((groups, a) => {
+                    const group = a.parent_code ? `${a.type} ─ 子科目` : a.type || '其他'
+                    if (!groups[group]) groups[group] = []
+                    groups[group].push(a)
+                    return groups
+                  }, {})
+                ).map(([group, items]) => (
+                  <optgroup key={group} label={`── ${group} ──`}>
+                    {items.map(a => (
+                      <option key={a.code} value={a.code}>
+                        {a.parent_code ? '  └ ' : ''}{a.code}  {a.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="form-group">
-            <label className="form-label">項目名稱 *</label>
+            <label className="form-label">{form.is_expense ? '項目名稱 *' : '主旨 *'}</label>
             <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)}
-              placeholder="例：採購辦公椅 x5" />
+              placeholder={form.is_expense ? '例：採購辦公椅 x5' : '例：申請外出洽公'} />
           </div>
 
           {/* Auto-detected info */}
@@ -311,81 +325,134 @@ export default function ExpenseRequest() {
             {employee.store && <span>· 🏪 {employee.store}</span>}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div className="form-group">
-              <label className="form-label">供應商/廠商</label>
-              <input className="form-input" value={form.supplier} onChange={e => set('supplier', e.target.value)} placeholder="選填" />
-            </div>
-            <div className="form-group">
-              <label className="form-label">門市</label>
-              <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)}
-                placeholder={employee.store || '選填'} />
-            </div>
-          </div>
-
-          {/* Line items */}
-          <div className="form-group">
-            <label className="form-label">品項明細 *</label>
-            {lineItems.map((li, i) => (
-              <div key={i} style={{ background: 'var(--glass)', borderRadius: 10, padding: 10, marginBottom: 8, border: '1px solid var(--border)' }}>
-                <input className="form-input" value={li.name} onChange={e => updateItem(i, 'name', e.target.value)}
-                  placeholder="品名" style={{ marginBottom: 6 }} />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
-                  <input className="form-input" type="number" value={li.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
-                    placeholder="數量" style={{ textAlign: 'right' }} />
-                  <input className="form-input" type="number" value={li.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
-                    placeholder="單價" style={{ textAlign: 'right' }} />
-                  <div style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', fontSize: 13, color: 'var(--cyan)' }}>
-                    {li.subtotal ? fmt(li.subtotal) : '$0'}
-                  </div>
+          {form.is_expense && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group">
+                  <label className="form-label">供應商/廠商</label>
+                  <input className="form-input" value={form.supplier} onChange={e => set('supplier', e.target.value)} placeholder="選填" />
                 </div>
-                {lineItems.length > 1 && (
-                  <button style={{ background: 'none', border: 'none', color: 'var(--red)', fontSize: 11, cursor: 'pointer', marginTop: 4, padding: 0 }}
-                    onClick={() => setLineItems(items => items.filter((_, j) => j !== i))}>
-                    <X size={12} /> 刪除此品項
-                  </button>
-                )}
+                <div className="form-group">
+                  <label className="form-label">門市</label>
+                  <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)}
+                    placeholder={employee.store || '選填'} />
+                </div>
               </div>
-            ))}
-            <button className="btn" style={{ width: '100%', padding: '8px 0', borderRadius: 8, fontSize: 12, background: 'var(--glass)', border: '1px dashed var(--border)', cursor: 'pointer', color: 'var(--t2)' }}
-              onClick={() => setLineItems(items => [...items, { name: '', qty: '', unit_price: '', subtotal: 0 }])}>
-              <Plus size={14} /> 新增品項
-            </button>
-            <div style={{ textAlign: 'right', marginTop: 8, fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
-              合計：{fmt(lineTotal)}
-            </div>
-          </div>
+
+              {/* Line items */}
+              <div className="form-group">
+                <label className="form-label">品項明細 *</label>
+                {lineItems.map((li, i) => (
+                  <div key={i} style={{ background: 'var(--glass)', borderRadius: 10, padding: 10, marginBottom: 8, border: '1px solid var(--border)' }}>
+                    <input className="form-input" value={li.name} onChange={e => updateItem(i, 'name', e.target.value)}
+                      placeholder="品名" style={{ marginBottom: 6 }} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, alignItems: 'center' }}>
+                      <input className="form-input" type="number" value={li.qty} onChange={e => updateItem(i, 'qty', e.target.value)}
+                        placeholder="數量" style={{ textAlign: 'right' }} />
+                      <input className="form-input" type="number" value={li.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
+                        placeholder="單價" style={{ textAlign: 'right' }} />
+                      <div style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', fontSize: 13, color: 'var(--cyan)' }}>
+                        {li.subtotal ? fmt(li.subtotal) : '$0'}
+                      </div>
+                    </div>
+                    {lineItems.length > 1 && (
+                      <button style={{ background: 'none', border: 'none', color: 'var(--red)', fontSize: 11, cursor: 'pointer', marginTop: 4, padding: 0 }}
+                        onClick={() => setLineItems(items => items.filter((_, j) => j !== i))}>
+                        <X size={12} /> 刪除此品項
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button className="btn" style={{ width: '100%', padding: '8px 0', borderRadius: 8, fontSize: 12, background: 'var(--glass)', border: '1px dashed var(--border)', cursor: 'pointer', color: 'var(--t2)' }}
+                  onClick={() => setLineItems(items => [...items, { name: '', qty: '', unit_price: '', subtotal: 0 }])}>
+                  <Plus size={14} /> 新增品項
+                </button>
+                <div style={{ textAlign: 'right', marginTop: 8, fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
+                  合計：{fmt(lineTotal)}
+                </div>
+              </div>
+            </>
+          )}
 
           <div className="form-group">
             <label className="form-label">說明</label>
             <textarea className="form-input" value={form.description} onChange={e => set('description', e.target.value)}
-              placeholder="用途、規格..." style={{ minHeight: 50, resize: 'vertical' }} />
+              placeholder={form.is_expense ? '用途、規格...' : '請說明事由'} style={{ minHeight: 50, resize: 'vertical' }} />
           </div>
 
-          {/* File Upload */}
+          {/* File Upload — 3 個紅虛線 slot（對齊主系統） */}
           <div className="form-group">
-            <label className="form-label">附件（訂購單、報價單）</label>
-            <label className="btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '8px 14px', borderRadius: 8, fontSize: 12, cursor: 'pointer', background: 'var(--glass)', border: '1px solid var(--border)' }}>
-              <Upload size={14} /> 選擇檔案
-              <input type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }}
-                onChange={e => handleFileSelect(e, setFiles)} />
-            </label>
-            {files.length > 0 && (
-              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {files.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
-                    {f.preview ? (
-                      <img src={f.preview} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover' }} />
-                    ) : <FileText size={14} color="var(--orange)" />}
-                    <span style={{ flex: 1, color: 'var(--t2)' }}>{f.file.name}</span>
-                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: 0 }}
-                      onClick={() => { if (f.preview) URL.revokeObjectURL(f.preview); setFiles(prev => prev.filter((_, j) => j !== i)) }}>
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <label className="form-label">附件{form.is_expense ? '（訂購單、報價單）' : ''}</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {[0, 1, 2].map(idx => {
+                const f = files[idx]
+                return (
+                  <label key={idx} style={{
+                    position: 'relative',
+                    border: '2px dashed var(--red)',
+                    borderRadius: 8,
+                    padding: 8,
+                    minHeight: 76,
+                    textAlign: 'center',
+                    cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
+                    background: f ? 'rgba(248,113,113,0.08)' : 'transparent',
+                  }}>
+                    <input type="file"
+                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
+                      style={{ display: 'none' }}
+                      onChange={e => {
+                        const file = e.target.files?.[0]
+                        if (!file) return
+                        setFiles(prev => {
+                          const next = [...prev]
+                          next[idx] = {
+                            file,
+                            preview: file.type.startsWith('image') ? URL.createObjectURL(file) : null,
+                          }
+                          return next
+                        })
+                        e.target.value = ''
+                      }}
+                    />
+                    {f ? (
+                      <>
+                        {f.preview
+                          ? <Image size={18} style={{ color: 'var(--red)' }} />
+                          : <FileText size={18} style={{ color: 'var(--red)' }} />}
+                        <div style={{ fontSize: 10, color: 'var(--t1)', wordBreak: 'break-all', lineHeight: 1.3 }}>
+                          {f.file.name}
+                        </div>
+                        <button type="button"
+                          onClick={(e) => {
+                            e.preventDefault(); e.stopPropagation()
+                            if (f.preview) URL.revokeObjectURL(f.preview)
+                            setFiles(prev => prev.filter((_, j) => j !== idx))
+                          }}
+                          style={{
+                            position: 'absolute', top: 2, right: 2,
+                            background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%',
+                            color: '#fff', width: 18, height: 18, padding: 0, cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                          <X size={10} />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={18} style={{ color: 'var(--red)', opacity: 0.55 }} />
+                        <div style={{ fontSize: 10, color: 'var(--t3)' }}>點此上傳</div>
+                      </>
+                    )}
+                  </label>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 6, lineHeight: 1.5 }}>
+              支援格式：JPG / PNG / GIF / WebP / PDF / Excel / CSV
+              <br />
+              單檔最大 10MB · 最多 3 個附件
+            </div>
           </div>
 
           <button className="btn btn-primary" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12, marginTop: 8 }}
@@ -451,7 +518,12 @@ export default function ExpenseRequest() {
       {tab === 'detail' && detail && (
         <div className="card" style={{ padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>{detail.title}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+              {detail.is_expense === false && (
+                <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 4, background: 'rgba(167,139,250,0.15)', color: 'var(--purple)', fontWeight: 700 }}>非費用</span>
+              )}
+              {detail.title}
+            </div>
             <span style={{
               padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
               color: STATUS_COLORS[detail.status],
@@ -459,14 +531,16 @@ export default function ExpenseRequest() {
             }}>{detail.status}</span>
           </div>
 
-          <div className="info-row"><span>科目</span><span>{detail.account_code} {detail.account_name}</span></div>
+          {detail.is_expense !== false && (
+            <div className="info-row"><span>科目</span><span>{detail.account_code} {detail.account_name}</span></div>
+          )}
           <div className="info-row"><span>部門</span><span>{detail.department || '-'}</span></div>
-          {detail.supplier && <div className="info-row"><span>供應商</span><span>{detail.supplier}</span></div>}
-          {detail.store && <div className="info-row"><span>門市</span><span>{detail.store}</span></div>}
+          {detail.is_expense !== false && detail.supplier && <div className="info-row"><span>供應商</span><span>{detail.supplier}</span></div>}
+          {detail.is_expense !== false && detail.store && <div className="info-row"><span>門市</span><span>{detail.store}</span></div>}
           {detail.description && <div className="info-row"><span>說明</span><span style={{ textAlign: 'right', maxWidth: '60%' }}>{detail.description}</span></div>}
 
-          {/* Line items */}
-          {detail.items?.length > 0 && (
+          {/* Line items（只有費用顯示） */}
+          {detail.is_expense !== false && detail.items?.length > 0 && (
             <div style={{ margin: '8px 0' }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>品項明細</div>
               {detail.items.map((li, i) => (
@@ -481,22 +555,25 @@ export default function ExpenseRequest() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '12px 0', background: 'var(--glass)', padding: 12, borderRadius: 10 }}>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: 'var(--t3)' }}>預估</div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{fmt(detail.estimated_amount)}</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: 'var(--t3)' }}>實際</div>
-              <div style={{ fontWeight: 700, fontSize: 14 }}>{detail.actual_amount != null ? fmt(detail.actual_amount) : '-'}</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: 'var(--t3)' }}>差異</div>
-              <div style={{ fontWeight: 700, fontSize: 14, color: detail.difference > 0 ? 'var(--red)' : detail.difference < 0 ? 'var(--green)' : 'var(--t1)' }}>
-                {detail.difference != null ? fmt(detail.difference) : '-'}
+          {/* 金額三欄（只有費用顯示） */}
+          {detail.is_expense !== false && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '12px 0', background: 'var(--glass)', padding: 12, borderRadius: 10 }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--t3)' }}>預估</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{fmt(detail.estimated_amount)}</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--t3)' }}>實際</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{detail.actual_amount != null ? fmt(detail.actual_amount) : '-'}</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--t3)' }}>差異</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: detail.difference > 0 ? 'var(--red)' : detail.difference < 0 ? 'var(--green)' : 'var(--t1)' }}>
+                  {detail.difference != null ? fmt(detail.difference) : '-'}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {detail.reject_reason && (
             <div style={{ background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>
@@ -523,8 +600,8 @@ export default function ExpenseRequest() {
             </div>
           )}
 
-          {/* Action button for settlement */}
-          {detail.status === '已核准' && (
+          {/* Action button for settlement（非費用不需核銷） */}
+          {detail.status === '已核准' && detail.is_expense !== false && (
             <button className="btn btn-primary" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12, marginTop: 14 }}
               onClick={() => openSettle(detail)}>
               <Send size={14} /> 提交核銷
