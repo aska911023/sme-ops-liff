@@ -395,16 +395,21 @@ export default function Approve() {
           const count = groupCounts[key]
           return (
             <button key={key} onClick={() => changeGroup(key)} style={{
-              flex: 1, padding: '12px', borderRadius: 12, fontSize: 14, fontWeight: 700,
+              flex: 1, padding: '10px 6px', borderRadius: 12, fontSize: 13, fontWeight: 700,
               border: `2px solid ${active ? `var(--${g.color})` : 'var(--border2)'}`,
               background: active ? `var(--${g.color}-dim)` : 'var(--card)',
               color: active ? `var(--${g.color})` : enabled ? 'var(--t1)' : 'var(--t3)',
               cursor: 'pointer', position: 'relative',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
               opacity: enabled ? 1 : 0.55,
             }}>
-              {!enabled && <Lock size={12} />}
-              <Icon size={16} /> {g.label}
+              {!enabled && (
+                <span style={{ position: 'absolute', top: 4, left: 4 }}>
+                  <Lock size={10} />
+                </span>
+              )}
+              <Icon size={20} />
+              <span>{g.label}</span>
               {enabled && count > 0 && (
                 <span style={{
                   position: 'absolute', top: -8, right: -8,
