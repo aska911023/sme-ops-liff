@@ -355,21 +355,23 @@ export default function Approve() {
     schedule: GROUPS.schedule.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
     task:     GROUPS.task.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
   }
-  const totalPending = groupCounts.hr + groupCounts.finance + groupCounts.schedule + groupCounts.task
+  const totalPending = groupCounts.hr + groupCounts.finance + groupCounts.schedule + groupCounts.task + (groupCounts.personnel || 0)
 
   const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已退回' || s === '已駁回' || s === '已拒絕' ? 'badge-red' : 'badge-orange'
-  // 排班 / 任務：只要有 pending 就視為 enabled（任何員工都可能收到）
+  // 排班 / 任務 / 異動：只要有 pending 就視為 enabled（任何員工都可能收到，server 端已過濾誰能簽）
   const groupEnabled = {
-    hr:       data.can.hr,
-    finance:  data.can.finance,
-    schedule: groupCounts.schedule > 0 || true,  // 一律允許進入排班 group
-    task:     true,                              // 任何員工都可能收到「任務確認」
+    hr:        data.can.hr,
+    finance:   data.can.finance,
+    schedule:  true,
+    task:      true,
+    personnel: true,  // 異動 3 表：server 端 chain-aware 過濾，無對應 can flag
   }
   const tabEnabled = (k) =>
     ['leave','overtime','trip','correction'].includes(k) ? data.can.hr :
     ['expense','expense_request','expense_settle'].includes(k) ? data.can.finance :
     ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true :
-    ['task_confirmation'].includes(k) ? true : false
+    ['task_confirmation'].includes(k) ? true :
+    ['resignation','loa','transfer'].includes(k) ? true : false
 
   return (
     <div className="page">
