@@ -19,6 +19,7 @@ const MENU_GROUPS = [
       { path: '/overtime', icon: '🕐', label: '加班申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
       { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)' },
       { path: '/off-request', icon: '🗓️', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
+      { path: '/leave-of-absence', icon: '⏸️', label: '留職停薪', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
     ],
   },
   {
