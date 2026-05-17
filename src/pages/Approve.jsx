@@ -578,11 +578,20 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
 
 // ── 專屬 expense_request row：上方摘要 / 下方 3 TAB（基本 / 細節 / 進度） ──
 function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
+  const { employee: me } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [tab, setTab] = useState('basic')   // 'basic' | 'detail' | 'progress'
   const [chainSteps, setChainSteps] = useState(null)  // null = 未載入；array = 已載入
   const [chainLoading, setChainLoading] = useState(false)
   const isPending = er.status === '申請中'
+
+  // 加簽（P3c）相關 state
+  const [pendingExtra, setPendingExtra] = useState(null)    // 此單目前的 pending 加簽（任何人）
+  const [extraEmployees, setExtraEmployees] = useState([])  // 加簽人選清單
+  const [showExtraForm, setShowExtraForm] = useState(false)
+  const [extraAssignee, setExtraAssignee] = useState('')
+  const [extraReason, setExtraReason] = useState('')
+  const [extraBusy, setExtraBusy] = useState(false)
 
   // 切到「進度」tab 才 lazy fetch chain steps（避免不展開的 row 也送 RPC）
   useEffect(() => {
@@ -592,6 +601,101 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
       .then(({ data }) => setChainSteps(Array.isArray(data) ? data : []))
       .finally(() => setChainLoading(false))
   }, [tab, expanded, chainSteps, er.id])
+
+  // 展開時撈這張單的 pending 加簽 + 員工清單（供加簽人選擇）
+  useEffect(() => {
+    if (!expanded || !isPending) return
+    let cancelled = false
+    ;(async () => {
+      const { data: extras } = await supabase
+        .from('approval_extra_steps')
+        .select('id, source_id, insert_before_step, assignee_id, requested_by_id, reason, status')
+        .eq('source_table', 'expense_requests')
+        .eq('source_id', er.id)
+        .eq('status', 'pending')
+        .limit(1)
+      if (!cancelled) setPendingExtra((extras || [])[0] || null)
+
+      if (extraEmployees.length === 0) {
+        const { data: emps } = await supabase
+          .from('employees')
+          .select('id, name, department_id')
+          .eq('status', '在職')
+          .order('name')
+        if (!cancelled) setExtraEmployees(emps || [])
+      }
+    })()
+    return () => { cancelled = true }
+  }, [expanded, isPending, er.id, extraEmployees.length])
+
+  // 我發起的加簽 / 我是被加簽的人
+  const isMyExtraRequest = pendingExtra && me && pendingExtra.requested_by_id === me.id
+  const isMyExtraAssignment = pendingExtra && me && pendingExtra.assignee_id === me.id
+
+  const submitExtra = async () => {
+    if (!extraAssignee) { alert('請選擇加簽人'); return }
+    setExtraBusy(true)
+    const { error } = await supabase.rpc('request_extra_signer', {
+      p_source_table: 'expense_requests',
+      p_source_id: er.id,
+      p_insert_before_step: er.current_step ?? 0,
+      p_assignee_id: Number(extraAssignee),
+      p_requested_by_id: me?.id,
+      p_reason: extraReason?.trim() || null,
+    })
+    setExtraBusy(false)
+    if (error) {
+      alert(`加簽失敗：${error.message}`)
+      return
+    }
+    setShowExtraForm(false)
+    setExtraAssignee('')
+    setExtraReason('')
+    // 重新撈 pending extra
+    const { data: extras } = await supabase
+      .from('approval_extra_steps')
+      .select('id, source_id, insert_before_step, assignee_id, requested_by_id, reason, status')
+      .eq('source_table', 'expense_requests')
+      .eq('source_id', er.id)
+      .eq('status', 'pending')
+      .limit(1)
+    setPendingExtra((extras || [])[0] || null)
+  }
+
+  const cancelMyExtra = async () => {
+    if (!pendingExtra || !confirm('確定撤銷加簽？')) return
+    setExtraBusy(true)
+    const { error } = await supabase.rpc('cancel_extra_signer', {
+      p_extra_step_id: pendingExtra.id,
+      p_canceller_id: me?.id,
+    })
+    setExtraBusy(false)
+    if (error) { alert(`撤銷失敗：${error.message}`); return }
+    setPendingExtra(null)
+  }
+
+  const processExtra = async (action) => {
+    if (!pendingExtra) return
+    let reason = null
+    if (action === 'reject') {
+      reason = prompt('退回加簽原因（必填）：')
+      if (!reason || !reason.trim()) { alert('必須填寫退回原因'); return }
+    }
+    setExtraBusy(true)
+    const { error } = await supabase.rpc('process_extra_signer', {
+      p_extra_step_id: pendingExtra.id,
+      p_processor_id: me?.id,
+      p_action: action,
+      p_reject_reason: reason?.trim() || null,
+    })
+    setExtraBusy(false)
+    if (error) { alert(`${action === 'approve' ? '核准' : '退回'}失敗：${error.message}`); return }
+    setPendingExtra(null)
+    if (action === 'reject') {
+      // 整單會被 trigger 標已駁回；觸發 parent 重新 load
+      alert('已退回加簽，整單會自動退回')
+    }
+  }
 
   const items = Array.isArray(er.items) ? er.items : []
   const hasItems = items.length > 0
@@ -792,21 +896,134 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
         </div>
       )}
 
-      {/* 核准 / 退回按鈕 */}
-      {isPending && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-          <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'approve')} style={{
-            flex: 3, padding: '10px', borderRadius: 10, border: 'none',
-            background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
-            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            opacity: processing === er.id ? 0.5 : 1,
-          }}><Check size={16} /> 核准</button>
-          <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'reject')} style={{
-            flex: 1, padding: '10px', borderRadius: 10,
-            border: '1.5px solid var(--red)', background: 'transparent',
-            color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-          }}><X size={16} /> 退回</button>
+      {/* 核准 / 退回 / 加簽 按鈕（依加簽狀態切換）*/}
+      {isPending && (() => {
+        // 情境 A：我是加簽人 → 渲染處理加簽的按鈕（取代正常 chain 按鈕）
+        if (isMyExtraAssignment) {
+          return (
+            <div style={{ marginTop: 10 }}>
+              <div style={{
+                padding: '8px 10px', borderRadius: 8, marginBottom: 8,
+                background: 'rgba(249,115,22,0.12)', color: 'var(--orange, #f97316)',
+                fontSize: 13, fontWeight: 700,
+              }}>
+                🪶 加簽待你處理
+                {pendingExtra?.reason && <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, color: 'var(--t1)' }}>原因：{pendingExtra.reason}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button disabled={extraBusy} onClick={() => processExtra('approve')} style={{
+                  flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+                  background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+                  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  opacity: extraBusy ? 0.5 : 1,
+                }}><Check size={16} /> 核准加簽</button>
+                <button disabled={extraBusy} onClick={() => processExtra('reject')} style={{
+                  flex: 1, padding: '10px', borderRadius: 10,
+                  border: '1.5px solid var(--red)', background: 'transparent',
+                  color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}><X size={16} /> 退回</button>
+              </div>
+            </div>
+          )
+        }
+
+        // 情境 B：有 pending 加簽，但我不是加簽人 → 顯示加簽中狀態（發起人可撤銷）
+        if (pendingExtra) {
+          const assigneeName = extraEmployees.find(e => e.id === pendingExtra.assignee_id)?.name || '加簽人'
+          return (
+            <div style={{
+              marginTop: 10, padding: '10px', borderRadius: 10,
+              background: 'rgba(249,115,22,0.12)', display: 'flex',
+              alignItems: 'center', justifyContent: 'space-between', gap: 8,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--orange, #f97316)' }}>
+                🪶 加簽中：{assigneeName}
+              </span>
+              {isMyExtraRequest && (
+                <button disabled={extraBusy} onClick={cancelMyExtra} style={{
+                  padding: '6px 12px', borderRadius: 8,
+                  border: '1.5px solid var(--orange, #f97316)', background: 'transparent',
+                  color: 'var(--orange, #f97316)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  opacity: extraBusy ? 0.5 : 1,
+                }}>撤銷加簽</button>
+              )}
+            </div>
+          )
+        }
+
+        // 情境 C：正常 — 核准 / 退回 / 加簽 三鈕
+        return (
+          <>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'approve')} style={{
+                flex: 3, padding: '10px', borderRadius: 10, border: 'none',
+                background: 'var(--green)', color: '#fff', fontSize: 14, fontWeight: 700,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                opacity: processing === er.id ? 0.5 : 1,
+              }}><Check size={16} /> 核准</button>
+              <button disabled={processing === er.id} onClick={() => handle('expense_request', er.id, 'reject')} style={{
+                flex: 1, padding: '10px', borderRadius: 10,
+                border: '1.5px solid var(--red)', background: 'transparent',
+                color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+              }}><X size={16} /> 退回</button>
+            </div>
+            <button onClick={() => setShowExtraForm(s => !s)} style={{
+              width: '100%', marginTop: 6, padding: '8px', borderRadius: 8,
+              border: '1.5px dashed var(--orange, #f97316)', background: 'transparent',
+              color: 'var(--orange, #f97316)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            }}>🪶 加簽（邀請第三人協助審核）</button>
+          </>
+        )
+      })()}
+
+      {/* 加簽 inline form（P3c）*/}
+      {isPending && showExtraForm && !pendingExtra && (
+        <div style={{
+          marginTop: 10, padding: 12, borderRadius: 10,
+          background: 'rgba(249,115,22,0.06)', border: '1.5px solid var(--orange, #f97316)',
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--orange, #f97316)' }}>🪶 發起加簽</div>
+
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽人 *</label>
+          <select value={extraAssignee} onChange={e => setExtraAssignee(e.target.value)}
+            style={{
+              width: '100%', padding: '8px', borderRadius: 6, marginBottom: 10,
+              border: '1px solid var(--border2)', background: 'var(--card)',
+              fontSize: 13, color: 'var(--t1)',
+            }}>
+            <option value="">— 請選擇 —</option>
+            {extraEmployees.filter(e => e.id !== me?.id && e.id !== er.employee_id).map(e => (
+              <option key={e.id} value={e.id}>{e.name}</option>
+            ))}
+          </select>
+
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽原因（選填）</label>
+          <textarea value={extraReason} onChange={e => setExtraReason(e.target.value)}
+            placeholder="例：金額較高，請會計師先看"
+            rows={2}
+            style={{
+              width: '100%', padding: '8px', borderRadius: 6, marginBottom: 10,
+              border: '1px solid var(--border2)', background: 'var(--card)',
+              fontSize: 13, color: 'var(--t1)', resize: 'vertical',
+            }}
+          />
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => { setShowExtraForm(false); setExtraAssignee(''); setExtraReason('') }}
+              style={{
+                flex: 1, padding: '8px', borderRadius: 8,
+                border: '1px solid var(--border2)', background: 'transparent',
+                color: 'var(--t3)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              }}>取消</button>
+            <button disabled={extraBusy || !extraAssignee} onClick={submitExtra} style={{
+              flex: 2, padding: '8px', borderRadius: 8, border: 'none',
+              background: 'var(--orange, #f97316)', color: '#fff',
+              fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              opacity: (extraBusy || !extraAssignee) ? 0.5 : 1,
+            }}>{extraBusy ? '送出中…' : '送出加簽請求'}</button>
+          </div>
         </div>
       )}
     </div>
