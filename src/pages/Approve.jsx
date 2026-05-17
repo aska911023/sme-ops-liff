@@ -64,10 +64,28 @@ const GROUPS = {
       { key: 'task_confirmation', label: '任務確認', pendingStatus: '待確認' },
     ],
   },
+  // HR 異動 3 表（之前只在 Web 看得到，LIFF 跟 Web 對齊後加上）
+  personnel: {
+    label: '異動',
+    icon: Users,
+    color: 'cyan',
+    tabs: [
+      { key: 'resignation', label: '離職', pendingStatus: '申請中' },
+      { key: 'loa',         label: '留停', pendingStatus: '申請中' },
+      { key: 'transfer',    label: '異動', pendingStatus: '申請中' },
+    ],
+  },
+}
+
+// HR 異動 3 表的 type → hr_chain_approve 的 p_table 對應
+const HR_CHAIN_TABLE_MAP = {
+  resignation: 'resignation',
+  loa: 'loa',
+  transfer: 'transfer',
 }
 
 export default function Approve() {
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
   const navigate = useNavigate()
   // URL 用短英文 slug，內部還是用原本 key（往下相容）
   // /approve            → 預設
@@ -79,6 +97,8 @@ export default function Approve() {
     expense: 'expense', expense_request: 'expense-request', expense_settle: 'expense-settle',
     off_request: 'off', shift_swap_peer: 'swap-peer', shift_swap_manager: 'swap-manager',
     task_confirmation: 'task',
+    // HR 異動 3 表
+    resignation: 'resignation', loa: 'loa', transfer: 'transfer',
   }
   const SLUG_TO_TAB = Object.fromEntries(Object.entries(TAB_TO_SLUG).map(([k, v]) => [v, k]))
 
@@ -109,6 +129,7 @@ export default function Approve() {
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
     expense_settles: [],
+    resignation_requests: [], leave_of_absence_requests: [], personnel_transfer_requests: [],
     shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
     task_confirmations: [],
     can: { hr: false, finance: false },
@@ -133,6 +154,10 @@ export default function Approve() {
       corrections:             rpc?.corrections             || [],
       expense_requests:        rpc?.expense_requests        || [],
       expense_settles:         rpc?.expense_settles         || [],
+      // HR 異動 3 表（2026-05-17 LIFF 跟 Web 對齊後新增）
+      resignation_requests:        rpc?.resignation_requests        || [],
+      leave_of_absence_requests:   rpc?.leave_of_absence_requests   || [],
+      personnel_transfer_requests: rpc?.personnel_transfer_requests || [],
       shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
       shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
       off_requests:            rpc?.off_requests            || [],
@@ -186,7 +211,11 @@ export default function Approve() {
               expense: 'expenses', expense_request: 'expense_requests', expense_settle: 'expense_settles',
               shift_swap_peer: 'shift_swaps_for_peer', shift_swap_manager: 'shift_swaps_for_manager',
               off_request: 'off_requests',
-              task_confirmation: 'task_confirmations' })[k] || k
+              task_confirmation: 'task_confirmations',
+              // HR 異動 3 表
+              resignation: 'resignation_requests',
+              loa: 'leave_of_absence_requests',
+              transfer: 'personnel_transfer_requests' })[k] || k
   }
 
   const handle = async (type, id, action) => {
@@ -197,10 +226,25 @@ export default function Approve() {
       if (!reason.trim()) { alert('請填寫退回原因'); return }
     }
     setProcessing(id)
-    const { data: result, error } = await supabase.rpc('liff_approve_request', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_type: type, p_id: id, p_action: action, p_reason: reason,
-    })
+
+    let result, error
+    if (HR_CHAIN_TABLE_MAP[type]) {
+      // HR 異動 3 表走 hr_chain_approve（resignation / loa / transfer）
+      if (!employee?.id) {
+        setProcessing(null)
+        alert('找不到員工資料，請重新綁定 LINE'); return
+      }
+      ;({ data: result, error } = await supabase.rpc('hr_chain_approve', {
+        p_table: HR_CHAIN_TABLE_MAP[type], p_id: id,
+        p_approver_id: employee.id, p_action: action, p_reason: reason,
+      }))
+    } else {
+      // 其他類型走 liff_approve_request（leave / overtime / trip / correction / expense / expense_request / expense_settle）
+      ;({ data: result, error } = await supabase.rpc('liff_approve_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_type: type, p_id: id, p_action: action, p_reason: reason,
+      }))
+    }
     setProcessing(null)
     if (error) { alert('系統錯誤：' + error.message); return }
     if (!result?.ok) {
@@ -571,6 +615,55 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.expense_settles.length === 0) return empty('沒有等你審的核銷單')
     return data.expense_settles.map(er => (
       <ExpenseSettleRow key={er.id} er={er} processing={processing} handle={handle} statusBadge={statusBadge} />
+    ))
+  }
+  // ─── HR 異動 3 表（共用通用 Row 元件） ──────────────────────────────
+  if (tab === 'resignation') {
+    if (data.resignation_requests.length === 0) return empty('沒有等你審的離職申請')
+    return data.resignation_requests.map(r => (
+      <Row key={r.id}
+        item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
+        type="resignation" processing={processing} handle={handle} statusBadge={statusBadge}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span className="badge badge-purple" style={{ marginRight: 6 }}>離職</span>
+            預計 {r.planned_resign_date || '—'}
+          </div>
+          {r.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{r.reason}</div>}
+        </>}
+      />
+    ))
+  }
+  if (tab === 'loa') {
+    if (data.leave_of_absence_requests.length === 0) return empty('沒有等你審的留停申請')
+    return data.leave_of_absence_requests.map(r => (
+      <Row key={r.id}
+        item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
+        type="loa" processing={processing} handle={handle} statusBadge={statusBadge}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span className="badge badge-purple" style={{ marginRight: 6 }}>留停</span>
+            {r.start_date || ''} ~ {r.end_date || ''}
+          </div>
+          {r.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{r.reason}</div>}
+        </>}
+      />
+    ))
+  }
+  if (tab === 'transfer') {
+    if (data.personnel_transfer_requests.length === 0) return empty('沒有等你審的人事異動')
+    return data.personnel_transfer_requests.map(r => (
+      <Row key={r.id}
+        item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
+        type="transfer" processing={processing} handle={handle} statusBadge={statusBadge}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span className="badge badge-purple" style={{ marginRight: 6 }}>{r.transfer_type || '異動'}</span>
+            生效 {r.effective_date || '—'}
+          </div>
+          {r.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{r.reason}</div>}
+        </>}
+      />
     ))
   }
   return null
