@@ -678,7 +678,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
 
 // ── 專屬 expense_request row：上方摘要 / 下方 3 TAB（基本 / 細節 / 進度） ──
 function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
-  const { employee: me } = useAuth()
+  const { employee: me, lineProfile } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [tab, setTab] = useState('basic')   // 'basic' | 'detail' | 'progress'
   const [chainSteps, setChainSteps] = useState(null)  // null = 未載入；array = 已載入
@@ -731,16 +731,15 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
       if (!cancelled) setPendingExtra((extras || [])[0] || null)
 
       if (extraEmployees.length === 0) {
-        const { data: emps } = await supabase
-          .from('employees')
-          .select('id, name, department_id')
-          .eq('status', '在職')
-          .order('name')
-        if (!cancelled) setExtraEmployees(emps || [])
+        // LIFF anon 直接讀 employees 表會被 RLS 擋 → 走 SECURITY DEFINER RPC
+        const { data: emps } = await supabase.rpc('liff_list_employees_in_org', {
+          p_line_user_id: lineProfile?.lineUserId,
+        })
+        if (!cancelled) setExtraEmployees(Array.isArray(emps) ? emps : [])
       }
     })()
     return () => { cancelled = true }
-  }, [expanded, isPending, er.id, extraEmployees.length])
+  }, [expanded, isPending, er.id, extraEmployees.length, lineProfile?.lineUserId])
 
   // 我發起的加簽 / 我是被加簽的人
   const isMyExtraRequest = pendingExtra && me && pendingExtra.requested_by_id === me.id
