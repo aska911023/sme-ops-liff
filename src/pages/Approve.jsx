@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar, FileText, Eye, ClipboardCheck } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import TaskConfirmationList from '../components/TaskConfirmationList'
@@ -693,6 +693,20 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
   const [extraReason, setExtraReason] = useState('')
   const [extraBusy, setExtraBusy] = useState(false)
 
+  // 從 LINE 卡「🪶 加簽」按鈕跳過來：URL ?id=X&openAddSigner=1 → 自動展開 row + 開加簽表單
+  const [urlParams] = useSearchParams()
+  const autoOpenId = urlParams.get('id')
+  const autoOpenAddSigner = urlParams.get('openAddSigner')
+  useEffect(() => {
+    if (autoOpenId && String(er.id) === String(autoOpenId)) {
+      setExpanded(true)
+      if (autoOpenAddSigner === '1' && isPending) {
+        // 等 useEffect 撈完 employees / pendingExtra 再開（不然下拉選單沒人）
+        setTimeout(() => setShowExtraForm(true), 600)
+      }
+    }
+  }, [autoOpenId, autoOpenAddSigner, er.id, isPending])
+
   // 切到「進度」tab 才 lazy fetch chain steps（避免不展開的 row 也送 RPC）
   useEffect(() => {
     if (tab !== 'progress' || !expanded || chainSteps !== null) return
@@ -1087,17 +1101,12 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--orange, #f97316)' }}>🪶 發起加簽</div>
 
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽人 *</label>
-          <select value={extraAssignee} onChange={e => setExtraAssignee(e.target.value)}
-            style={{
-              width: '100%', padding: '8px', borderRadius: 6, marginBottom: 10,
-              border: '1px solid var(--border2)', background: 'var(--card)',
-              fontSize: 13, color: 'var(--t1)',
-            }}>
-            <option value="">— 請選擇 —</option>
-            {extraEmployees.filter(e => e.id !== me?.id && e.id !== er.employee_id).map(e => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
-          </select>
+          <EmployeePicker
+            value={extraAssignee}
+            onChange={setExtraAssignee}
+            options={extraEmployees.filter(e => e.id !== me?.id && e.id !== er.employee_id)}
+            placeholder="— 請選擇加簽人 —"
+          />
 
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽原因（選填）</label>
           <textarea value={extraReason} onChange={e => setExtraReason(e.target.value)}
@@ -1787,17 +1796,12 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--orange, #f97316)' }}>🪶 發起加簽</div>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽人 *</label>
-          <select value={extraAssignee} onChange={e => setExtraAssignee(e.target.value)}
-            style={{
-              width: '100%', padding: '8px', borderRadius: 6, marginBottom: 10,
-              border: '1px solid var(--border2)', background: 'var(--card)',
-              fontSize: 13, color: 'var(--t1)',
-            }}>
-            <option value="">— 請選擇 —</option>
-            {extraEmployees.filter(e => e.id !== me?.id && e.id !== item.employee_id).map(e => (
-              <option key={e.id} value={e.id}>{e.name}</option>
-            ))}
-          </select>
+          <EmployeePicker
+            value={extraAssignee}
+            onChange={setExtraAssignee}
+            options={extraEmployees.filter(e => e.id !== me?.id && e.id !== item.employee_id)}
+            placeholder="— 請選擇加簽人 —"
+          />
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽原因（選填）</label>
           <textarea value={extraReason} onChange={e => setExtraReason(e.target.value)}
             placeholder="例：金額較高，請會計師先看"
@@ -1823,6 +1827,75 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
             }}>{extraBusy ? '送出中…' : '送出加簽請求'}</button>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+// ─── 自訂選人下拉（避開 iOS native picker 怪 UI + 加搜尋功能） ───
+function EmployeePicker({ value, onChange, options, placeholder }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const selected = options.find(o => String(o.id) === String(value))
+  const filtered = options.filter(o => !search || (o.name || '').includes(search))
+
+  return (
+    <div style={{ position: 'relative', marginBottom: 10 }}>
+      <div onClick={() => setOpen(s => !s)} style={{
+        width: '100%', padding: '10px 12px',
+        borderRadius: 6, border: '1px solid var(--border2)',
+        background: 'var(--card)', fontSize: 13,
+        cursor: 'pointer',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        color: selected ? 'var(--t1)' : 'var(--t3)',
+      }}>
+        <span>{selected ? selected.name : placeholder}</span>
+        <span style={{ color: 'var(--t3)', fontSize: 11 }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{
+            position: 'fixed', inset: 0, zIndex: 99, background: 'transparent',
+          }} />
+          <div style={{
+            position: 'absolute', top: '100%', left: 0, right: 0,
+            marginTop: 4, background: 'var(--card)',
+            border: '1px solid var(--border2)', borderRadius: 6,
+            maxHeight: 260, overflowY: 'auto', zIndex: 100,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          }}>
+            <input value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="🔍 搜尋姓名…"
+              autoFocus
+              style={{
+                width: '100%', padding: '10px 12px',
+                border: 'none', borderBottom: '1px solid var(--border2)',
+                background: 'var(--card)',
+                fontSize: 13, color: 'var(--t1)',
+                outline: 'none', boxSizing: 'border-box',
+              }}
+            />
+            {filtered.length === 0 ? (
+              <div style={{ padding: 16, color: 'var(--t3)', fontSize: 12, textAlign: 'center' }}>
+                沒有符合的同事
+              </div>
+            ) : (
+              filtered.map(o => (
+                <div key={o.id}
+                  onClick={() => { onChange(String(o.id)); setOpen(false); setSearch('') }}
+                  style={{
+                    padding: '10px 14px', fontSize: 13,
+                    cursor: 'pointer',
+                    background: String(value) === String(o.id) ? 'rgba(34,211,238,0.1)' : 'transparent',
+                    color: 'var(--t1)',
+                    borderBottom: '1px solid var(--border2)',
+                  }}>
+                  {String(value) === String(o.id) && '✓ '}{o.name}
+                </div>
+              ))
+            )}
+          </div>
+        </>
       )}
     </div>
   )
