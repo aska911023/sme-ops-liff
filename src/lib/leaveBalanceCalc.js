@@ -23,11 +23,11 @@ export const LEAVE_INFO = {
   '生理假':   { max: 12,   paid: '半薪',  law: '性平法 §14',     note: '每月1天，女性員工適用' },
   '婚假':     { max: 8,    paid: '有薪',  law: '勞工請假規則 §2', note: '登記日前10日起3個月內請畢' },
   '喪假':     { max: 8,    paid: '有薪',  law: '勞工請假規則 §3', note: '父母/配偶8天、祖父母/子女6天、兄弟姊妹3天' },
-  '陪產假':   { max: 7,    paid: '有薪',  law: '性平法 §15',     note: '配偶分娩前後15日內請畢' },
-  '產檢假':   { max: 7,    paid: '有薪',  law: '性平法 §15',     note: '可以小時為單位，女性適用' },
+  '陪產假':   { max: 7,    paid: '有薪',  law: '性平法 §15',     note: '配偶分娩前後15日內請畢', onDemand: true },
+  '產檢假':   { max: 7,    paid: '有薪',  law: '性平法 §15',     note: '可以小時為單位，女性適用', onDemand: true },
   '公假':     { max: null, paid: '有薪',  law: '勞工請假規則 §3', note: '選舉、教召、作證等' },
-  '產假':     { max: 56,   paid: '有薪',  law: '勞基法 §50',     note: '分娩8週，女性適用' },
-  '育嬰假':   { max: 730,  paid: '津貼80%', law: '性平法 §16',   note: '子女滿3歲前，2026可按日申請' },
+  '產假':     { max: 56,   paid: '有薪',  law: '勞基法 §50',     note: '分娩8週，女性適用', onDemand: true },
+  '育嬰假':   { max: 730,  paid: '津貼80%', law: '性平法 §16',   note: '子女滿3歲前，2026可按日申請', onDemand: true },
   '公傷病假': { max: null, paid: '有薪',  law: '勞基法 §43',     note: '職業災害，工資照給' },
 }
 
@@ -95,10 +95,14 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
 
   return [
     { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtra },
-    ...Object.entries(LEAVE_LIMITS).map(([type, legalMax]) => {
-      const extra = benefitExtras[type]?.extra_days || 0
-      return { label: type, total: legalMax + extra, used: usedByType(type), extra }
-    }),
+    // onDemand 假別（產假/陪產/產檢/育嬰）不灌進預設額度 — 不是每人每年固定有
+    // 員工真要申請時 Leave.jsx 的下拉選單仍可選到，LEAVE_INFO 上限仍可驗證
+    ...Object.entries(LEAVE_LIMITS)
+      .filter(([type]) => !LEAVE_INFO[type]?.onDemand)
+      .map(([type, legalMax]) => {
+        const extra = benefitExtras[type]?.extra_days || 0
+        return { label: type, total: legalMax + extra, used: usedByType(type), extra }
+      }),
   ]
 }
 
