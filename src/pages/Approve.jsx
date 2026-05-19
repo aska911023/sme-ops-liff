@@ -70,18 +70,20 @@ const GROUPS = {
     icon: Users,
     color: 'cyan',
     tabs: [
-      { key: 'resignation', label: '離職', pendingStatus: '申請中' },
-      { key: 'loa',         label: '留停', pendingStatus: '申請中' },
-      { key: 'transfer',    label: '異動', pendingStatus: '申請中' },
+      { key: 'resignation', label: '離職',     pendingStatus: '申請中' },
+      { key: 'loa',         label: '留停',     pendingStatus: '申請中' },
+      { key: 'transfer',    label: '異動',     pendingStatus: '申請中' },
+      { key: 'headcount',   label: '人力需求', pendingStatus: '申請中' },
     ],
   },
 }
 
-// HR 異動 3 表的 type → hr_chain_approve 的 p_table 對應
+// HR 異動 3 表 + headcount 的 type → hr_chain_approve 的 p_table 對應
 const HR_CHAIN_TABLE_MAP = {
   resignation: 'resignation',
   loa: 'loa',
   transfer: 'transfer',
+  headcount: 'headcount',
 }
 
 export default function Approve() {
@@ -97,8 +99,9 @@ export default function Approve() {
     expense: 'expense', expense_request: 'expense-request', expense_settle: 'expense-settle',
     off_request: 'off', shift_swap_peer: 'swap-peer', shift_swap_manager: 'swap-manager',
     task_confirmation: 'task',
-    // HR 異動 3 表
+    // HR 異動 3 表 + 人力需求
     resignation: 'resignation', loa: 'loa', transfer: 'transfer',
+    headcount: 'headcount',
   }
   const SLUG_TO_TAB = Object.fromEntries(Object.entries(TAB_TO_SLUG).map(([k, v]) => [v, k]))
 
@@ -130,6 +133,7 @@ export default function Approve() {
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
     expense_settles: [],
     resignation_requests: [], leave_of_absence_requests: [], personnel_transfer_requests: [],
+    headcount_requests: [],
     shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
     task_confirmations: [],
     can: { hr: false, finance: false },
@@ -158,6 +162,8 @@ export default function Approve() {
       resignation_requests:        rpc?.resignation_requests        || [],
       leave_of_absence_requests:   rpc?.leave_of_absence_requests   || [],
       personnel_transfer_requests: rpc?.personnel_transfer_requests || [],
+      // 人力需求（2026-05-19）
+      headcount_requests:          rpc?.headcount_requests          || [],
       shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
       shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
       off_requests:            rpc?.off_requests            || [],
@@ -212,10 +218,11 @@ export default function Approve() {
               shift_swap_peer: 'shift_swaps_for_peer', shift_swap_manager: 'shift_swaps_for_manager',
               off_request: 'off_requests',
               task_confirmation: 'task_confirmations',
-              // HR 異動 3 表
+              // HR 異動 3 表 + 人力需求
               resignation: 'resignation_requests',
               loa: 'leave_of_absence_requests',
-              transfer: 'personnel_transfer_requests' })[k] || k
+              transfer: 'personnel_transfer_requests',
+              headcount: 'headcount_requests' })[k] || k
   }
 
   const handle = async (type, id, action) => {
@@ -348,6 +355,10 @@ export default function Approve() {
     shift_swap_manager:  data.shift_swaps_for_manager.length,
     off_request:         data.off_requests.length,
     task_confirmation:   data.task_confirmations.length,
+    resignation:         data.resignation_requests.filter(r => r.status === '申請中').length,
+    loa:                 data.leave_of_absence_requests.filter(r => r.status === '申請中').length,
+    transfer:            data.personnel_transfer_requests.filter(r => r.status === '申請中').length,
+    headcount:           data.headcount_requests.filter(r => r.status === '申請中').length,
   }
   const groupCounts = {
     hr:       GROUPS.hr.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
@@ -371,7 +382,7 @@ export default function Approve() {
     ['expense','expense_request','expense_settle'].includes(k) ? data.can.finance :
     ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true :
     ['task_confirmation'].includes(k) ? true :
-    ['resignation','loa','transfer'].includes(k) ? true : false
+    ['resignation','loa','transfer','headcount'].includes(k) ? true : false
 
   return (
     <div className="page">
@@ -669,6 +680,27 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
             生效 {r.effective_date || '—'}
           </div>
           {r.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{r.reason}</div>}
+        </>}
+      />
+    ))
+  }
+  if (tab === 'headcount') {
+    if (data.headcount_requests.length === 0) return empty('沒有等你審的人力需求')
+    return data.headcount_requests.map(r => (
+      <Row key={r.id}
+        item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
+        type="headcount" processing={processing} handle={handle} statusBadge={statusBadge}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span className="badge badge-purple" style={{ marginRight: 6 }}>人力需求</span>
+            {r.job_title || '—'} × {r.headcount || 0} 人
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
+            {r.form_no ? `${r.form_no}　·　` : ''}
+            {r.job_type || ''}
+            {r.salary_type ? `　·　${r.salary_type} ${r.salary_range || ''}` : ''}
+          </div>
+          {r.new_reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>原因：{r.new_reason}</div>}
         </>}
       />
     ))
