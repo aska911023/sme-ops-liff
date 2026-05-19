@@ -76,6 +76,15 @@ const GROUPS = {
       { key: 'headcount',   label: '人力需求', pendingStatus: '申請中' },
     ],
   },
+  // 自訂表單（form_submissions）
+  form: {
+    label: '自訂表單',
+    icon: FileText,
+    color: 'blue',
+    tabs: [
+      { key: 'form_submission', label: '表單申請', pendingStatus: '申請中' },
+    ],
+  },
 }
 
 // HR 異動 3 表 + headcount 的 type → hr_chain_approve 的 p_table 對應
@@ -135,6 +144,7 @@ function PendingApprovalsView() {
     expense_settles: [],
     resignation_requests: [], leave_of_absence_requests: [], personnel_transfer_requests: [],
     headcount_requests: [],
+    form_submissions: [],
     shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
     task_confirmations: [],
     can: { hr: false, finance: false },
@@ -165,6 +175,8 @@ function PendingApprovalsView() {
       personnel_transfer_requests: rpc?.personnel_transfer_requests || [],
       // 人力需求（2026-05-19）
       headcount_requests:          rpc?.headcount_requests          || [],
+      // 自訂表單 (2026-05-19 phase 2)
+      form_submissions:            rpc?.form_submissions            || [],
       shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
       shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
       off_requests:            rpc?.off_requests            || [],
@@ -219,11 +231,12 @@ function PendingApprovalsView() {
               shift_swap_peer: 'shift_swaps_for_peer', shift_swap_manager: 'shift_swaps_for_manager',
               off_request: 'off_requests',
               task_confirmation: 'task_confirmations',
-              // HR 異動 3 表 + 人力需求
+              // HR 異動 3 表 + 人力需求 + 自訂表單
               resignation: 'resignation_requests',
               loa: 'leave_of_absence_requests',
               transfer: 'personnel_transfer_requests',
-              headcount: 'headcount_requests' })[k] || k
+              headcount: 'headcount_requests',
+              form_submission: 'form_submissions' })[k] || k
   }
 
   const handle = async (type, id, action) => {
@@ -236,7 +249,16 @@ function PendingApprovalsView() {
     setProcessing(id)
 
     let result, error
-    if (HR_CHAIN_TABLE_MAP[type]) {
+    if (type === 'form_submission') {
+      // 自訂表單走 form_submission_chain_approve
+      if (!employee?.id) {
+        setProcessing(null)
+        alert('找不到員工資料，請重新綁定 LINE'); return
+      }
+      ;({ data: result, error } = await supabase.rpc('form_submission_chain_approve', {
+        p_id: id, p_approver_id: employee.id, p_action: action, p_reason: reason,
+      }))
+    } else if (HR_CHAIN_TABLE_MAP[type]) {
       // HR 異動 3 表走 hr_chain_approve（resignation / loa / transfer）
       if (!employee?.id) {
         setProcessing(null)
@@ -360,14 +382,17 @@ function PendingApprovalsView() {
     loa:                 data.leave_of_absence_requests.filter(r => r.status === '申請中').length,
     transfer:            data.personnel_transfer_requests.filter(r => r.status === '申請中').length,
     headcount:           data.headcount_requests.filter(r => r.status === '申請中').length,
+    form_submission:     data.form_submissions.filter(r => r.status === '申請中').length,
   }
   const groupCounts = {
     hr:       GROUPS.hr.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
     finance:  GROUPS.finance.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
     schedule: GROUPS.schedule.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
     task:     GROUPS.task.tabs.reduce((sum, t) => sum + (counts[t.key] || 0), 0),
+    personnel: (GROUPS.personnel?.tabs || []).reduce((sum, t) => sum + (counts[t.key] || 0), 0),
+    form:     (GROUPS.form?.tabs || []).reduce((sum, t) => sum + (counts[t.key] || 0), 0),
   }
-  const totalPending = groupCounts.hr + groupCounts.finance + groupCounts.schedule + groupCounts.task + (groupCounts.personnel || 0)
+  const totalPending = groupCounts.hr + groupCounts.finance + groupCounts.schedule + groupCounts.task + (groupCounts.personnel || 0) + (groupCounts.form || 0)
 
   const statusBadge = (s) => s === '已核准' || s === '已核銷' ? 'badge-green' : s === '已退回' || s === '已駁回' || s === '已拒絕' ? 'badge-red' : 'badge-orange'
   // 排班 / 任務 / 異動：只要有 pending 就視為 enabled（任何員工都可能收到，server 端已過濾誰能簽）
@@ -377,13 +402,14 @@ function PendingApprovalsView() {
     schedule:  true,
     task:      true,
     personnel: true,  // 異動 3 表：server 端 chain-aware 過濾，無對應 can flag
+    form:      true,  // 自訂表單：同上
   }
   const tabEnabled = (k) =>
     ['leave','overtime','trip','correction'].includes(k) ? data.can.hr :
     ['expense','expense_request','expense_settle'].includes(k) ? data.can.finance :
     ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true :
     ['task_confirmation'].includes(k) ? true :
-    ['resignation','loa','transfer','headcount'].includes(k) ? true : false
+    ['resignation','loa','transfer','headcount','form_submission'].includes(k) ? true : false
 
   return (
     <>
@@ -700,6 +726,25 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
             {r.salary_type ? `　·　${r.salary_type} ${r.salary_range || ''}` : ''}
           </div>
           {r.new_reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>原因：{r.new_reason}</div>}
+        </>}
+      />
+    ))
+  }
+  if (tab === 'form_submission') {
+    if (data.form_submissions.length === 0) return empty('沒有等你審的自訂表單')
+    return data.form_submissions.map(r => (
+      <Row key={r.id}
+        item={{ ...r, employee: r.applicant_name || '—', employee_id: r.applicant_id }}
+        type="form_submission" processing={processing} handle={handle} statusBadge={statusBadge}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span className="badge badge-blue" style={{ marginRight: 6 }}>{r.template_name || '自訂表單'}</span>
+          </div>
+          {r.current_step_label && (
+            <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
+              目前關卡：{r.current_step_label}
+            </div>
+          )}
         </>}
       />
     ))
