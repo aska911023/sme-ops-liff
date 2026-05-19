@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar, FileText, Eye, ClipboardCheck } from 'lucide-react'
+import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, Calendar, FileText, Eye, ClipboardCheck, Inbox, FileCheck } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -86,7 +86,8 @@ const HR_CHAIN_TABLE_MAP = {
   headcount: 'headcount',
 }
 
-export default function Approve() {
+// ── 待簽核 view (原 Approve 內容 1:1 不動) ────────────────────────────────
+function PendingApprovalsView() {
   const { lineProfile, employee } = useAuth()
   const navigate = useNavigate()
   // URL 用短英文 slug，內部還是用原本 key（往下相容）
@@ -385,17 +386,15 @@ export default function Approve() {
     ['resignation','loa','transfer','headcount'].includes(k) ? true : false
 
   return (
-    <div className="page">
-      <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
-      <div className="header">
-        <div className="header-title">📋 簽核中心</div>
-        {totalPending > 0 && (
+    <>
+      {totalPending > 0 && (
+        <div style={{ marginBottom: 12 }}>
           <span style={{
             padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700,
             background: 'rgba(251,146,60,0.15)', color: 'var(--orange)',
           }}>{totalPending} 件待審</span>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ── Group toggle (人事 / 經費) ── */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -473,7 +472,7 @@ export default function Approve() {
       ) : (
         renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest, lineProfile?.lineUserId, reload)
       )}
-    </div>
+    </>
   )
 }
 
@@ -1928,6 +1927,137 @@ function EmployeePicker({ value, onChange, options, placeholder }) {
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// 已簽核 view — 從 liff_list_my_signed_approvals RPC 拉
+// ════════════════════════════════════════════════════════════════════════════
+const SIGNED_TYPE_LABEL = {
+  leave: '請假', overtime: '加班', trip: '出差', correction: '補打卡',
+  expense: '報帳', expense_request: '費用申請',
+  resignation: '離職', loa: '留停', transfer: '異動', headcount: '人力需求',
+}
+
+function SignedApprovalsView() {
+  const { lineProfile } = useAuth()
+  const today = new Date()
+  const [yearMonth, setYearMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`)
+  const [list, setList] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!lineProfile?.lineUserId) return
+    setLoading(true)
+    supabase.rpc('liff_list_my_signed_approvals', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_year_month: yearMonth,
+    }).then(({ data }) => {
+      if (data?.error) { console.warn('liff_list_my_signed_approvals:', data.error); setList([]) }
+      else setList(Array.isArray(data) ? data : [])
+      setLoading(false)
+    })
+  }, [lineProfile?.lineUserId, yearMonth])
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--t3)' }}>{yearMonth} 已簽核 · {list.length} 件</div>
+        <input className="form-input" type="month" value={yearMonth}
+          onChange={e => setYearMonth(e.target.value)}
+          style={{ width: 140, fontSize: 13 }} />
+      </div>
+
+      {loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--t3)' }}>載入中...</div>
+      ) : list.length === 0 ? (
+        <div style={{ padding: '40px 16px', textAlign: 'center', color: 'var(--t3)', fontSize: 12 }}>
+          這個月還沒簽過任何單
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {list.map((row, i) => {
+            const isApproved = row.my_action === 'approved'
+            const typeLabel = SIGNED_TYPE_LABEL[row.source_type] || row.source_type
+            return (
+              <div key={`${row.source_type}-${row.source_id}-${i}`} style={{
+                padding: 10, borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--card)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span className={`badge ${row.is_extra ? 'badge-orange' : 'badge-purple'}`} style={{ fontSize: 10 }}>
+                    {row.is_extra ? '🪶 加簽' : typeLabel}
+                  </span>
+                  <span style={{
+                    fontSize: 11, fontWeight: 700,
+                    color: isApproved ? 'var(--green)' : 'var(--red)',
+                    marginLeft: 'auto',
+                  }}>{isApproved ? '✓ 核准' : '✗ 退回'}</span>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--t1)', fontWeight: 600 }}>
+                  {row.applicant_name || '—'} · {row.summary || `#${row.source_id}`}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+                  {row.step_label || ''} · {row.signed_at ? new Date(row.signed_at).toLocaleString('zh-TW', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>
+                  整單狀態：{row.current_status || '—'}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// Outer wrapper — 切換「待簽核 / 已簽核」最外層 tab
+// ════════════════════════════════════════════════════════════════════════════
+export default function Approve() {
+  const navigate = useNavigate()
+  const [outerTab, setOuterTab] = useState('pending')
+
+  return (
+    <div className="page">
+      <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
+      <div className="header">
+        <div className="header-title">📋 簽核中心</div>
+      </div>
+
+      {/* 外層 tab bar */}
+      <div style={{
+        display: 'flex', gap: 0, marginBottom: 12,
+        borderBottom: '2px solid var(--border)',
+      }}>
+        {[
+          { key: 'pending', label: '待簽核', icon: Inbox },
+          { key: 'signed',  label: '已簽核', icon: FileCheck },
+        ].map(t => {
+          const Icon = t.icon
+          const isActive = outerTab === t.key
+          return (
+            <button key={t.key} onClick={() => setOuterTab(t.key)} style={{
+              flex: 1, padding: '10px 12px', border: 'none', background: 'transparent', cursor: 'pointer',
+              fontSize: 13, fontWeight: 700,
+              color: isActive ? 'var(--cyan)' : 'var(--t3)',
+              borderBottom: isActive ? '2px solid var(--cyan)' : '2px solid transparent',
+              marginBottom: -2,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}>
+              <Icon size={14} />
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {outerTab === 'pending' ? <PendingApprovalsView /> : <SignedApprovalsView />}
     </div>
   )
 }
