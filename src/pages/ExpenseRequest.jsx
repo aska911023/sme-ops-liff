@@ -15,7 +15,9 @@ const STATUS_COLORS = {
   '已駁回': 'var(--red)',
 }
 
-const fmt = (n) => n != null ? `NT$ ${Number(n).toLocaleString()}` : '-'
+const CURRENCY_PREFIX = { TWD: 'NT$' }
+const fmt = (n, currency = 'TWD') =>
+  n != null ? `${CURRENCY_PREFIX[currency] ?? currency} ${Number(n).toLocaleString()}` : '-'
 
 export default function ExpenseRequest() {
   const { employee, lineProfile } = useAuth()
@@ -246,14 +248,14 @@ export default function ExpenseRequest() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)' }}>
                 <span>{r.is_expense === false ? '—' : `${r.account_code || ''} ${r.account_name || ''}`}</span>
-                <span style={{ fontWeight: 700, color: 'var(--t1)' }}>{r.is_expense === false ? '—' : fmt(r.estimated_amount)}</span>
+                <span style={{ fontWeight: 700, color: 'var(--t1)' }}>{r.is_expense === false ? '—' : fmt(r.estimated_amount, r.currency)}</span>
               </div>
               {r.is_expense !== false && r.actual_amount != null && (
                 <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
-                  實際：{fmt(r.actual_amount)}
+                  實際：{fmt(r.actual_amount, r.currency)}
                   {r.difference != null && r.difference !== 0 && (
                     <span style={{ color: r.difference > 0 ? 'var(--red)' : 'var(--green)', marginLeft: 6 }}>
-                      ({r.difference > 0 ? '+' : ''}{fmt(r.difference)})
+                      ({r.difference > 0 ? '+' : ''}{fmt(r.difference, r.currency)})
                     </span>
                   )}
                 </div>
@@ -364,7 +366,7 @@ export default function ExpenseRequest() {
                       <input className="form-input" type="number" value={li.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)}
                         placeholder="單價" style={{ textAlign: 'right' }} />
                       <div style={{ textAlign: 'right', fontWeight: 700, fontFamily: 'monospace', fontSize: 13, color: 'var(--cyan)' }}>
-                        {li.subtotal ? fmt(li.subtotal) : '$0'}
+                        {li.subtotal ? fmt(li.subtotal, form.currency) : '$0'}
                       </div>
                     </div>
                     {lineItems.length > 1 && (
@@ -380,7 +382,7 @@ export default function ExpenseRequest() {
                   <Plus size={14} /> 新增品項
                 </button>
                 <div style={{ textAlign: 'right', marginTop: 8, fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
-                  合計：{fmt(lineTotal)}
+                  合計：{fmt(lineTotal, form.currency)}
                 </div>
               </div>
             </>
@@ -478,7 +480,7 @@ export default function ExpenseRequest() {
       {tab === 'settle' && detail && (
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>核銷：{detail.title}</div>
-          <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 14 }}>預估金額：{fmt(detail.estimated_amount)}</div>
+          <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 14 }}>預估金額：{fmt(detail.estimated_amount, detail.currency)}</div>
 
           <div className="form-group">
             <label className="form-label">實際金額 *</label>
@@ -559,9 +561,9 @@ export default function ExpenseRequest() {
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
                   <div>
                     <div style={{ fontWeight: 600 }}>{li.name}</div>
-                    <div style={{ color: 'var(--t3)', fontSize: 11 }}>{li.qty} x {fmt(li.unit_price)}</div>
+                    <div style={{ color: 'var(--t3)', fontSize: 11 }}>{li.qty} x {fmt(li.unit_price, detail.currency)}</div>
                   </div>
-                  <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{fmt(li.subtotal)}</div>
+                  <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{fmt(li.subtotal, detail.currency)}</div>
                 </div>
               ))}
             </div>
@@ -572,16 +574,16 @@ export default function ExpenseRequest() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, margin: '12px 0', background: 'var(--glass)', padding: 12, borderRadius: 10 }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: 'var(--t3)' }}>預估</div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{fmt(detail.estimated_amount)}</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{fmt(detail.estimated_amount, detail.currency)}</div>
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: 'var(--t3)' }}>實際</div>
-                <div style={{ fontWeight: 700, fontSize: 14 }}>{detail.actual_amount != null ? fmt(detail.actual_amount) : '-'}</div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{detail.actual_amount != null ? fmt(detail.actual_amount, detail.currency) : '-'}</div>
               </div>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 11, color: 'var(--t3)' }}>差異</div>
                 <div style={{ fontWeight: 700, fontSize: 14, color: detail.difference > 0 ? 'var(--red)' : detail.difference < 0 ? 'var(--green)' : 'var(--t1)' }}>
-                  {detail.difference != null ? fmt(detail.difference) : '-'}
+                  {detail.difference != null ? fmt(detail.difference, detail.currency) : '-'}
                 </div>
               </div>
             </div>
