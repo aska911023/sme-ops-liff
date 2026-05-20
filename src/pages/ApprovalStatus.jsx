@@ -17,13 +17,14 @@ const TYPE_META = {
   expenses:         { label: '報帳',   icon: '💰', color: 'green',  rpcType: 'expense',         editPath: '/expenses' },
   corrections:      { label: '補打卡', icon: '✏️', color: 'cyan',   rpcType: 'correction',      editPath: '/clock-correction' },
   expense_requests: { label: '申請',   icon: '📝', color: 'green',  rpcType: 'expense_request', editPath: '/expense-request' },
+  form_submissions: { label: '自訂表單', icon: '📋', color: 'blue',  rpcType: 'form_submission', editPath: null },
 }
 
 export default function ApprovalStatus() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [tab, setTab] = useState('pending') // pending | passed | failed
-  const [data, setData] = useState({ leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [] })
+  const [data, setData] = useState({ leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [], form_submissions: [] })
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
@@ -36,7 +37,7 @@ export default function ApprovalStatus() {
       setLoading(false)
       return
     }
-    setData(rpcData || { leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [] })
+    setData(rpcData || { leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [], form_submissions: [] })
     setLoading(false)
   }, [lineProfile?.lineUserId])
 
@@ -88,6 +89,7 @@ export default function ApprovalStatus() {
     if (r._type === 'expenses')  return `${r.category || ''} · NT$ ${Number(r.amount || 0).toLocaleString()} · ${r.date}`
     if (r._type === 'corrections') return `${r.type || '上班打卡'} · ${r.date} · ${r.correction_time || '未填'}`
     if (r._type === 'expense_requests') return `${r.title} · NT$ ${Number(r.estimated_amount || 0).toLocaleString()}`
+    if (r._type === 'form_submissions') return r.template_name || '自訂表單'
     return ''
   }
 
@@ -184,6 +186,22 @@ export default function ApprovalStatus() {
               </div>
               <div style={{ fontSize: 13, color: 'var(--red)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
                 {r.reject_reason}
+              </div>
+            </div>
+          )}
+          {Array.isArray(r.reject_attachments) && r.reject_attachments.length > 0 && (
+            <div style={{ marginTop: 8, marginLeft: 24, padding: '10px 12px', borderRadius: 8,
+              background: 'rgba(248,113,113,0.08)', border: '1px solid var(--red)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>
+                📎 駁回附件
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {r.reject_attachments.map((att, i) => (
+                  <a key={i} href={att.url} target="_blank" rel="noreferrer"
+                     style={{ fontSize: 12, color: 'var(--cyan)', textDecoration: 'underline', wordBreak: 'break-all' }}>
+                    {att.name || `附件 ${i + 1}`}
+                  </a>
+                ))}
               </div>
             </div>
           )}

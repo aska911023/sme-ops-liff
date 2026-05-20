@@ -153,6 +153,11 @@ function PendingApprovalsView() {
   const [processing, setProcessing] = useState(null)
   // ★ 只在首次載入時自動切 group（避免 user 切到沒待辦的 group 立刻被踢回去 → 「跳一下跳一下」）
   const [autoSwitched, setAutoSwitched] = useState(false)
+  // 自訂表單退回 modal（支援附件上傳）
+  const [rejectModal, setRejectModal] = useState({ open: false, id: null })
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectFiles, setRejectFiles] = useState([])
+  const [rejectBusy, setRejectBusy] = useState(false)
 
   const reload = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
@@ -239,7 +244,47 @@ function PendingApprovalsView() {
               form_submission: 'form_submissions' })[k] || k
   }
 
+  const closeRejectModal = () => {
+    setRejectModal({ open: false, id: null })
+    setRejectReason('')
+    setRejectFiles([])
+  }
+
+  const handleFormSubmissionReject = async () => {
+    if (!rejectReason.trim()) { alert('請填寫退回原因'); return }
+    if (!employee?.id) { alert('找不到員工資料，請重新綁定 LINE'); return }
+    setRejectBusy(true)
+
+    const attachments = []
+    for (const file of rejectFiles) {
+      const ts = Date.now()
+      const safeName = file.name.replace(/[^a-zA-Z0-9.\-_一-鿿]/g, '_').slice(0, 80)
+      const path = `form-reject/${rejectModal.id}/${ts}_${safeName}`
+      const { error: upErr } = await supabase.storage.from('uploads').upload(path, file)
+      if (upErr) { alert('附件上傳失敗：' + upErr.message); setRejectBusy(false); return }
+      const { data: { publicUrl } } = supabase.storage.from('uploads').getPublicUrl(path)
+      attachments.push({ url: publicUrl, name: file.name, uploaded_at: new Date().toISOString() })
+    }
+
+    const { data: result, error } = await supabase.rpc('form_submission_chain_approve', {
+      p_id: rejectModal.id, p_approver_id: employee.id,
+      p_action: 'reject', p_reason: rejectReason,
+      p_reject_attachments: attachments,
+    })
+    setRejectBusy(false)
+    if (error) { alert('系統錯誤：' + error.message); return }
+    if (!result?.ok) { alert(ERR_MSG[result?.error] || `退回失敗：${result?.error || 'unknown'}`); return }
+    closeRejectModal()
+    reload()
+  }
+
   const handle = async (type, id, action) => {
+    // 自訂表單退回 → 走 modal（支援附件上傳）
+    if (type === 'form_submission' && action === 'reject') {
+      setRejectModal({ open: true, id })
+      return
+    }
+
     let reason = null
     if (action === 'reject') {
       reason = prompt('退回原因（申請人會看到，並可改後重送）：')
@@ -250,7 +295,7 @@ function PendingApprovalsView() {
 
     let result, error
     if (type === 'form_submission') {
-      // 自訂表單走 form_submission_chain_approve
+      // 自訂表單核准（reject 已在上方攔截）
       if (!employee?.id) {
         setProcessing(null)
         alert('找不到員工資料，請重新綁定 LINE'); return
@@ -497,6 +542,100 @@ function PendingApprovalsView() {
         </div>
       ) : (
         renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, handleSwapManager, handleOffRequest, lineProfile?.lineUserId, reload)
+      )}
+
+      {/* ── 自訂表單退回 Modal ── */}
+      {rejectModal.open && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 999,
+          display: 'flex', alignItems: 'flex-end',
+        }} onClick={e => { if (e.target === e.currentTarget) closeRejectModal() }}>
+          <div style={{
+            width: '100%', background: 'var(--bg)', borderRadius: '16px 16px 0 0',
+            padding: 20, maxHeight: '80vh', overflowY: 'auto',
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 16, color: 'var(--t1)' }}>
+              退回表單
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>
+                退回原因 <span style={{ color: 'var(--red)' }}>*</span>
+              </div>
+              <textarea
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                placeholder="請填寫退回原因（申請人會看到）"
+                rows={4}
+                style={{
+                  width: '100%', borderRadius: 8, border: '1.5px solid var(--border2)',
+                  padding: '10px 12px', background: 'var(--bg-secondary)', color: 'var(--t1)',
+                  fontSize: 14, resize: 'vertical', boxSizing: 'border-box', outline: 'none',
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>
+                附件（最多 3 個，可選）
+              </div>
+              {rejectFiles.length < 3 && (
+                <label style={{
+                  display: 'block', padding: '12px', borderRadius: 8,
+                  border: '1.5px dashed var(--border2)', textAlign: 'center',
+                  fontSize: 13, color: 'var(--t3)', cursor: 'pointer',
+                }}>
+                  📎 選取檔案
+                  <input type="file" multiple accept="*/*" style={{ display: 'none' }}
+                    onChange={e => {
+                      const picked = Array.from(e.target.files || [])
+                      setRejectFiles(prev => [...prev, ...picked].slice(0, 3))
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+              )}
+              {rejectFiles.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {rejectFiles.map((f, i) => (
+                    <div key={i} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                      background: 'var(--bg-secondary)', borderRadius: 8,
+                    }}>
+                      <span style={{ flex: 1, fontSize: 12, wordBreak: 'break-all', color: 'var(--t1)' }}>
+                        📄 {f.name}
+                      </span>
+                      <button onClick={() => setRejectFiles(prev => prev.filter((_, j) => j !== i))}
+                        style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: 4, flexShrink: 0 }}>
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={closeRejectModal} disabled={rejectBusy} style={{
+                flex: 1, padding: 14, borderRadius: 10,
+                border: '1.5px solid var(--border2)', background: 'transparent',
+                color: 'var(--t2)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+              }}>
+                取消
+              </button>
+              <button onClick={handleFormSubmissionReject} disabled={rejectBusy} style={{
+                flex: 2, padding: 14, borderRadius: 10, border: 'none',
+                background: rejectBusy ? 'var(--t3)' : 'var(--red)', color: '#fff',
+                fontSize: 14, fontWeight: 700,
+                cursor: rejectBusy ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                opacity: rejectBusy ? 0.7 : 1,
+              }}>
+                {rejectBusy ? '處理中…' : <><X size={16} /> 確認退回</>}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   )
