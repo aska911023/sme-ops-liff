@@ -732,22 +732,75 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
   }
   if (tab === 'form_submission') {
     if (data.form_submissions.length === 0) return empty('沒有等你審的自訂表單')
-    return data.form_submissions.map(r => (
-      <Row key={r.id}
-        item={{ ...r, employee: r.applicant_name || '—', employee_id: r.applicant_id }}
-        type="form_submission" processing={processing} handle={handle} statusBadge={statusBadge}
-        body={<>
-          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
-            <span className="badge badge-blue" style={{ marginRight: 6 }}>{r.template_name || '自訂表單'}</span>
-          </div>
-          {r.current_step_label && (
-            <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
-              目前關卡：{r.current_step_label}
+    return data.form_submissions.map(r => {
+      // 拆 fields → fieldRows (label + value) + attachments
+      const fields = Array.isArray(r.template_fields) ? r.template_fields : []
+      const fieldRows = []
+      const attachments = []
+      for (const f of fields) {
+        if (f.type === 'section') continue
+        const v = r.data?.[f.key]
+        if (f.type === 'file') {
+          if (v) {
+            const name = String(v).split('?')[0].split('/').pop() || f.label || '附件'
+            attachments.push({ url: v, name, label: f.label })
+          }
+        } else {
+          let displayValue
+          if (v === null || v === undefined || v === '') displayValue = '—'
+          else if (f.type === 'checkbox') displayValue = v ? '✓ 是' : '✗ 否'
+          else if (f.type === 'employee_picker' || f.type === 'department_picker' || f.type === 'store_picker') displayValue = `#${v}`
+          else displayValue = String(v)
+          fieldRows.push({ label: f.label, value: displayValue, multiline: f.type === 'textarea' })
+        }
+      }
+
+      return (
+        <Row key={r.id}
+          item={{ ...r, employee: r.applicant_name || '—', employee_id: r.applicant_id }}
+          type="form_submission" processing={processing} handle={handle} statusBadge={statusBadge}
+          body={<>
+            <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+              <span className="badge badge-blue" style={{ marginRight: 6 }}>{r.template_name || '自訂表單'}</span>
             </div>
-          )}
-        </>}
-      />
-    ))
+            {r.current_step_label && (
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
+                目前關卡：{r.current_step_label}
+              </div>
+            )}
+            {/* 欄位資料 */}
+            {fieldRows.length > 0 && (
+              <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-card-alt, rgba(0,0,0,0.02))', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {fieldRows.map((row, i) => (
+                  <div key={i} style={{
+                    display: row.multiline ? 'block' : 'grid',
+                    gridTemplateColumns: row.multiline ? undefined : '90px 1fr',
+                    gap: 6, fontSize: 12, lineHeight: 1.5,
+                  }}>
+                    <span style={{ color: 'var(--t3)' }}>{row.label}</span>
+                    <span style={{ color: 'var(--t1)', wordBreak: 'break-all' }}>{row.value}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* 附件 */}
+            {attachments.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 4 }}>📎 附件</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {attachments.map((a, i) => (
+                    <a key={i} href={a.url} target="_blank" rel="noreferrer"
+                       style={{ fontSize: 12, color: 'var(--accent-cyan, #06b6d4)', textDecoration: 'underline', wordBreak: 'break-all' }}>
+                      {a.label}：{a.name}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>}
+        />
+      )
+    })
   }
   return null
 }
