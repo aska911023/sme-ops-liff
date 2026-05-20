@@ -24,7 +24,7 @@ export default function ExpenseRequest() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('list') // list / new / settle / detail
-  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true })
+  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD' })
   const [lineItems, setLineItems] = useState([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
   const [settleForm, setSettleForm] = useState({ actual_amount: '', notes: '' })
   const [files, setFiles] = useState([])
@@ -107,6 +107,7 @@ export default function ExpenseRequest() {
         title: form.title,
         description: form.description || null,
         estimated_amount: form.is_expense ? total : null,
+        currency: form.is_expense ? form.currency : 'TWD',
         store: form.is_expense ? (form.store || null) : null,
         supplier: form.is_expense ? (form.supplier || null) : null,
         items: form.is_expense ? validItems : null,
@@ -140,7 +141,7 @@ export default function ExpenseRequest() {
     }
 
     reload()
-    setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true })
+    setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD' })
     setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
     setFiles([])
     setTab('list')
@@ -337,6 +338,17 @@ export default function ExpenseRequest() {
                   <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)}
                     placeholder={employee.store || '選填'} />
                 </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">幣別</label>
+                <select className="form-input" value={form.currency} onChange={e => set('currency', e.target.value)}>
+                  <option value="TWD">TWD — 台幣</option>
+                  <option value="USD">USD — 美元</option>
+                  <option value="JPY">JPY — 日幣</option>
+                  <option value="CNY">CNY — 人民幣</option>
+                  <option value="EUR">EUR — 歐元</option>
+                </select>
               </div>
 
               {/* Line items */}

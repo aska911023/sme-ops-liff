@@ -900,14 +900,10 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
           item={{ ...r, employee: r.applicant_name || '—', employee_id: r.applicant_id }}
           type="form_submission" processing={processing} handle={handle} statusBadge={statusBadge}
           body={<>
+            <ApproverRoleBadge role={r.my_approver_role} stepLabel={r.my_step_label} />
             <div style={{ fontSize: 13, color: 'var(--t2)' }}>
               <span className="badge badge-blue" style={{ marginRight: 6 }}>{r.template_name || '自訂表單'}</span>
             </div>
-            {r.current_step_label && (
-              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
-                目前關卡：{r.current_step_label}
-              </div>
-            )}
             {/* 欄位資料 */}
             {fieldRows.length > 0 && (
               <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-card-alt, rgba(0,0,0,0.02))', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1119,11 +1115,11 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
             background: 'var(--purple-dim)', color: 'var(--purple)',
             fontSize: 11, fontWeight: 600,
           }}>
-            🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps} 關（{
-              [er.current_step_target || er.current_step_label, er.current_step_approver].filter(Boolean).join(' · ') || '—'
-            }）
+            🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps} 關
+            {er.my_step_label ? `（${er.my_step_label}）` : ''}
           </div>
         )}
+        <ApproverRoleBadge role={er.my_approver_role} stepLabel={null} />
       </div>
 
       {/* 退回原因（醒目） */}
@@ -1428,6 +1424,7 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
     <div className="list-item" style={{
       borderLeft: er.status === '核銷已退回' ? '3px solid var(--red)' : undefined,
     }}>
+      <ApproverRoleBadge role={er.my_approver_role} stepLabel={er.my_step_label} />
       {/* Header (clickable) */}
       <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -1458,15 +1455,14 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
           {er.department && <span>{er.department} · </span>}
           {er.store && <span>{er.store}</span>}
         </div>
-        {er.chain_name && (
+        {er.settle_chain_name && (
           <div style={{
             marginTop: 6, padding: '4px 8px', borderRadius: 6,
             background: 'var(--purple-dim)', color: 'var(--purple)',
             fontSize: 11, fontWeight: 600,
           }}>
-            🔐 {er.chain_name} · 第 {er.settle_current_step + 1} / {er.chain_total_steps} 關（{
-              [er.current_step_target || er.current_step_label, er.current_step_approver].filter(Boolean).join(' · ') || '—'
-            }）
+            🔐 {er.settle_chain_name} · 第 {(er.settle_current_step ?? 0) + 1} / {er.settle_total_steps} 關
+            {er.my_step_label ? `（${er.my_step_label}）` : ''}
           </div>
         )}
       </div>
@@ -1804,6 +1800,44 @@ const TYPE_TO_SOURCE_TABLE = {
   transfer: 'personnel_transfer_requests',
 }
 
+// my_approver_role → 中文顯示
+const ROLE_LABEL = {
+  fixed_emp:                    '指定審核人',
+  applicant_dept_manager:       '部門主管',
+  applicant_store_manager:      '門市主管',
+  applicant_supervisor:         '直屬主管',
+  applicant_section_supervisor: '區域督導',
+  specific_dept_manager:        '指定部門主管',
+  specific_store_manager:       '指定門市主管',
+  specific_section_supervisor:  '指定區域督導',
+  fixed_role:                   '指定角色',
+  fixed_dept:                   '部門審核',
+  extra_signer:                 '加簽審核人',
+  direct_manager:               '直屬主管',
+}
+
+function ApproverRoleBadge({ role, stepLabel }) {
+  if (!role && !stepLabel) return null
+  const isExtra = role === 'extra_signer'
+  const label = ROLE_LABEL[role] || role
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+      {label && (
+        <span style={{
+          padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+          background: isExtra ? 'var(--orange-dim)' : 'var(--cyan-dim)',
+          color: isExtra ? 'var(--orange)' : 'var(--cyan)',
+        }}>
+          以 {label} 身分審核
+        </span>
+      )}
+      {stepLabel && (
+        <span style={{ fontSize: 11, color: 'var(--t3)' }}>{stepLabel}</span>
+      )}
+    </div>
+  )
+}
+
 function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准', extraExpanded = null }) {
   const { employee: me } = useAuth()
   const [expanded, setExpanded] = useState(false)
@@ -1925,6 +1959,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
     <div className="list-item" style={{
       borderLeft: item.status === '已退回' ? '3px solid var(--red)' : undefined,
     }}>
+      <ApproverRoleBadge role={item.my_approver_role} stepLabel={item.my_step_label} />
       {/* Header (clickable to expand) */}
       <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
