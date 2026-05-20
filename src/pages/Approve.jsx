@@ -734,12 +734,14 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.form_submissions.length === 0) return empty('沒有等你審的自訂表單')
     return data.form_submissions.map(r => {
       // 拆 fields → fieldRows (label + value) + attachments
+      // data_resolved 內 picker 已被 RPC 解成 name；fallback 用 data
       const fields = Array.isArray(r.template_fields) ? r.template_fields : []
+      const src = r.data_resolved || r.data || {}
       const fieldRows = []
       const attachments = []
       for (const f of fields) {
         if (f.type === 'section') continue
-        const v = r.data?.[f.key]
+        const v = src[f.key]
         if (f.type === 'file') {
           if (v) {
             const name = String(v).split('?')[0].split('/').pop() || f.label || '附件'
@@ -749,8 +751,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
           let displayValue
           if (v === null || v === undefined || v === '') displayValue = '—'
           else if (f.type === 'checkbox') displayValue = v ? '✓ 是' : '✗ 否'
-          else if (f.type === 'employee_picker' || f.type === 'department_picker' || f.type === 'store_picker') displayValue = `#${v}`
-          else displayValue = String(v)
+          else displayValue = String(v)  // picker 從 data_resolved 拿到的已是 name 字串
           fieldRows.push({ label: f.label, value: displayValue, multiline: f.type === 'textarea' })
         }
       }
