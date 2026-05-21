@@ -873,7 +873,6 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     if (data.form_submissions.length === 0) return empty('沒有等你審的自訂表單')
     return data.form_submissions.map(r => {
       // 拆 fields → fieldRows (label + value) + attachments
-      // data_resolved 內 picker 已被 RPC 解成 name；fallback 用 data
       const fields = Array.isArray(r.template_fields) ? r.template_fields : []
       const src = r.data_resolved || r.data || {}
       const fieldRows = []
@@ -890,10 +889,17 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
           let displayValue
           if (v === null || v === undefined || v === '') displayValue = '—'
           else if (f.type === 'checkbox') displayValue = v ? '✓ 是' : '✗ 否'
-          else displayValue = String(v)  // picker 從 data_resolved 拿到的已是 name 字串
+          else displayValue = String(v)
           fieldRows.push({ label: f.label, value: displayValue, multiline: f.type === 'textarea' })
         }
       }
+      // form_attachments 表的附件（storage_path → public URL）
+      const dbAttachments = (r.attachments || []).map(a => ({
+        url: supabase.storage.from(a.storage_bucket || 'attachments').getPublicUrl(a.storage_path).data?.publicUrl || '',
+        name: a.file_name,
+        label: '附件',
+      }))
+      const allAttachments = [...attachments, ...dbAttachments]
 
       return (
         <Row key={r.id}
@@ -919,12 +925,12 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
                 ))}
               </div>
             )}
-            {/* 附件 */}
-            {attachments.length > 0 && (
+            {/* 附件（data 欄位 URL + form_attachments 表） */}
+            {allAttachments.length > 0 && (
               <div style={{ marginTop: 8 }}>
                 <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 4 }}>📎 附件</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {attachments.map((a, i) => (
+                  {allAttachments.map((a, i) => (
                     <a key={i} href={a.url} target="_blank" rel="noreferrer"
                        style={{ fontSize: 12, color: 'var(--accent-cyan, #06b6d4)', textDecoration: 'underline', wordBreak: 'break-all' }}>
                       {a.label}：{a.name}
