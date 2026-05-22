@@ -698,6 +698,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     return data.leaves.map(l => (
       <Row key={l.id} item={l} type="leave" processing={processing} handle={handle} statusBadge={statusBadge}
         body={<>
+          <ApproverRoleBadge role={l.my_approver_role} stepLabel={l.my_step_label} isSelf={l.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 4 }}>
             <span className="badge badge-cyan" style={{ marginRight: 6 }}>{l.type}</span>
             {l.start_date}{l.end_date !== l.start_date ? ` ~ ${l.end_date}` : ''}
@@ -715,6 +716,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     return data.overtimes.map(o => (
       <Row key={o.id} item={o} type="overtime" processing={processing} handle={handle} statusBadge={statusBadge}
         body={<>
+          <ApproverRoleBadge role={o.my_approver_role} stepLabel={o.my_step_label} isSelf={o.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             {o.date} · <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>{o.hours}h</span>
           </div>
@@ -728,6 +730,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
     return data.trips.map(t => (
       <Row key={t.id} item={t} type="trip" processing={processing} handle={handle} statusBadge={statusBadge}
         body={<>
+          <ApproverRoleBadge role={t.my_approver_role} stepLabel={t.my_step_label} isSelf={t.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             <span style={{ color: 'var(--cyan)', fontWeight: 600 }}>{t.destination}</span>
             <span> · {t.start_date} ~ {t.end_date}</span>
@@ -744,6 +747,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
       <Row key={c.id} item={c} type="correction" processing={processing} handle={handle} statusBadge={statusBadge}
         approveLabel="核准並修正"
         body={<>
+          <ApproverRoleBadge role={c.my_approver_role} stepLabel={c.my_step_label} isSelf={c.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>{c.date}</div>
           <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 600, marginTop: 2 }}>
             {c.type || '上班打卡'}：{c.correction_time || '未填'}
@@ -759,6 +763,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
       <Row key={e.id} item={e} type="expense" processing={processing} handle={handle} statusBadge={statusBadge}
         approveLabel="核銷"
         body={<>
+          <ApproverRoleBadge role={e.my_approver_role} stepLabel={e.my_step_label} isSelf={e.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             <span className="badge badge-cyan" style={{ marginRight: 6 }}>{e.category}</span>
             <span style={{ fontWeight: 700 }}>NT$ {Number(e.amount).toLocaleString()}</span>
@@ -807,6 +812,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
         item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
         type="resignation" processing={processing} handle={handle} statusBadge={statusBadge}
         body={<>
+          <ApproverRoleBadge role={r.my_approver_role} stepLabel={r.my_step_label} isSelf={r.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             <span className="badge badge-purple" style={{ marginRight: 6 }}>離職</span>
             預計 {r.planned_resign_date || '—'}
@@ -823,6 +829,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
         item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
         type="loa" processing={processing} handle={handle} statusBadge={statusBadge}
         body={<>
+          <ApproverRoleBadge role={r.my_approver_role} stepLabel={r.my_step_label} isSelf={r.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             <span className="badge badge-purple" style={{ marginRight: 6 }}>留停</span>
             {r.start_date || ''} ~ {r.end_date || ''}
@@ -839,6 +846,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
         item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
         type="transfer" processing={processing} handle={handle} statusBadge={statusBadge}
         body={<>
+          <ApproverRoleBadge role={r.my_approver_role} stepLabel={r.my_step_label} isSelf={r.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             <span className="badge badge-purple" style={{ marginRight: 6 }}>{r.transfer_type || '異動'}</span>
             生效 {r.effective_date || '—'}
@@ -855,6 +863,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
         item={{ ...r, employee: r.employee?.name || r.employee || '—', employee_id: r.employee?.id || r.employee_id }}
         type="headcount" processing={processing} handle={handle} statusBadge={statusBadge}
         body={<>
+          <ApproverRoleBadge role={r.my_approver_role} stepLabel={r.my_step_label} isSelf={r.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             <span className="badge badge-purple" style={{ marginRight: 6 }}>人力需求</span>
             {r.job_title || '—'} × {r.headcount || 0} 人
@@ -906,7 +915,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
           item={{ ...r, employee: r.applicant_name || '—', employee_id: r.applicant_id }}
           type="form_submission" processing={processing} handle={handle} statusBadge={statusBadge}
           body={<>
-            <ApproverRoleBadge role={r.my_approver_role} stepLabel={r.my_step_label} />
+            <ApproverRoleBadge role={r.my_approver_role} stepLabel={r.my_step_label} isSelf={r.is_self_approve} />
             <div style={{ fontSize: 13, color: 'var(--t2)' }}>
               <span className="badge badge-blue" style={{ marginRight: 6 }}>{r.template_name || '自訂表單'}</span>
             </div>
@@ -1125,7 +1134,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
             {er.my_step_label ? `（${er.my_step_label}）` : ''}
           </div>
         )}
-        <ApproverRoleBadge role={er.my_approver_role} stepLabel={null} />
+        <ApproverRoleBadge role={er.my_approver_role} stepLabel={null} isSelf={er.is_self_approve} />
       </div>
 
       {/* 退回原因（醒目） */}
@@ -1430,7 +1439,7 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
     <div className="list-item" style={{
       borderLeft: er.status === '核銷已退回' ? '3px solid var(--red)' : undefined,
     }}>
-      <ApproverRoleBadge role={er.my_approver_role} stepLabel={er.my_step_label} />
+      <ApproverRoleBadge role={er.my_approver_role} stepLabel={er.my_step_label} isSelf={er.is_self_approve} />
       {/* Header (clickable) */}
       <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -1822,8 +1831,8 @@ const ROLE_LABEL = {
   direct_manager:               '直屬主管',
 }
 
-function ApproverRoleBadge({ role, stepLabel }) {
-  if (!role && !stepLabel) return null
+function ApproverRoleBadge({ role, stepLabel, isSelf }) {
+  if (!role && !stepLabel && !isSelf) return null
   const isExtra = role === 'extra_signer'
   const label = ROLE_LABEL[role] || role
   return (
@@ -1835,6 +1844,15 @@ function ApproverRoleBadge({ role, stepLabel }) {
           color: isExtra ? 'var(--orange)' : 'var(--cyan)',
         }}>
           以 {label} 身分審核
+        </span>
+      )}
+      {isSelf && (
+        <span style={{
+          padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+          background: 'var(--purple-dim, rgba(167,139,250,0.15))',
+          color: 'var(--purple, #a78bfa)',
+        }}>
+          ⚠ 自審
         </span>
       )}
       {stepLabel && (
@@ -1965,7 +1983,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
     <div className="list-item" style={{
       borderLeft: item.status === '已退回' ? '3px solid var(--red)' : undefined,
     }}>
-      <ApproverRoleBadge role={item.my_approver_role} stepLabel={item.my_step_label} />
+      <ApproverRoleBadge role={item.my_approver_role} stepLabel={item.my_step_label} isSelf={item.is_self_approve} />
       {/* Header (clickable to expand) */}
       <div onClick={() => setExpanded(s => !s)} style={{ cursor: 'pointer' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
