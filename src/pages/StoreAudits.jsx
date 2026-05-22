@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ChevronLeft, ClipboardCheck, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ClipboardCheck, AlertCircle, Plus } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -55,13 +55,23 @@ export default function StoreAudits() {
   return (
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
-      <div className="header">
-        <div className="header-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <ClipboardCheck size={18} /> 門市稽核
+      <div className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <div className="header-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <ClipboardCheck size={18} /> 門市稽核
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
+            顯示與你相關的稽核單
+          </div>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
-          顯示與你相關的稽核單（我發起 / 我當班 / 待我簽核）
-        </div>
+        <button onClick={() => navigate('/store-audits/new')}
+          style={{
+            padding: '8px 12px', borderRadius: 8, border: 'none',
+            background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 700,
+            display: 'flex', alignItems: 'center', gap: 4,
+          }}>
+          <Plus size={14} /> 新增
+        </button>
       </div>
 
       {/* 篩選 tabs */}

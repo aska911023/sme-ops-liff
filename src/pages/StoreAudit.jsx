@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ChevronLeft, Check, X, ClipboardCheck, AlertCircle } from 'lucide-react'
+import { ChevronLeft, Check, X, ClipboardCheck, AlertCircle, Edit3, Send } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import SignaturePad from '../components/SignaturePad'
 
 const STATUS_COLOR = {
   '草稿':   '#94a3b8',
@@ -15,12 +16,17 @@ const STATUS_COLOR = {
 export default function StoreAudit() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [showReject, setShowReject] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
+
+  // 編輯狀態（草稿）
+  const [employees, setEmployees] = useState([])
+  const [draftOnDuty, setDraftOnDuty] = useState([])  // [{employee_id, employee_name, signature_data_url}]
+  const [signingIdx, setSigningIdx] = useState(null)
 
   const load = useCallback(async () => {
     if (!lineProfile?.lineUserId || !id) return
@@ -31,16 +37,23 @@ export default function StoreAudit() {
     })
     if (error || !res?.ok) {
       alert('載入失敗：' + (error?.message || res?.error || 'unknown'))
-      setLoading(false)
-      return
+      setLoading(false); return
     }
     setData(res)
+    setDraftOnDuty((res.on_duty || []).map(d => ({ ...d })))
     setLoading(false)
   }, [lineProfile?.lineUserId, id])
 
   useEffect(() => { load() }, [load])
 
-  // 群組化 items
+  // 載員工清單（編輯時用）
+  useEffect(() => {
+    if (!employee?.organization_id) return
+    supabase.from('employees').select('id, name').eq('status', '在職')
+      .eq('organization_id', employee.organization_id).order('name')
+      .then(({ data }) => setEmployees(data || []))
+  }, [employee?.organization_id])
+
   const grouped = useMemo(() => {
     if (!data?.items) return {}
     return data.items.reduce((acc, item) => {
@@ -52,32 +65,91 @@ export default function StoreAudit() {
   }, [data])
 
   const stats = useMemo(() => {
-    if (!data?.items) return { passed: 0, failed: 0, deducted: 0, total: 0 }
+    if (!data?.items) return { passed: 0, failed: 0, pending: 0, deducted: 0, total: 0 }
     const passed = data.items.filter(i => i.passed === true).length
     const failed = data.items.filter(i => i.passed === false).length
+    const pending = data.items.filter(i => i.passed === null).length
     const deducted = data.items.filter(i => i.passed === false).reduce((s, i) => s + (i.deduct_score || 0), 0)
     const total = data.items.reduce((s, i) => s + (i.deduct_score || 0), 0)
-    return { passed, failed, deducted, total }
+    return { passed, failed, pending, deducted, total }
   }, [data])
+
+  const a = data?.audit
+  const isDraft = a?.status === '草稿'
+  const isAuditor = a?.auditor_id === employee?.id
+  const canEdit = isDraft && isAuditor
+
+  // ─── 編輯：更新項目 ───
+  const updateItem = async (itemId, patch) => {
+    setData(prev => ({
+      ...prev,
+      items: prev.items.map(i => i.id === itemId ? { ...i, ...patch } : i),
+    }))
+    await supabase.from('store_audit_items').update(patch).eq('id', itemId)
+  }
+
+  // ─── 編輯：當班人員 ───
+  const addDraftStaff = () => {
+    if (draftOnDuty.length >= 3) { alert('最多 3 人'); return }
+    setDraftOnDuty(prev => [...prev, { employee_id: null, employee_name: '' }])
+  }
+  const updateDraftStaff = (idx, empId) => {
+    const emp = employees.find(e => e.id === Number(empId))
+    setDraftOnDuty(prev => prev.map((d, i) => i === idx
+      ? { ...d, employee_id: emp?.id || null, employee_name: emp?.name || '' }
+      : d))
+  }
+  const removeDraftStaff = (idx) => setDraftOnDuty(prev => prev.filter((_, i) => i !== idx))
+
+  // ─── 上傳簽名到 Storage ───
+  const uploadSignature = async (dataUrl, audId, empId) => {
+    if (dataUrl.startsWith('http')) return dataUrl
+    const blob = await (await fetch(dataUrl)).blob()
+    const path = `${audId}/${empId || 'anon'}_${Date.now()}.png`
+    const { error } = await supabase.storage.from('audit-signatures')
+      .upload(path, blob, { contentType: 'image/png', upsert: true })
+    if (error) throw error
+    return supabase.storage.from('audit-signatures').getPublicUrl(path).data.publicUrl
+  }
+
+  // ─── 送出 ───
+  const doSubmit = async () => {
+    if (stats.pending > 0) { alert(`還有 ${stats.pending} 項未評核`); return }
+    if (draftOnDuty.length === 0) { alert('請至少選 1 名當班人員'); return }
+    const unsigned = draftOnDuty.filter(d => !d.signature_data_url)
+    if (unsigned.length > 0) { alert(`還有 ${unsigned.length} 位當班人員未簽名`); return }
+    setBusy(true)
+    try {
+      const uploaded = await Promise.all(draftOnDuty.map(async d => ({
+        employee_id: d.employee_id,
+        employee_name: d.employee_name,
+        signature: await uploadSignature(d.signature_data_url, Number(id), d.employee_id),
+      })))
+      const { data: res, error } = await supabase.rpc('submit_store_audit', {
+        p_audit_id: Number(id), p_on_duty: uploaded,
+      })
+      if (error) throw error
+      if (!res?.ok) throw new Error(res?.error || 'unknown')
+      alert(res.event === 'auto_approved_no_chain' ? '已核准（無簽核鏈設定）' : '已送出，進入簽核流程')
+      load()
+    } catch (err) {
+      alert('送出失敗：' + (err.message || err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const doApprove = async () => {
     if (busy) return
-    if (!confirm(data.can_confirm ? '確認此份稽核屬實？' : '確認核准此份稽核？')) return
+    if (!confirm('確認核准此份稽核？')) return
     setBusy(true)
     const { data: res, error } = await supabase.rpc('liff_approve_request', {
       p_line_user_id: lineProfile.lineUserId,
-      p_type: 'store_audit',
-      p_id: Number(id),
-      p_action: 'approve',
-      p_reason: null,
+      p_type: 'store_audit', p_id: Number(id), p_action: 'approve', p_reason: null,
     })
     setBusy(false)
-    if (error || !res?.ok) {
-      alert('失敗：' + (error?.message || res?.error || 'unknown'))
-      return
-    }
-    alert('完成')
-    load()
+    if (error || !res?.ok) { alert('失敗：' + (error?.message || res?.error || 'unknown')); return }
+    alert('完成'); load()
   }
 
   const doReject = async () => {
@@ -86,31 +158,18 @@ export default function StoreAudit() {
     setBusy(true)
     const { data: res, error } = await supabase.rpc('liff_approve_request', {
       p_line_user_id: lineProfile.lineUserId,
-      p_type: 'store_audit',
-      p_id: Number(id),
-      p_action: 'reject',
-      p_reason: rejectReason.trim(),
+      p_type: 'store_audit', p_id: Number(id), p_action: 'reject', p_reason: rejectReason.trim(),
     })
     setBusy(false)
-    if (error || !res?.ok) {
-      alert('失敗：' + (error?.message || res?.error || 'unknown'))
-      return
-    }
-    setShowReject(false)
-    setRejectReason('')
-    alert('已退回')
-    load()
+    if (error || !res?.ok) { alert('失敗：' + (error?.message || res?.error || 'unknown')); return }
+    setShowReject(false); setRejectReason('')
+    alert('已退回'); load()
   }
 
   if (loading) {
-    return (
-      <div className="page">
-        <div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div>
-      </div>
-    )
+    return <div className="page"><div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div></div>
   }
-
-  if (!data?.audit) {
+  if (!a) {
     return (
       <div className="page">
         <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
@@ -119,12 +178,11 @@ export default function StoreAudit() {
     )
   }
 
-  const a = data.audit
   const statusColor = STATUS_COLOR[a.status] || '#94a3b8'
 
   return (
     <div className="page">
-      <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
+      <button className="back-btn" onClick={() => navigate(-1)}><ChevronLeft size={16} /> 返回</button>
 
       {/* Header */}
       <div className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -136,34 +194,17 @@ export default function StoreAudit() {
             {a.store_name} · {a.audit_date}{a.shift ? ` · ${a.shift}` : ''}
           </div>
         </div>
-        <span style={{
-          padding: '4px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700,
-          background: `${statusColor}22`, color: statusColor,
-        }}>{a.status}</span>
+        <span style={{ padding: '4px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700, background: `${statusColor}22`, color: statusColor }}>{a.status}</span>
       </div>
 
       {/* 統計 */}
-      <div style={{
-        margin: '12px 0', padding: 12, background: 'var(--glass)', borderRadius: 10,
-        display: 'flex', justifyContent: 'space-around', textAlign: 'center', fontSize: 12,
-      }}>
-        <div>
-          <div style={{ color: 'var(--t3)' }}>合格</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#22c55e' }}>{stats.passed}</div>
-        </div>
-        <div>
-          <div style={{ color: 'var(--t3)' }}>不合格</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#ef4444' }}>{stats.failed}</div>
-        </div>
-        <div>
-          <div style={{ color: 'var(--t3)' }}>扣分</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: stats.deducted > 0 ? '#ef4444' : 'var(--t2)' }}>
-            {stats.deducted}/{stats.total}
-          </div>
-        </div>
+      <div style={{ margin: '12px 0', padding: 12, background: 'var(--glass)', borderRadius: 10, display: 'flex', justifyContent: 'space-around', textAlign: 'center', fontSize: 12 }}>
+        <Stat label="合格" value={stats.passed} color="#22c55e" />
+        <Stat label="不合格" value={stats.failed} color="#ef4444" />
+        {stats.pending > 0 && <Stat label="未評核" value={stats.pending} color="#f59e0b" />}
+        <Stat label="扣分" value={`${stats.deducted}/${stats.total}`} color={stats.deducted > 0 ? '#ef4444' : 'var(--t2)'} />
       </div>
 
-      {/* 基本資訊 */}
       <Section title="基本資訊">
         <Row label="稽核員" value={a.auditor_name} />
         {a.arrive_time && <Row label="到店" value={a.arrive_time.slice(0, 5)} />}
@@ -172,120 +213,170 @@ export default function StoreAudit() {
         {a.reject_reason && <Row label="退回原因" value={a.reject_reason} color="#ef4444" />}
       </Section>
 
-      {/* 當班人員 */}
-      {data.on_duty?.length > 0 && (
-        <Section title="當班人員">
-          {data.on_duty.map((d, i) => (
-            <div key={i} style={{
-              display: 'flex', justifyContent: 'space-between', padding: '6px 0',
-              borderBottom: i < data.on_duty.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 13,
-            }}>
-              <span>{d.employee_name}</span>
-              {d.confirmed
-                ? <span style={{ color: '#22c55e', fontSize: 11 }}>✓ 已確認</span>
-                : <span style={{ color: '#f59e0b', fontSize: 11 }}>等待中</span>}
+      {/* 當班人員（草稿可編輯，否則只讀） */}
+      <Section title={canEdit ? '當班人員（1~3 人，請現場簽名）' : '當班人員'}>
+        {canEdit ? (
+          <>
+            {draftOnDuty.map((d, idx) => (
+              <div key={idx} style={{ marginBottom: 8, padding: 8, background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                  <select value={d.employee_id || ''} onChange={e => updateDraftStaff(idx, e.target.value)}
+                    style={{ flex: 1, padding: 8, borderRadius: 6, fontSize: 12, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)' }}>
+                    <option value="">請選人員</option>
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                  <button onClick={() => removeDraftStaff(idx)}
+                    style={{ padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t3)' }}>×</button>
+                </div>
+                {d.employee_id && (
+                  d.signature_data_url ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <img src={d.signature_data_url} alt="簽名" style={{ height: 32, background: '#fff', borderRadius: 4 }} />
+                      <span style={{ flex: 1, fontSize: 11, color: '#22c55e' }}>✓ 已簽</span>
+                      <button onClick={() => setSigningIdx(idx)} style={{ fontSize: 10, padding: '4px 8px', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)' }}>重簽</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => setSigningIdx(idx)}
+                      style={{ width: '100%', padding: 8, borderRadius: 6, border: 'none', background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+                      <Edit3 size={12} style={{ verticalAlign: 'middle', marginRight: 4 }} />請當班人員簽名
+                    </button>
+                  )
+                )}
+              </div>
+            ))}
+            {draftOnDuty.length < 3 && (
+              <button onClick={addDraftStaff}
+                style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px dashed var(--border)', background: 'transparent', color: 'var(--t2)', fontSize: 12 }}>
+                + 新增當班人員
+              </button>
+            )}
+          </>
+        ) : (
+          (data.on_duty || []).map((d, i) => (
+            <div key={i} style={{ padding: '6px 0', borderBottom: i < data.on_duty.length - 1 ? '1px solid var(--border)' : 'none', fontSize: 13 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <span>{d.employee_name}</span>
+                {d.confirmed && <span style={{ color: '#22c55e', fontSize: 11 }}>✓ 已簽</span>}
+              </div>
+              {d.signature_data_url && (
+                <img src={d.signature_data_url} alt="簽名" style={{ height: 36, background: '#fff', borderRadius: 4 }} />
+              )}
             </div>
-          ))}
-        </Section>
-      )}
+          ))
+        )}
+      </Section>
 
-      {/* 評核項目（按分類） */}
+      {/* 評核項目 */}
       {Object.entries(grouped).map(([code, group]) => (
         <Section key={code} title={`${code}、${group.name}`}
           subtitle={`${group.items.length} 項 · 不合格 ${group.items.filter(i => i.passed === false).length}`}>
-          {group.items.map(item => {
-            const failed = item.passed === false
-            return (
-              <div key={item.id} style={{
-                padding: '8px 0', borderBottom: '1px solid var(--border)',
-                background: failed ? 'rgba(239,68,68,0.05)' : 'transparent',
-                paddingLeft: 6, marginLeft: -6, paddingRight: 6, marginRight: -6,
-              }}>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 11, color: 'var(--t3)', minWidth: 18 }}>{item.item_no}</span>
-                  <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>{item.item_text}</span>
-                  <span style={{
-                    padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
-                    background: item.passed === true ? 'rgba(34,197,94,0.15)' : item.passed === false ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)',
-                    color: item.passed === true ? '#22c55e' : item.passed === false ? '#ef4444' : 'var(--t3)',
-                  }}>
-                    {item.passed === true ? '✓' : item.passed === false ? `-${item.deduct_score}` : '—'}
-                  </span>
-                </div>
-                {failed && item.responsible_employee_name && (
-                  <div style={{ fontSize: 10, color: 'var(--t3)', marginLeft: 24, marginTop: 2 }}>
-                    責任人：{item.responsible_employee_name}
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {group.items.map(item => (
+            <ItemRow key={item.id} item={item} canEdit={canEdit} employees={employees} onChange={p => updateItem(item.id, p)} />
+          ))}
         </Section>
       ))}
 
-      {/* Action buttons */}
-      {(data.can_confirm || data.can_approve) && !showReject && (
-        <div style={{ position: 'sticky', bottom: 0, padding: '12px 0 24px', background: 'var(--bg)', display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => setShowReject(true)} disabled={busy}
-            style={{
-              flex: 1, padding: '12px', borderRadius: 10, border: '1px solid #ef4444',
-              background: 'transparent', color: '#ef4444', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-            }}>
-            <X size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-            退回
-          </button>
-          <button
-            onClick={doApprove} disabled={busy}
-            style={{
-              flex: 2, padding: '12px', borderRadius: 10, border: 'none',
-              background: '#22c55e', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer',
-              opacity: busy ? 0.5 : 1,
-            }}>
-            <Check size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-            {data.can_confirm ? '確認屬實' : '核准'}
+      {/* 底部 action */}
+      {canEdit && (
+        <div style={{ position: 'sticky', bottom: 0, padding: '12px 0 24px', background: 'var(--bg)' }}>
+          <button onClick={doSubmit} disabled={busy}
+            style={{ width: '100%', padding: 14, borderRadius: 10, border: 'none', background: '#22c55e', color: '#fff', fontSize: 15, fontWeight: 700, opacity: busy ? 0.5 : 1 }}>
+            <Send size={16} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+            {busy ? '送出中…' : '送出稽核'}
           </button>
         </div>
       )}
 
-      {/* 退回原因 modal */}
+      {data.can_approve && !showReject && (
+        <div style={{ position: 'sticky', bottom: 0, padding: '12px 0 24px', background: 'var(--bg)', display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowReject(true)} disabled={busy}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+            <X size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} />退回
+          </button>
+          <button onClick={doApprove} disabled={busy}
+            style={{ flex: 2, padding: 12, borderRadius: 10, border: 'none', background: '#22c55e', color: '#fff', fontSize: 14, fontWeight: 700, opacity: busy ? 0.5 : 1 }}>
+            <Check size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} />核准
+          </button>
+        </div>
+      )}
+
+      {/* 退回 modal */}
       {showReject && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
-          display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000,
-        }} onClick={e => { if (e.target === e.currentTarget) setShowReject(false) }}>
-          <div style={{
-            width: '100%', maxWidth: 480, padding: 20, background: 'var(--bg)',
-            borderTopLeftRadius: 16, borderTopRightRadius: 16,
-          }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 1000 }}
+          onClick={e => { if (e.target === e.currentTarget) setShowReject(false) }}>
+          <div style={{ width: '100%', maxWidth: 480, padding: 20, background: 'var(--bg)', borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
             <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>退回原因 *</div>
-            <textarea
-              value={rejectReason}
-              onChange={e => setRejectReason(e.target.value)}
-              placeholder="請說明退回理由…"
-              rows={4}
-              style={{
-                width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border)',
-                background: 'var(--glass)', color: 'var(--t1)', fontSize: 13, resize: 'vertical',
-              }}
-            />
+            <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="請說明退回理由…" rows={4}
+              style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 13 }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button
-                onClick={() => { setShowReject(false); setRejectReason('') }}
-                style={{
-                  flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--border)',
-                  background: 'transparent', color: 'var(--t2)', fontSize: 13, cursor: 'pointer',
-                }}>取消</button>
-              <button
-                onClick={doReject} disabled={busy || !rejectReason.trim()}
-                style={{
-                  flex: 2, padding: '10px', borderRadius: 8, border: 'none',
-                  background: '#ef4444', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  opacity: (busy || !rejectReason.trim()) ? 0.5 : 1,
-                }}>確定退回</button>
+              <button onClick={() => { setShowReject(false); setRejectReason('') }}
+                style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)' }}>取消</button>
+              <button onClick={doReject} disabled={busy || !rejectReason.trim()}
+                style={{ flex: 2, padding: 10, borderRadius: 8, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, opacity: (busy || !rejectReason.trim()) ? 0.5 : 1 }}>確定退回</button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* 簽名 pad */}
+      {signingIdx !== null && (
+        <SignaturePad open signerName={draftOnDuty[signingIdx]?.employee_name || ''}
+          onClose={() => setSigningIdx(null)}
+          onConfirm={(dataUrl) => {
+            setDraftOnDuty(prev => prev.map((d, i) => i === signingIdx ? { ...d, signature_data_url: dataUrl } : d))
+            setSigningIdx(null)
+          }} />
+      )}
+    </div>
+  )
+}
+
+// ─── 評核項目單列（草稿可編輯）───
+function ItemRow({ item, canEdit, employees, onChange }) {
+  const failed = item.passed === false
+  return (
+    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: failed ? 'rgba(239,68,68,0.05)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+        <span style={{ fontSize: 11, color: 'var(--t3)', minWidth: 18 }}>{item.item_no}</span>
+        <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>{item.item_text}</span>
+        {canEdit ? (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button onClick={() => onChange({ passed: true })}
+              style={{
+                padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, border: 'none',
+                background: item.passed === true ? '#22c55e' : 'rgba(148,163,184,0.2)',
+                color: item.passed === true ? '#fff' : 'var(--t3)',
+              }}>✓</button>
+            <button onClick={() => onChange({ passed: false })}
+              style={{
+                padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, border: 'none',
+                background: item.passed === false ? '#ef4444' : 'rgba(148,163,184,0.2)',
+                color: item.passed === false ? '#fff' : 'var(--t3)',
+              }}>-{item.deduct_score}</button>
+          </div>
+        ) : (
+          <span style={{
+            padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+            background: item.passed === true ? 'rgba(34,197,94,0.15)' : item.passed === false ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)',
+            color: item.passed === true ? '#22c55e' : item.passed === false ? '#ef4444' : 'var(--t3)',
+          }}>
+            {item.passed === true ? '✓' : item.passed === false ? `-${item.deduct_score}` : '—'}
+          </span>
+        )}
+      </div>
+      {failed && canEdit && (
+        <select value={item.responsible_employee_id || ''}
+          onChange={e => {
+            const emp = employees.find(x => x.id === Number(e.target.value))
+            onChange({ responsible_employee_id: emp?.id || null, responsible_employee_name: emp?.name || null })
+          }}
+          style={{ marginTop: 4, marginLeft: 24, fontSize: 11, padding: '4px 6px', borderRadius: 4, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)', width: 'calc(100% - 24px)' }}>
+          <option value="">未指定責任人（算當班全體）</option>
+          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+        </select>
+      )}
+      {failed && !canEdit && item.responsible_employee_name && (
+        <div style={{ fontSize: 10, color: 'var(--t3)', marginLeft: 24, marginTop: 2 }}>責任人：{item.responsible_employee_name}</div>
       )}
     </div>
   )
@@ -308,6 +399,15 @@ function Row({ label, value, color }) {
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
       <span style={{ color: 'var(--t3)' }}>{label}</span>
       <span style={{ color: color || 'var(--t1)', textAlign: 'right', maxWidth: '70%' }}>{value}</span>
+    </div>
+  )
+}
+
+function Stat({ label, value, color }) {
+  return (
+    <div>
+      <div style={{ color: 'var(--t3)' }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
     </div>
   )
 }

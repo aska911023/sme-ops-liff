@@ -37,6 +37,7 @@ import Performance from './pages/Performance'
 import RejectReasonPopup from './pages/RejectReasonPopup'
 import StoreAudit from './pages/StoreAudit'
 import StoreAudits from './pages/StoreAudits'
+import StoreAuditNew from './pages/StoreAuditNew'
 
 // CRM pages
 import NewCustomer from './pages/NewCustomer'
@@ -209,6 +210,7 @@ export default function App() {
         <Route path="/reject-reason" element={<RejectReasonPopup />} />
         <Route path="/store-audit/:id" element={<StoreAudit />} />
         <Route path="/store-audits" element={<StoreAudits />} />
+        <Route path="/store-audits/new" element={<StoreAuditNew />} />
 
         {/* CRM Hub + pages */}
         <Route path="/crm" element={<CRMHub />} />
