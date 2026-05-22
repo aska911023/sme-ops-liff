@@ -47,14 +47,12 @@ export default function StoreAudit() {
 
   useEffect(() => { load() }, [load])
 
-  // 載員工清單（編輯時用）
+  // 載員工清單（編輯時用）— 走 SECURITY DEFINER RPC 繞過 anon RLS
   useEffect(() => {
-    if (!employee?.organization_id) return
-    supabase.from('employees')
-      .select('id, name, position, dept:departments(name), store:stores(name)')
-      .eq('status', '在職').eq('organization_id', employee.organization_id).order('name')
-      .then(({ data }) => setEmployees(data || []))
-  }, [employee?.organization_id])
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_list_employees', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => setEmployees(data?.list || []))
+  }, [lineProfile?.lineUserId])
 
   const grouped = useMemo(() => {
     if (!data?.items) return {}
@@ -81,13 +79,18 @@ export default function StoreAudit() {
   const isAuditor = a?.auditor_id === employee?.id
   const canEdit = isDraft && isAuditor
 
-  // ─── 編輯：更新項目 ───
+  // ─── 編輯：更新項目（走 RPC 繞 anon RLS）───
   const updateItem = async (itemId, patch) => {
     setData(prev => ({
       ...prev,
       items: prev.items.map(i => i.id === itemId ? { ...i, ...patch } : i),
     }))
-    await supabase.from('store_audit_items').update(patch).eq('id', itemId)
+    await supabase.rpc('liff_update_store_audit_item', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_item_id: itemId,
+      p_passed: patch.passed ?? null,
+      p_responsible_employee_id: patch.responsible_employee_id ?? null,
+    })
   }
 
   // ─── 編輯：當班人員 ───

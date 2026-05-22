@@ -4,11 +4,13 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
+// 全部走 SECURITY DEFINER RPC 繞過 anon RLS（參考 feedback_liff_anon_rls）
+
 const SHIFTS = ['開店', '早班', '中班', '晚班', '打烊班']
 
 export default function StoreAuditNew() {
   const navigate = useNavigate()
-  const { employee } = useAuth()
+  const { lineProfile } = useAuth()
   const [stores, setStores] = useState([])
   const [boundChainId, setBoundChainId] = useState(null)
   const [storeId, setStoreId] = useState('')
@@ -20,38 +22,30 @@ export default function StoreAuditNew() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    const orgId = employee?.organization_id
-    if (!orgId) return
-    Promise.all([
-      supabase.from('stores').select('id, name').eq('organization_id', orgId).order('name'),
-      supabase.from('form_chain_configs').select('chain_id').eq('form_type', 'store_audit').eq('organization_id', orgId).maybeSingle(),
-    ]).then(([s, c]) => {
-      setStores(s.data || [])
-      setBoundChainId(c.data?.chain_id || null)
-    })
-  }, [employee?.organization_id])
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_get_store_audit_init', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => {
+        if (!data?.ok) return
+        setStores(data.stores || [])
+        setBoundChainId(data.bound_chain_id || null)
+      })
+  }, [lineProfile?.lineUserId])
 
   const submit = async () => {
     if (!storeId) { alert('請選門市'); return }
     if (!date) { alert('請選稽核日期'); return }
     setSaving(true)
-    const store = stores.find(s => s.id === Number(storeId))
-    const { data, error } = await supabase.from('store_audits').insert({
-      organization_id: employee.organization_id,
-      store_id: Number(storeId),
-      store_name: store?.name || '',
-      audit_date: date,
-      shift: shift || null,
-      arrive_time: arrive || null,
-      depart_time: depart || null,
-      auditor_id: employee?.id || null,
-      auditor_name: employee?.name || '',
-      approval_chain_id: boundChainId,
-      status: '草稿',
-    }).select().single()
+    const { data, error } = await supabase.rpc('liff_create_store_audit', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_store_id: Number(storeId),
+      p_audit_date: date,
+      p_shift: shift || null,
+      p_arrive_time: arrive || null,
+      p_depart_time: depart || null,
+    })
     setSaving(false)
-    if (error) { alert('建立失敗：' + error.message); return }
-    navigate(`/store-audit/${data.id}`, { replace: true })
+    if (error || !data?.ok) { alert('建立失敗：' + (error?.message || data?.error || 'unknown')); return }
+    navigate(`/store-audit/${data.audit_id}`, { replace: true })
   }
 
   return (
