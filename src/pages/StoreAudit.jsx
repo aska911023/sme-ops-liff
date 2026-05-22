@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import SignaturePad from '../components/SignaturePad'
+import EmployeePicker from '../components/EmployeePicker'
 
 const STATUS_COLOR = {
   '草稿':   '#94a3b8',
@@ -49,8 +50,9 @@ export default function StoreAudit() {
   // 載員工清單（編輯時用）
   useEffect(() => {
     if (!employee?.organization_id) return
-    supabase.from('employees').select('id, name').eq('status', '在職')
-      .eq('organization_id', employee.organization_id).order('name')
+    supabase.from('employees')
+      .select('id, name, position, dept:departments(name), store:stores(name)')
+      .eq('status', '在職').eq('organization_id', employee.organization_id).order('name')
       .then(({ data }) => setEmployees(data || []))
   }, [employee?.organization_id])
 
@@ -219,14 +221,14 @@ export default function StoreAudit() {
           <>
             {draftOnDuty.map((d, idx) => (
               <div key={idx} style={{ marginBottom: 8, padding: 8, background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                  <select value={d.employee_id || ''} onChange={e => updateDraftStaff(idx, e.target.value)}
-                    style={{ flex: 1, padding: 8, borderRadius: 6, fontSize: 12, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)' }}>
-                    <option value="">請選人員</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                  </select>
+                <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <EmployeePicker value={d.employee_id || ''} employees={employees}
+                      onChange={(v) => updateDraftStaff(idx, v)}
+                      placeholder="選當班人員" />
+                  </div>
                   <button onClick={() => removeDraftStaff(idx)}
-                    style={{ padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t3)' }}>×</button>
+                    style={{ padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t3)', minHeight: 38 }}>×</button>
                 </div>
                 {d.employee_id && (
                   d.signature_data_url ? (
@@ -365,15 +367,14 @@ function ItemRow({ item, canEdit, employees, onChange }) {
         )}
       </div>
       {failed && canEdit && (
-        <select value={item.responsible_employee_id || ''}
-          onChange={e => {
-            const emp = employees.find(x => x.id === Number(e.target.value))
-            onChange({ responsible_employee_id: emp?.id || null, responsible_employee_name: emp?.name || null })
-          }}
-          style={{ marginTop: 4, marginLeft: 24, fontSize: 11, padding: '4px 6px', borderRadius: 4, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)', width: 'calc(100% - 24px)' }}>
-          <option value="">未指定責任人（算當班全體）</option>
-          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
+        <div style={{ marginTop: 6, marginLeft: 24 }}>
+          <EmployeePicker value={item.responsible_employee_id || ''} employees={employees}
+            onChange={(v) => {
+              const emp = employees.find(x => x.id === Number(v))
+              onChange({ responsible_employee_id: emp?.id || null, responsible_employee_name: emp?.name || null })
+            }}
+            placeholder="未指定責任人（算當班全體）" />
+        </div>
       )}
       {failed && !canEdit && item.responsible_employee_name && (
         <div style={{ fontSize: 10, color: 'var(--t3)', marginLeft: 24, marginTop: 2 }}>責任人：{item.responsible_employee_name}</div>
