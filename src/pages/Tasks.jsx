@@ -305,6 +305,11 @@ export default function Tasks() {
                       </div>
                     )}
 
+                    {/* Form Bindings — 流程綁定的必填表單 */}
+                    {Array.isArray(detail.form_bindings) && detail.form_bindings.length > 0 && (
+                      <FormBindingsBlock bindings={detail.form_bindings} />
+                    )}
+
                     {/* Shared Checklists */}
                     {detail.checklists.map(cl => (
                       <div key={cl.id} style={{ marginTop: 14 }}>
@@ -389,6 +394,65 @@ export default function Tasks() {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function FormBindingsBlock({ bindings }) {
+  const completed = bindings.filter(b => b.status === '已完成').length
+  const navTo = (b) => {
+    if (b.form_id) return
+    // LIFF 內可填的：expense_request → /expense-request, expense → /expenses
+    // form_submission 自訂表單 LIFF 沒有對應頁，引導到 Web
+    let url = null
+    if (b.form_type === 'expense_request') url = `/expense-request?binding_id=${b.id}`
+    else if (b.form_type === 'expense')    url = `/expenses?binding_id=${b.id}`
+    if (url) {
+      window.location.href = url
+    } else {
+      alert(`「${b.form_label}」請在電腦版 SME Ops 系統填寫`)
+    }
+  }
+  const STATUS_STYLE = {
+    '未填':   { bg: 'rgba(148,163,184,0.2)',  color: 'var(--t3)',     icon: '⚪' },
+    '簽核中': { bg: 'rgba(245,158,11,0.2)',    color: 'var(--orange)', icon: '🔵' },
+    '已退回': { bg: 'rgba(239,68,68,0.2)',     color: 'var(--red)',    icon: '❌' },
+    '已完成': { bg: 'rgba(34,197,94,0.2)',     color: 'var(--green)',  icon: '✅' },
+  }
+  return (
+    <div style={{ marginTop: 14, padding: 10, background: 'var(--glass)', borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--t1)' }}>📋 需完成表單</span>
+        <span style={{ fontSize: 11, color: 'var(--t3)' }}>{completed}/{bindings.length} 完成</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {bindings.map(b => {
+          const s = STATUS_STYLE[b.status] || STATUS_STYLE['未填']
+          return (
+            <div key={b.id} onClick={() => navTo(b)}
+              style={{
+                padding: '8px 10px', borderRadius: 6, background: 'var(--bg)',
+                cursor: b.form_id ? 'default' : 'pointer',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                border: '1px solid var(--border)',
+              }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--t1)' }}>
+                  {s.icon} {b.form_label}
+                  {b.form_id && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--t3)' }}>#{b.form_id}</span>}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 2 }}>完成條件：{b.required_status}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: s.bg, color: s.color }}>{b.status}</span>
+                {!b.form_id && (
+                  <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 600 }}>填寫 →</span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

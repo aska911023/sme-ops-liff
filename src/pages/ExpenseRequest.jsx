@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft, Plus, Upload, Image, FileText, X, Eye, Send } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — expense_request 簽核 LINE 統一走主系統 DB trigger
@@ -22,6 +22,7 @@ const fmt = (n, currency = 'TWD') =>
 export default function ExpenseRequest() {
   const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [requests, setRequests] = useState([])
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -128,6 +129,14 @@ export default function ExpenseRequest() {
     const filesToUpload = files.filter(Boolean)
     if (data?.id && filesToUpload.length > 0) {
       await uploadFiles(data.id, filesToUpload, 'request')
+    }
+
+    // 任務綁定：URL 帶 binding_id → 寫回 expense_requests.linked_binding_id
+    const bindingId = searchParams.get('binding_id')
+    if (bindingId && data?.id) {
+      await supabase.from('expense_requests')
+        .update({ linked_binding_id: Number(bindingId) })
+        .eq('id', data.id)
     }
 
     // ★ 2026-05-08：client-side notifyNewSubmission 已拔除
