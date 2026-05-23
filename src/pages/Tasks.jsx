@@ -402,15 +402,18 @@ function FormBindingsBlock({ bindings }) {
   const completed = bindings.filter(b => b.status === '已完成').length
   const navTo = (b) => {
     if (b.form_id) return
-    // LIFF 內可填的：expense_request → /expense-request, expense → /expenses
-    // form_submission 自訂表單 LIFF 沒有對應頁，引導到 Web
+    const taskId = new URLSearchParams(window.location.search).get('task')
+    const taskQs = taskId ? `&task_id=${taskId}` : ''
     let url = null
     if (b.form_type === 'expense_request') url = `/expense-request?binding_id=${b.id}`
     else if (b.form_type === 'expense')    url = `/expenses?binding_id=${b.id}`
+    else if (b.form_type === 'form_submission' && b.form_template_id) {
+      url = `/forms/custom/${b.form_template_id}?binding_id=${b.id}${taskQs}`
+    }
     if (url) {
       window.location.href = url
     } else {
-      alert(`「${b.form_label}」請在電腦版 SME Ops 系統填寫`)
+      alert(`「${b.form_label}」無法在 LIFF 填寫，請至電腦版 SME Ops 系統`)
     }
   }
   const STATUS_STYLE = {
