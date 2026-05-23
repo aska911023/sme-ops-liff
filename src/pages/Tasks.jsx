@@ -410,6 +410,9 @@ function FormBindingsBlock({ bindings }) {
     else if (b.form_type === 'form_submission' && b.form_template_id) {
       url = `/forms/custom/${b.form_template_id}?binding_id=${b.id}${taskQs}`
     }
+    else if (b.form_type === 'store_audit') {
+      url = `/store-audits/new?binding_id=${b.id}${taskQs}`
+    }
     if (url) {
       window.location.href = url
     } else {

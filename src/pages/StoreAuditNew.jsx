@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { ChevronLeft } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -10,6 +10,10 @@ const SHIFTS = ['開店', '早班', '中班', '晚班', '打烊班']
 
 export default function StoreAuditNew() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const bindingId = searchParams.get('binding_id')
+    ? Number(searchParams.get('binding_id')) : null
+  const taskId = searchParams.get('task_id')
   const { lineProfile } = useAuth()
   const [stores, setStores] = useState([])
   const [boundChainId, setBoundChainId] = useState(null)
@@ -42,10 +46,16 @@ export default function StoreAuditNew() {
       p_shift: shift || null,
       p_arrive_time: arrive || null,
       p_depart_time: depart || null,
+      p_binding_id: bindingId,
     })
     setSaving(false)
     if (error || !data?.ok) { alert('建立失敗：' + (error?.message || data?.error || 'unknown')); return }
-    navigate(`/store-audit/${data.audit_id}`, { replace: true })
+    // 從任務跳來的，建立完直接回任務詳情；否則進稽核單明細
+    if (bindingId && taskId) {
+      navigate(`/tasks?task=${taskId}`, { replace: true })
+    } else {
+      navigate(`/store-audit/${data.audit_id}`, { replace: true })
+    }
   }
 
   return (
