@@ -101,6 +101,7 @@ export default function ExpenseRequest() {
     }
     setSubmitting(true)
     const acc = form.is_expense ? accounts.find(a => a.code === form.account_code) : null
+    const bindingIdParam = searchParams.get('binding_id')
     const { data, error } = await supabase.rpc('liff_insert_expense_request', {
       p_line_user_id: lineProfile.lineUserId,
       p_payload: {
@@ -115,6 +116,7 @@ export default function ExpenseRequest() {
         supplier: form.is_expense ? (form.supplier || null) : null,
         items: form.is_expense ? validItems : null,
       },
+      p_binding_id: bindingIdParam ? Number(bindingIdParam) : null,
     })
 
     setSubmitting(false)
@@ -131,13 +133,8 @@ export default function ExpenseRequest() {
       await uploadFiles(data.id, filesToUpload, 'request')
     }
 
-    // 任務綁定：URL 帶 binding_id → 寫回 expense_requests.linked_binding_id
-    const bindingId = searchParams.get('binding_id')
-    if (bindingId && data?.id) {
-      await supabase.from('expense_requests')
-        .update({ linked_binding_id: Number(bindingId) })
-        .eq('id', data.id)
-    }
+    // 任務綁定：binding_id 已在上面 RPC 一併寫入（p_binding_id 參數）
+    // 舊版用 INSERT 後再 UPDATE 但 anon RLS 擋著，現在改走 RPC 一次寫
 
     // ★ 2026-05-08：client-side notifyNewSubmission 已拔除
     // expense_request 簽核 LINE 通知由主系統 DB trigger 統一處理：
