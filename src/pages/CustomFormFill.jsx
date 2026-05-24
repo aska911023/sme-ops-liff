@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { ChevronLeft, Send } from 'lucide-react'
+import { ChevronLeft, Send, X as XIcon, Upload } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+
+// Storage path 安全字元（跟主系統 src/lib/storageSanitize.js 同邏輯）
+function safeStorageName(name) {
+  if (!name) return `file_${Date.now()}.bin`
+  const dot = name.lastIndexOf('.')
+  const base = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot + 1).replace(/[^a-zA-Z0-9]/g, '') : 'bin'
+  const safe = base.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40) || 'file'
+  return `${safe}.${ext || 'bin'}`
+}
 
 // 預設值 token 替換（與主系統 CustomFormFill.jsx 同邏輯）
 function resolveDefaultToken(raw, me) {
@@ -290,13 +300,7 @@ function FieldRender({ field, value, onChange, pickers }) {
   }
 
   if (field.type === 'file') {
-    return (
-      <div>{labelEl}
-        <div style={{ fontSize: 12, color: 'var(--orange)', padding: '10px', borderRadius: 6, background: 'rgba(245,158,11,0.1)', border: '1px solid var(--orange)' }}>
-          📎 此欄位需上傳檔案，請在電腦版 SME Ops 填寫
-        </div>
-      </div>
-    )
+    return <FileFieldRender field={field} value={value} onChange={onChange} labelEl={labelEl} />
   }
 
   return (
@@ -306,6 +310,93 @@ function FieldRender({ field, value, onChange, pickers }) {
         placeholder={field.placeholder || ''}
         value={value || ''}
         onChange={e => onChange(e.target.value)} />
+    </div>
+  )
+}
+
+// 與主系統 src/pages/hr/CustomFormFill.jsx 的 file field 同 data shape：
+//   max_files === 1 → value 是 URL string
+//   max_files > 1   → value 是 [{ url, name }] 陣列
+function FileFieldRender({ field, value, onChange, labelEl }) {
+  const [uploading, setUploading] = useState(false)
+  const maxFiles = field.max_files ?? 1
+  const accept = field.accept || 'image/*,application/pdf'
+  const fileList = Array.isArray(value)
+    ? value
+    : (value ? [{ url: value, name: String(value).split('/').pop() }] : [])
+  const canAdd = fileList.length < maxFiles
+
+  const uploadOne = async (file) => {
+    const path = `form-uploads/${Date.now()}_${safeStorageName(file.name)}`
+    const { data: up, error } = await supabase.storage.from('uploads').upload(path, file)
+    if (error) { alert('上傳失敗：' + error.message); return null }
+    const { data: { publicUrl } } = supabase.storage.from('uploads').getPublicUrl(up.path)
+    return { url: publicUrl, name: file.name }
+  }
+
+  const onPick = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    setUploading(true)
+    try {
+      if (maxFiles === 1) {
+        const r = await uploadOne(files[0])
+        if (r) onChange(r.url)
+      } else {
+        const remaining = maxFiles - fileList.length
+        const slice = files.slice(0, remaining)
+        const results = []
+        for (const f of slice) {
+          const r = await uploadOne(f)
+          if (r) results.push(r)
+        }
+        onChange([...fileList, ...results])
+      }
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const removeAt = (i) => {
+    if (maxFiles === 1) { onChange(''); return }
+    onChange(fileList.filter((_, j) => j !== i))
+  }
+
+  return (
+    <div>{labelEl}
+      {fileList.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+          {fileList.map((f, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+              borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)',
+            }}>
+              <a href={f.url} target="_blank" rel="noreferrer" style={{
+                flex: 1, color: 'var(--cyan)', fontSize: 13, textDecoration: 'none',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>{f.name}</a>
+              <button onClick={() => removeAt(i)} style={{
+                background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', padding: 4,
+              }}><XIcon size={14} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+      {canAdd && (
+        <label style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+          padding: '12px', borderRadius: 6, border: '1px dashed var(--cyan)',
+          background: 'rgba(6,182,212,0.06)', color: 'var(--cyan)',
+          fontSize: 13, fontWeight: 600, cursor: uploading ? 'not-allowed' : 'pointer',
+          opacity: uploading ? 0.6 : 1,
+        }}>
+          <Upload size={14} />
+          {uploading ? '上傳中…' : (maxFiles === 1 ? '選擇檔案 / 拍照' : `加檔案（最多 ${maxFiles} 個）`)}
+          <input type="file" accept={accept} multiple={maxFiles > 1} disabled={uploading}
+            onChange={onPick} style={{ display: 'none' }} />
+        </label>
+      )}
     </div>
   )
 }
