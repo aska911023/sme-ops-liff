@@ -137,7 +137,7 @@ export default function CustomFormFill() {
   )
 
   return (
-    <div style={{ padding: 14, paddingBottom: 80 }}>
+    <div style={{ padding: 14, paddingBottom: 180 }}>
       <button onClick={() => navigate(-1)}
         style={{ background: 'none', border: 'none', color: 'var(--cyan)', padding: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
         <ChevronLeft size={16} /> 返回
@@ -178,9 +178,10 @@ export default function CustomFormFill() {
       </div>
 
       <div style={{
-        position: 'fixed', left: 0, right: 0, bottom: 0, padding: 14,
-        background: 'var(--bg)', borderTop: '1px solid var(--border)',
-        display: 'flex', gap: 8,
+        position: 'fixed', left: 0, right: 0,
+        bottom: 'calc(env(safe-area-inset-bottom, 8px) + 56px)', // 避開底部 TabBar
+        padding: 14, background: 'var(--bg)', borderTop: '1px solid var(--border)',
+        display: 'flex', gap: 8, zIndex: 50,
       }}>
         <button onClick={() => navigate(-1)}
           style={{ flex: 1, padding: '12px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontWeight: 600 }}>
