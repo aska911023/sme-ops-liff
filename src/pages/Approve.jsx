@@ -10,6 +10,19 @@ import ChainTimeline from '../components/ChainTimeline'
 // notifyShiftSwapEvent/notifyOffRequestEvent 暫時保留（off_request / shift_swap 還沒做 trigger）
 import { notifyShiftSwapEvent, notifyOffRequestEvent } from '../lib/approvalNotify'
 
+// 幣別符號 map — 顯示用，根據 ISO 4217 code 對應到常用符號
+//   之前所有金額寫死 'NT$ {amount}' 不看 er.currency → USD/JPY/CNY 等也顯示 NT$
+//   現在統一用 fmtCurrency(amount, currency) → 自動換符號，沒對應就 fallback ISO code
+const CURRENCY_SYMBOLS = {
+  TWD: 'NT$', USD: '$', JPY: '¥', CNY: '¥', EUR: '€', GBP: '£',
+  HKD: 'HK$', SGD: 'S$', AUD: 'A$', CAD: 'C$', KRW: '₩', THB: '฿',
+}
+const fmtCurrency = (amount, currency) => {
+  const cur = currency || 'TWD'
+  const sym = CURRENCY_SYMBOLS[cur] || cur
+  return `${sym} ${Number(amount || 0).toLocaleString()}`
+}
+
 const ERR_MSG = {
   EMPLOYEE_NOT_FOUND: '找不到員工資料，請重新綁定 LINE',
   APPLICANT_NOT_FOUND: '找不到申請人',
@@ -736,7 +749,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
             <span> · {t.start_date} ~ {t.end_date}</span>
           </div>
           {t.purpose && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{t.purpose}</div>}
-          {t.budget > 0 && <div style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 600, marginTop: 4 }}>預算：NT$ {Number(t.budget).toLocaleString()}</div>}
+          {t.budget > 0 && <div style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 600, marginTop: 4 }}>預算：{fmtCurrency(t.budget, t.currency)}</div>}
         </>}
       />
     ))
@@ -766,7 +779,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
           <ApproverRoleBadge role={e.my_approver_role} stepLabel={e.my_step_label} isSelf={e.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>
             <span className="badge badge-cyan" style={{ marginRight: 6 }}>{e.category}</span>
-            <span style={{ fontWeight: 700 }}>NT$ {Number(e.amount).toLocaleString()}</span>
+            <span style={{ fontWeight: 700 }}>{fmtCurrency(e.amount, e.currency)}</span>
             <span style={{ color: 'var(--t3)' }}> · {e.date}</span>
           </div>
           {e.description && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{e.description}</div>}
@@ -1116,7 +1129,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
         </div>
         {!isNonExpense && (
           <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, marginBottom: 4 }}>
-            NT$ {Number(er.estimated_amount || 0).toLocaleString()}
+            {fmtCurrency(er.estimated_amount, er.currency)}
           </div>
         )}
         <div style={{ fontSize: 12, color: 'var(--t3)' }}>
@@ -1199,7 +1212,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
               {!isNonExpense && er.store && <KvRow k="門市" v={er.store} />}
               {isNonExpense
                 ? <KvRow k="類型" v="非費用申請" highlight />
-                : <KvRow k="預估金額" v={`NT$ ${Number(er.estimated_amount || 0).toLocaleString()}`} highlight />
+                : <KvRow k="預估金額" v={fmtCurrency(er.estimated_amount, er.currency)} highlight />
               }
               {!isNonExpense && er.account_code && (
                 <KvRow k="會計科目" v={`${er.account_code} ${er.account_name || ''}`} />
@@ -1246,10 +1259,10 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
                             <td style={{ padding: '4px 6px' }}>{li.name}</td>
                             <td style={{ padding: '4px 6px', textAlign: 'right' }}>{li.qty}</td>
                             <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace' }}>
-                              NT$ {Number(li.unit_price || 0).toLocaleString()}
+                              {fmtCurrency(li.unit_price, er.currency)}
                             </td>
                             <td style={{ padding: '4px 6px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700 }}>
-                              NT$ {Number(li.subtotal || 0).toLocaleString()}
+                              {fmtCurrency(li.subtotal, er.currency)}
                             </td>
                           </tr>
                         ))}
@@ -1454,7 +1467,7 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
         <div style={{ display: 'flex', gap: 12, fontSize: 13, marginBottom: 4 }}>
           <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>
-            實際 NT$ {Number(er.actual_amount || 0).toLocaleString()}
+            實際 {fmtCurrency(er.actual_amount, er.currency)}
           </span>
           <span style={{ color: 'var(--t3)' }}>
             (申請 {Number(er.estimated_amount || 0).toLocaleString()})
@@ -1528,10 +1541,10 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
               <KvRow k="申請人" v={er.employee} />
               {er.department && <KvRow k="部門" v={er.department} />}
               {er.store && <KvRow k="門市" v={er.store} />}
-              <KvRow k="實際金額" v={`NT$ ${Number(er.actual_amount || 0).toLocaleString()}`} highlight />
-              <KvRow k="申請金額" v={`NT$ ${Number(er.estimated_amount || 0).toLocaleString()}`} />
+              <KvRow k="實際金額" v={fmtCurrency(er.actual_amount, er.currency)} highlight />
+              <KvRow k="申請金額" v={fmtCurrency(er.estimated_amount, er.currency)} />
               {diff !== 0 && (
-                <KvRow k="差額" v={`${diff > 0 ? '+' : ''}NT$ ${diff.toLocaleString()}`} />
+                <KvRow k="差額" v={`${diff > 0 ? '+' : ''}${fmtCurrency(diff, er.currency)}`} />
               )}
               {er.account_code && (
                 <KvRow k="會計科目" v={`${er.account_code} ${er.account_name || ''}`} />
@@ -1587,8 +1600,8 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
                           <tr key={i} style={{ borderTop: '1px solid var(--border2)' }}>
                             <td style={{ padding: '4px 6px' }}>{li.name}</td>
                             <td style={{ padding: '4px 6px', textAlign: 'right' }}>{li.qty}</td>
-                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>NT$ {Number(li.unit_price || 0).toLocaleString()}</td>
-                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>NT$ {Number(li.subtotal || 0).toLocaleString()}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>{fmtCurrency(li.unit_price, er.currency)}</td>
+                            <td style={{ padding: '4px 6px', textAlign: 'right' }}>{fmtCurrency(li.subtotal, er.currency)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1968,9 +1981,9 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   if (item.days)         detailFields.push(['天數', `${item.days} 天`])
   if (item.type)         detailFields.push(['類型', item.type])
   if (item.destination)  detailFields.push(['出差地', item.destination])
-  if (item.budget)       detailFields.push(['預算', `NT$ ${Number(item.budget).toLocaleString()}`])
-  if (item.amount)       detailFields.push(['金額', `NT$ ${Number(item.amount).toLocaleString()}`])
-  if (item.estimated_amount) detailFields.push(['預估金額', `NT$ ${Number(item.estimated_amount).toLocaleString()}`])
+  if (item.budget)       detailFields.push(['預算', fmtCurrency(item.budget, item.currency)])
+  if (item.amount)       detailFields.push(['金額', fmtCurrency(item.amount, item.currency)])
+  if (item.estimated_amount) detailFields.push(['預估金額', fmtCurrency(item.estimated_amount, item.currency)])
   if (item.account_code) detailFields.push(['會計科目', `${item.account_code} ${item.account_name || ''}`])
   if (item.category)     detailFields.push(['類別', item.category])
   if (item.correction_time) detailFields.push(['補卡時間', item.correction_time])
