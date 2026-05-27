@@ -5,6 +5,15 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
+// 4 模式 tag — 跟主系統 Clock.jsx 同步
+const MODE_META = {
+  normal:     { label: '一般', icon: '🕒', color: 'var(--cyan)',   dim: 'var(--cyan-dim)' },
+  overtime:   { label: '加班', icon: '⚡', color: 'var(--orange)', dim: 'var(--orange-dim)' },
+  leave:      { label: '請假', icon: '🌴', color: 'var(--blue)',   dim: 'var(--blue-dim)' },
+  shift_swap: { label: '換班', icon: '🔄', color: 'var(--purple)', dim: 'var(--purple-dim)' },
+  outing:     { label: '外出', icon: '✈️', color: 'var(--green)',  dim: 'var(--green-dim)' },
+}
+
 export default function ClockCorrection() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
@@ -12,8 +21,8 @@ export default function ClockCorrection() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  // clock_corrections 實際欄位：type (上班打卡/下班打卡) + correction_time
-  const [form, setForm] = useState({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '' })
+  // clock_corrections 實際欄位：type (上班打卡/下班打卡) + correction_time + clock_mode
+  const [form, setForm] = useState({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
   const [stores, setStores] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
@@ -34,7 +43,7 @@ export default function ClockCorrection() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '' })
+    setForm({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
     setEditingId(null)
     setShowForm(false)
   }
@@ -46,6 +55,7 @@ export default function ClockCorrection() {
       correction_time: r.correction_time || '',
       reason: r.reason || '',
       store: r.store || '',
+      clock_mode: r.clock_mode || 'normal',
     })
     setEditingId(r.id)
     setShowForm(true)
@@ -72,6 +82,7 @@ export default function ClockCorrection() {
         correction_time: form.correction_time,
         reason: form.reason,
         store: form.store,
+        clock_mode: form.clock_mode,
       },
     })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
@@ -127,6 +138,38 @@ export default function ClockCorrection() {
           <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 8 }}>
             一次補正一個時段；如要補上班+下班兩個，請分兩筆送出
           </div>
+
+          {/* 4 模式選擇 — 與 Clock.jsx 對齊 */}
+          <div className="form-group">
+            <label className="form-label">補打卡模式</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 6 }}>
+              {Object.entries(MODE_META).map(([key, m]) => {
+                const active = form.clock_mode === key
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => set('clock_mode', key)}
+                    style={{
+                      padding: '8px 4px', borderRadius: 8, cursor: 'pointer',
+                      background: active ? m.dim : 'var(--card)',
+                      border: `1px solid ${active ? m.color : 'var(--border2)'}`,
+                      color: active ? m.color : 'var(--t3)',
+                      fontSize: 10, fontWeight: 700,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                    }}
+                  >
+                    <span style={{ fontSize: 16 }}>{m.icon}</span>
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--t3)' }}>
+              💡 標明這筆補打卡屬於哪種模式，HR 核准後會反映到出勤紀錄
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label">補打卡原因 *</label>
             <textarea className="form-input" placeholder="例：忘記打卡、手機沒電..." value={form.reason} onChange={e => set('reason', e.target.value)} />
@@ -181,8 +224,17 @@ export default function ClockCorrection() {
               )}
             </div>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
-            {r.type}：{r.correction_time}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--t2)' }}>
+            <span>{r.type}：{r.correction_time}</span>
+            {r.clock_mode && r.clock_mode !== 'normal' && MODE_META[r.clock_mode] && (
+              <span style={{
+                padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: MODE_META[r.clock_mode].dim,
+                color: MODE_META[r.clock_mode].color,
+              }}>
+                {MODE_META[r.clock_mode].icon} {MODE_META[r.clock_mode].label}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>原因：{r.reason}</div>
           {r.reject_reason && (
