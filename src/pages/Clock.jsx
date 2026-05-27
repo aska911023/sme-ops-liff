@@ -220,11 +220,6 @@ export default function ClockPage() {
 
   const handleClock = async (type) => {
     if (loading || !canClock) return
-    if (clockMode === 'shift_swap' && !selectedSwapId) {
-      setMsg('打卡失敗: 換班模式須選擇對應的換班單')
-      setTimeout(() => setMsg(''), 5000)
-      return
-    }
     setLoading(true)
 
     try {
@@ -264,7 +259,6 @@ export default function ClockPage() {
 
   const clockedIn = !!todayRecord?.clock_in
   const clockedOut = !!todayRecord?.clock_out
-  const swapBlocked = clockMode === 'shift_swap' && !selectedSwapId
   const showModePicker = !clockedOut  // 完成下班後不再讓選
 
   return (
@@ -422,11 +416,11 @@ export default function ClockPage() {
             {clockMode === 'shift_swap' && (
               <div>
                 <div style={{ color: 'var(--purple)', marginBottom: 8 }}>
-                  🔄 換班模式：對應一張已核准的換班單；今日 {approvedSwaps.length} 張可用：
+                  🔄 換班模式：bypass 時段限制。若有已核准換班單可選填連結，緊急換班可直接打卡。
                 </div>
                 {approvedSwaps.length === 0 ? (
-                  <div style={{ color: 'var(--red)', fontSize: 11 }}>
-                    ⚠ 今日無已核准的換班單，無法使用此模式（請先走完兩段確認流程）
+                  <div style={{ color: 'var(--t3)', fontSize: 11 }}>
+                    今日無已核准換班單（緊急換班可直接打卡，之後補送換班申請）
                   </div>
                 ) : (
                   <select
@@ -435,7 +429,7 @@ export default function ClockPage() {
                     className="form-input"
                     style={{ width: '100%', fontSize: 12 }}
                   >
-                    <option value="">— 選擇換班單 —</option>
+                    <option value="">— 不連結換班單（緊急換班）—</option>
                     {approvedSwaps.map(s => (
                       <option key={s.id} value={s.id}>
                         #{s.id} {s.requester_id === employee.id ? `我${s.requester_shift} ↔ 對方${s.target_shift}` : `對方${s.requester_shift} ↔ 我${s.target_shift}`}
@@ -453,10 +447,10 @@ export default function ClockPage() {
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
         {!clockedIn ? (
           <button
-            className={`clock-btn ${canClock && !swapBlocked && clockMode === 'normal' ? 'clock-in' : ''}`}
+            className={`clock-btn ${canClock && clockMode === 'normal' ? 'clock-in' : ''}`}
             onClick={() => handleClock('in')}
-            disabled={loading || !canClock || swapBlocked}
-            style={(!canClock || swapBlocked) ? {
+            disabled={loading || !canClock}
+            style={!canClock ? {
               background: 'var(--card)', border: '2px solid var(--border)',
               color: 'var(--t3)', boxShadow: 'none', cursor: 'not-allowed',
               width: 140, height: 140, borderRadius: '50%',
@@ -471,14 +465,14 @@ export default function ClockPage() {
             } : undefined)}
           >
             <span style={{ fontSize: 28 }}>{canClock ? (clockMode === 'normal' ? '👆' : MODE_META[clockMode].icon) : '📍'}</span>
-            {!canClock ? '範圍外' : swapBlocked ? '選換班單' : (clockMode === 'normal' ? '上班打卡' : `${MODE_META[clockMode].label}上班`)}
+            {!canClock ? '範圍外' : (clockMode === 'normal' ? '上班打卡' : `${MODE_META[clockMode].label}上班`)}
           </button>
         ) : !clockedOut ? (
           <button
-            className={`clock-btn ${canClock && !swapBlocked && clockMode === 'normal' ? 'clock-out' : ''}`}
+            className={`clock-btn ${canClock && clockMode === 'normal' ? 'clock-out' : ''}`}
             onClick={() => handleClock('out')}
-            disabled={loading || !canClock || swapBlocked}
-            style={(!canClock || swapBlocked) ? {
+            disabled={loading || !canClock}
+            style={!canClock ? {
               background: 'var(--card)', border: '2px solid var(--border)',
               color: 'var(--t3)', boxShadow: 'none', cursor: 'not-allowed',
               width: 140, height: 140, borderRadius: '50%',
@@ -493,7 +487,7 @@ export default function ClockPage() {
             } : undefined)}
           >
             <span style={{ fontSize: 28 }}>{canClock ? (clockMode === 'normal' ? '👋' : MODE_META[clockMode].icon) : '📍'}</span>
-            {!canClock ? '範圍外' : swapBlocked ? '選換班單' : (clockMode === 'normal' ? '下班打卡' : `${MODE_META[clockMode].label}下班`)}
+            {!canClock ? '範圍外' : (clockMode === 'normal' ? '下班打卡' : `${MODE_META[clockMode].label}下班`)}
           </button>
         ) : (
           <div style={{
