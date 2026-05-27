@@ -225,13 +225,14 @@ export default function ClockPage() {
     try {
       const action = type === 'in' ? 'clock_in' : 'clock_out'
       const data = await serverClockIn({
-        employee: employee.name,
+        employee:     employee.name,
+        line_user_id: lineUserId || null,   // LIFF 走 LINE 身份；有帶就跳過 JWT 驗證
         action,
-        lat: location?.lat || null,
-        lng: location?.lng || null,
-        accuracy: gpsAccuracy || null,
-        ip: clientIp || null,
-        clock_mode: clockMode,
+        lat:      location?.lat || null,
+        lng:      location?.lng || null,
+        accuracy: gpsAccuracy  || null,
+        ip:       clientIp     || null,
+        clock_mode:   clockMode,
         shift_swap_id: clockMode === 'shift_swap' ? selectedSwapId : null,
       })
       setTodayRecord(data.record)
