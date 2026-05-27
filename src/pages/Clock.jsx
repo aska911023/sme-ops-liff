@@ -416,9 +416,9 @@ export default function ClockPage() {
             fontSize: 12, lineHeight: 1.5, color: 'var(--t2)',
           }}>
             {clockMode === 'normal'   && <span>依排班/辦公時間打卡，超出容許範圍會記遲到/早退。</span>}
-            {clockMode === 'overtime' && <span style={{ color: 'var(--orange)' }}>⚡ 加班模式：不受時段限制，系統自動建立加班申請待審核。</span>}
-            {clockMode === 'leave'    && <span style={{ color: 'var(--blue)' }}>🌴 請假模式：遲到/早退不計罰，須在班別時段內。系統自動建立請假單，HR 補件。</span>}
-            {clockMode === 'outing'   && <span style={{ color: 'var(--green)' }}>✈️ 外出模式：免位置驗證、免時段檢查，系統自動建立公出單待審核。</span>}
+            {clockMode === 'overtime' && <span style={{ color: 'var(--orange)' }}>⚡ 加班模式：不受時段限制。打卡成功後請記得另外送出加班申請單。</span>}
+            {clockMode === 'leave'    && <span style={{ color: 'var(--blue)' }}>🌴 請假模式：遲到/早退不計罰，須在班別時段內。打卡成功後請記得另外送出請假申請單。</span>}
+            {clockMode === 'outing'   && <span style={{ color: 'var(--green)' }}>✈️ 外出模式：免位置驗證、免時段檢查。打卡成功後請記得另外送出公出申請單。</span>}
             {clockMode === 'shift_swap' && (
               <div>
                 <div style={{ color: 'var(--purple)', marginBottom: 8 }}>
