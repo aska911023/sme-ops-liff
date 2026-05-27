@@ -69,7 +69,22 @@ export default function ExpenseRequest() {
 
   // Upload files to Supabase Storage + 透過 RPC 寫 attachment row
   const uploadFiles = async (requestId, fileList, stage) => {
-    for (const { file } of fileList) {
+    // ★ 上限：每個 request 每個 stage 最多 3 個附件（對齊 3 個 slot UI）
+    //   之前沒 check 已有數量 → 編輯重送會累積到 4+ 個
+    const MAX_ATTACHMENTS_PER_STAGE = 3
+    const { data: existingList } = await supabase.rpc('liff_list_expense_request_attachments', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_request_id: requestId,
+    })
+    const existingCount = (existingList || []).filter(a => a.stage === stage).length
+    const remaining = Math.max(0, MAX_ATTACHMENTS_PER_STAGE - existingCount)
+    if (remaining === 0) return
+    let filesToUpload = fileList
+    if (fileList.length > remaining) {
+      filesToUpload = fileList.slice(0, remaining)
+    }
+
+    for (const { file } of filesToUpload) {
       const ext = file.name.split('.').pop()
       const path = `expense-requests/${requestId}/${stage}/${Date.now()}.${ext}`
       const { error } = await supabase.storage.from('attachments').upload(path, file, { upsert: true })
