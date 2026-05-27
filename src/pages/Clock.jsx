@@ -240,12 +240,16 @@ export default function ClockPage() {
         shift_swap_id: clockMode === 'shift_swap' ? selectedSwapId : null,
       })
       setTodayRecord(data.record)
-      const extra = clockMode === 'overtime'   ? '，加班申請已送出待審核'
-                  : clockMode === 'leave'      ? '，已標記為請假出勤'
-                  : clockMode === 'shift_swap' ? '，已對應換班紀錄'
-                  : clockMode === 'outing'     ? '，已標記為外出'
-                  : ''
-      setMsg((type === 'in' ? '上班打卡成功 ✓' : '下班打卡成功 ✓') + extra)
+      const base = type === 'in' ? '上班打卡成功 ✓' : '下班打卡成功 ✓'
+      // 若後端有提醒訊息（overtime/leave/outing 需另外送申請單）則顯示
+      if (data.reminder) {
+        setMsg(base)
+        // 短暫延遲後換成提醒訊息，讓打卡成功先顯示
+        setTimeout(() => setMsg('⚠️ ' + data.reminder), 1500)
+      } else {
+        const extra = clockMode === 'shift_swap' ? '，已對應換班紀錄' : ''
+        setMsg(base + extra)
+      }
       // 成功後重置模式
       setClockMode('normal')
       setSelectedSwapId(null)
@@ -253,7 +257,9 @@ export default function ClockPage() {
       setMsg('打卡失敗: ' + (e.message || '未知錯誤'))
     }
     setLoading(false)
-    setTimeout(() => setMsg(''), 5000)
+    // overtime/leave/outing 有 reminder 訊息，多顯示 3 秒
+    const msgDuration = ['overtime', 'leave', 'outing'].includes(clockMode) ? 8000 : 5000
+    setTimeout(() => setMsg(''), msgDuration)
   }
 
   const clockedIn = !!todayRecord?.clock_in
