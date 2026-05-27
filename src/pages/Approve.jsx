@@ -1777,6 +1777,13 @@ function ExpenseAttachments({ requestId }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {atts.map(att => {
           const isImage = att.file_type?.startsWith('image')
+          // 縮圖用 Supabase Image Transform（120×120 @ quality 60）避免下載原始大圖
+          const thumbUrl = isImage
+            ? supabase.storage.from('attachments').getPublicUrl(att.storage_path, {
+                transform: { width: 120, height: 120, resize: 'cover', quality: 60 },
+              })?.data?.publicUrl
+            : null
+          // 點開才下載原圖
           const url = supabase.storage.from('attachments').getPublicUrl(att.storage_path)?.data?.publicUrl
           return (
             <div key={att.id} style={{
@@ -1784,8 +1791,8 @@ function ExpenseAttachments({ requestId }) {
               borderRadius: 6, background: 'var(--card-2, transparent)',
               cursor: 'pointer',
             }} onClick={() => viewFile(att)}>
-              {isImage && url ? (
-                <img src={url} alt="" style={{
+              {isImage && thumbUrl ? (
+                <img src={thumbUrl} alt="" loading="lazy" style={{
                   width: 44, height: 44, borderRadius: 6, objectFit: 'cover',
                   border: '1px solid var(--border2)', flexShrink: 0,
                 }} />
