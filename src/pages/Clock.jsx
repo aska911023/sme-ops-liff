@@ -120,13 +120,13 @@ export default function ClockPage() {
   useEffect(() => {
     if (!employee) return
 
-    supabase
-      .from('attendance_records')
-      .select('*')
-      .eq('employee', employee.name)
-      .eq('date', today)
-      .maybeSingle()
-      .then(({ data }) => setTodayRecord(data))
+    // ★ 走 SECURITY DEFINER RPC — anon 直查 attendance_records 會被 RLS silent skip
+    //   (policy: employee = current_employee_name()，LIFF anon 沒 auth → 永遠看不到)
+    if (lineUserId) {
+      supabase
+        .rpc('liff_get_today_attendance', { p_line_user_id: lineUserId, p_date: today })
+        .then(({ data }) => setTodayRecord((data && data[0]) || null))
+    }
 
     // Get store GPS info via LIFF RPC (bypasses stores RLS for anon key)
     if (employee.id) {
