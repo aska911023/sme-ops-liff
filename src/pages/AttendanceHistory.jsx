@@ -171,21 +171,21 @@ export default function AttendanceHistory() {
 
       <div style={{ height: 40 }} />
 
-      {/* 詳細 modal */}
+      {/* 詳細 modal — LIFF 內嵌 webview 底部會被 LINE bar 蓋住 → 置中顯示避開 */}
       {selectedRecord && (
         <div
           onClick={() => setSelectedRecord(null)}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100,
-            display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
           }}
         >
           <div
             onClick={e => e.stopPropagation()}
             style={{
               width: '100%', maxWidth: 480,
-              background: 'var(--bg)', borderRadius: '16px 16px 0 0',
-              padding: '16px 20px 24px', maxHeight: '80vh', overflowY: 'auto',
+              background: 'var(--bg)', borderRadius: 16,
+              padding: '16px 20px', maxHeight: '70vh', overflowY: 'auto',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
