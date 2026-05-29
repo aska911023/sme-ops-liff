@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle } from 'lucide-react'
+import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle, CalendarDays } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -93,6 +94,7 @@ async function serverClockIn(payload) {
 
 export default function ClockPage() {
   const { employee, lineProfile } = useAuth()
+  const navigate = useNavigate()
   const lineUserId = lineProfile?.lineUserId
   const [time, setTime] = useState(new Date())
   const [todayRecord, setTodayRecord] = useState(null)
@@ -255,7 +257,20 @@ export default function ClockPage() {
       </div>
 
       {/* Clock Display */}
-      <div style={{ textAlign: 'center', margin: '20px 0 24px' }}>
+      <div style={{ position: 'relative', textAlign: 'center', margin: '20px 0 24px' }}>
+        <button
+          onClick={() => navigate('/attendance-history')}
+          style={{
+            position: 'absolute', top: 0, right: 0,
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '6px 10px', borderRadius: 8,
+            background: 'var(--cyan-dim)', color: 'var(--cyan)',
+            border: '1px solid var(--cyan)', fontSize: 12, fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          <CalendarDays size={12} /> 紀錄
+        </button>
         <div className="clock-display">
           {time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
         </div>
