@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, Clock, MapPin, Wifi, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, MapPin, X } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -229,20 +229,35 @@ export default function AttendanceHistory() {
               )}
             </div>
 
-            {(selectedRecord.clock_in_location || selectedRecord.clock_in_ip) && (
-              <div style={{ background: 'var(--card)', padding: '12px 14px', borderRadius: 10, fontSize: 12, color: 'var(--t2)' }}>
-                {selectedRecord.clock_in_location && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <MapPin size={12} /> {selectedRecord.clock_in_location}
-                  </div>
-                )}
-                {selectedRecord.clock_in_ip && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Wifi size={12} /> {selectedRecord.clock_in_ip}
-                  </div>
-                )}
-              </div>
-            )}
+            <div style={{ background: 'var(--card)', padding: '12px 14px', borderRadius: 10, fontSize: 12, color: 'var(--t2)' }}>
+              {/* 驗證方式 — 根據 clock_in_method 顯示，避免 outing (bypass) 看起來像 GPS 驗證 */}
+              {selectedRecord.clock_in_method === 'gps' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <MapPin size={12} style={{ color: 'var(--green)' }} />
+                  <span>GPS 驗證</span>
+                  {selectedRecord.clock_in_distance_m != null && (
+                    <span style={{ marginLeft: 'auto', color: 'var(--t3)' }}>距離 {selectedRecord.clock_in_distance_m} m</span>
+                  )}
+                </div>
+              )}
+              {selectedRecord.clock_in_method === 'wifi' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                  <MapPin size={12} style={{ color: 'var(--cyan)' }} />
+                  <span>WiFi 驗證</span>
+                </div>
+              )}
+              {selectedRecord.clock_in_method === 'bypass' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, color: 'var(--green)' }}>
+                  <MapPin size={12} />
+                  <span>免位置驗證（外出）</span>
+                </div>
+              )}
+              {selectedRecord.clock_in_location && (
+                <div style={{ fontSize: 11, color: 'var(--t3)' }}>
+                  所屬店點：{selectedRecord.clock_in_location}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
