@@ -249,21 +249,16 @@ export default function ClockPage() {
 
   return (
     <div className="page">
-      <div className="header">
+      <div className="header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div>
           <div className="header-title">打卡</div>
           <div className="header-sub">{today}</div>
         </div>
-      </div>
-
-      {/* Clock Display */}
-      <div style={{ position: 'relative', textAlign: 'center', margin: '20px 0 24px' }}>
         <button
           onClick={() => navigate('/attendance-history')}
           style={{
-            position: 'absolute', top: 0, right: 0,
-            display: 'flex', alignItems: 'center', gap: 4,
-            padding: '6px 10px', borderRadius: 8,
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '6px 10px', borderRadius: 8, flexShrink: 0,
             background: 'var(--cyan-dim)', color: 'var(--cyan)',
             border: '1px solid var(--cyan)', fontSize: 12, fontWeight: 700,
             cursor: 'pointer',
@@ -271,6 +266,10 @@ export default function ClockPage() {
         >
           <CalendarDays size={12} /> 紀錄
         </button>
+      </div>
+
+      {/* Clock Display */}
+      <div style={{ textAlign: 'center', margin: '20px 0 24px' }}>
         <div className="clock-display">
           {time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
         </div>
