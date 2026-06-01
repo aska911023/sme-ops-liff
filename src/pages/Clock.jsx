@@ -207,8 +207,16 @@ export default function ClockPage() {
     return '外部位置'
   }
 
+  const [confirmOut, setConfirmOut] = useState(false)
+
   const handleClock = async (type) => {
     if (loading || !canClock) return
+    // ★ 下班打卡 — 加 confirm 防誤觸
+    if (type === 'out' && !confirmOut) {
+      setConfirmOut(true)
+      return
+    }
+    setConfirmOut(false)
     setLoading(true)
 
     try {
@@ -551,6 +559,59 @@ export default function ClockPage() {
           </div>
         )}
       </div>
+
+      {/* 下班打卡 確認 modal — 防誤觸 */}
+      {confirmOut && (
+        <div
+          onClick={() => setConfirmOut(false)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%', maxWidth: 380,
+              background: 'var(--bg)', borderRadius: 16, padding: '24px 22px',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{ fontSize: 40, marginBottom: 8 }}>👋</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)', marginBottom: 6 }}>
+              確認下班打卡？
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 6 }}>
+              已上班 {todayRecord?.clock_in || '--:--'} → 現在 {time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--orange)', marginBottom: 18 }}>
+              ⚠️ 下班打卡後無法再修改，請確認真的要下班了再按
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setConfirmOut(false)}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 10,
+                  background: 'var(--card)', color: 'var(--t2)',
+                  border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                取消
+              </button>
+              <button
+                onClick={() => handleClock('out')}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 10,
+                  background: 'var(--orange)', color: '#fff', border: 'none',
+                  fontSize: 14, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                確認下班
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
