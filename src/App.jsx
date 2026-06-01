@@ -26,6 +26,7 @@ import Approve from './pages/Approve'
 import TaskConfirmations from './pages/TaskConfirmations'
 import ClockCorrection from './pages/ClockCorrection'
 import AttendanceHistory from './pages/AttendanceHistory'
+import AttendanceIssues from './pages/AttendanceIssues'
 import MySchedule from './pages/MySchedule'
 import ApprovalStatus from './pages/ApprovalStatus'
 import ExpenseRequest from './pages/ExpenseRequest'
@@ -205,6 +206,7 @@ export default function App() {
         <Route path="/task-confirmations" element={<TaskConfirmations />} />
         <Route path="/clock-correction" element={<ClockCorrection />} />
         <Route path="/attendance-history" element={<AttendanceHistory />} />
+        <Route path="/attendance-issues" element={<AttendanceIssues />} />
         <Route path="/my-schedule" element={<MySchedule />} />
         <Route path="/approval-status" element={<ApprovalStatus />} />
         <Route path="/expense-request" element={<ExpenseRequest />} />
