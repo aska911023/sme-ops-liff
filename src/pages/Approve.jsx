@@ -179,13 +179,31 @@ function PendingApprovalsView() {
       supabase.rpc('liff_list_my_task_confirmations', { p_line_user_id: lineProfile.lineUserId }),
     ])
     if (error) { console.error('load approvals', error); setLoading(false); return }
+
+    // ★ chain_total_steps 改 snapshot 感知：load 完 pending approvals 後批次拿正確 total
+    //   覆蓋 RPC 內讀 live 的 chain_total_steps（chain 改動後 in-flight 單仍走 snapshot
+    //   的 total，避免 LIFF 卡片「第 X/Y 關」的 Y 跟實際 timeline 對不上）
+    const erIds = (rpc?.expense_requests || []).map(x => x.id).filter(Boolean)
+    let erTotalMap = {}
+    if (erIds.length) {
+      const { data: totals } = await supabase.rpc('liff_get_chain_total_steps_batch', {
+        p_request_type: 'expense_request',
+        p_ids: erIds,
+      })
+      for (const row of (totals || [])) erTotalMap[row.id] = row.total_steps
+    }
+    const erWithSnap = (rpc?.expense_requests || []).map(item => ({
+      ...item,
+      chain_total_steps_snap: erTotalMap[item.id] ?? null,
+    }))
+
     setData({
       leaves:                  rpc?.leaves                  || [],
       overtimes:               rpc?.overtimes               || [],
       trips:                   rpc?.trips                   || [],
       expenses:                rpc?.expenses                || [],
       corrections:             rpc?.corrections             || [],
-      expense_requests:        rpc?.expense_requests        || [],
+      expense_requests:        erWithSnap,
       expense_settles:         rpc?.expense_settles         || [],
       // HR 異動 3 表（2026-05-17 LIFF 跟 Web 對齊後新增）
       resignation_requests:        rpc?.resignation_requests        || [],
@@ -1143,7 +1161,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
             background: 'var(--purple-dim)', color: 'var(--purple)',
             fontSize: 11, fontWeight: 600,
           }}>
-            🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps} 關
+            🔐 {er.chain_name} · 第 {er.current_step + 1} / {er.chain_total_steps_snap ?? er.chain_total_steps} 關
             {er.my_step_label ? `（${er.my_step_label}）` : ''}
           </div>
         )}
@@ -1218,7 +1236,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
                 <KvRow k="會計科目" v={`${er.account_code} ${er.account_name || ''}`} />
               )}
               {er.chain_name && (
-                <KvRow k="簽核鏈" v={`${er.chain_name} (第 ${er.current_step + 1}/${er.chain_total_steps} 關)`} />
+                <KvRow k="簽核鏈" v={`${er.chain_name} (第 ${er.current_step + 1}/${er.chain_total_steps_snap ?? er.chain_total_steps} 關)`} />
               )}
             </div>
           )}
@@ -1550,7 +1568,7 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
                 <KvRow k="會計科目" v={`${er.account_code} ${er.account_name || ''}`} />
               )}
               {er.chain_name && (
-                <KvRow k="核銷簽核鏈" v={`${er.chain_name} (第 ${er.settle_current_step + 1}/${er.chain_total_steps} 關)`} />
+                <KvRow k="核銷簽核鏈" v={`${er.chain_name} (第 ${er.settle_current_step + 1}/${er.chain_total_steps_snap ?? er.chain_total_steps} 關)`} />
               )}
             </div>
           )}
@@ -1997,7 +2015,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   if (item.purpose)      detailFields.push(['出差目的', item.purpose])
   if (item.reason)       detailFields.push(['原因', item.reason])
   if (item.description)  detailFields.push(['說明', item.description])
-  if (item.chain_name)   detailFields.push(['簽核鏈', `${item.chain_name} (第 ${(item.current_step ?? 0) + 1}/${item.chain_total_steps} 關)`])
+  if (item.chain_name)   detailFields.push(['簽核鏈', `${item.chain_name} (第 ${(item.current_step ?? 0) + 1}/${item.chain_total_steps_snap ?? item.chain_total_steps} 關)`])
 
   return (
     <div className="list-item" style={{
