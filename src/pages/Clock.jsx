@@ -506,7 +506,7 @@ export default function ClockPage() {
         </div>
         <div className="info-row">
           <span className="info-label">工時</span>
-          <span className="info-value">{todayRecord?.hours ? `${todayRecord.hours}h` : '-'}</span>
+          <span className="info-value">{(todayRecord?.total_hours > 0 ? todayRecord.total_hours : todayRecord?.hours) > 0 ? `${(todayRecord.total_hours > 0 ? todayRecord.total_hours : todayRecord.hours).toFixed(1)}h` : '-'}</span>
         </div>
         <div className="info-row">
           <span className="info-label">狀態</span>
