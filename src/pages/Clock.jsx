@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle, CalendarDays } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -105,6 +105,8 @@ export default function ClockPage() {
   const [gpsAccuracy, setGpsAccuracy] = useState(null)
   const [gpsWeak, setGpsWeak] = useState(false)
   const [distance, setDistance] = useState(null)
+  const [gpsRetrying, setGpsRetrying] = useState(false)     // 距離 151–1800m 時自動重抓一次
+  const retriedRef = useRef(false)                          // 同次 mount 只重試 1 次
   const [clientIp, setClientIp] = useState(null)
   const [ipError, setIpError] = useState(false)
   const [wifiMatch, setWifiMatch] = useState(null) // null=checking, true/false
@@ -176,10 +178,32 @@ export default function ClockPage() {
   }, [employee])
 
   // Calculate distance when both location and store are available
+  // + 距離落在 151–1800m 自動重試一次（iPhone 第一筆常吃 cached Wi-Fi 估算位置）
   useEffect(() => {
-    if (location && store?.lat && store?.lng) {
-      const d = getDistance(location.lat, location.lng, store.lat, store.lng)
-      setDistance(Math.round(d))
+    if (!location || !store?.lat || !store?.lng) return
+    const d = Math.round(getDistance(location.lat, location.lng, store.lat, store.lng))
+    setDistance(d)
+    if (d > 150 && d <= 1800 && !retriedRef.current && navigator.geolocation) {
+      retriedRef.current = true
+      setGpsRetrying(true)
+      const timer = setTimeout(() => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude, accuracy } = pos.coords
+            const newDist = Math.round(getDistance(latitude, longitude, store.lat, store.lng))
+            const weak = accuracy > GPS_ACCURACY_THRESHOLD
+            setLocation({ lat: latitude, lng: longitude })
+            setGpsAccuracy(Math.round(accuracy))
+            setDistance(newDist)
+            setGpsWeak(weak)
+            setGpsError(weak ? `GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考` : '')
+            setGpsRetrying(false)
+          },
+          () => setGpsRetrying(false),
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        )
+      }, 1500)
+      return () => clearTimeout(timer)
     }
   }, [location, store])
 
@@ -290,13 +314,13 @@ export default function ClockPage() {
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)' }}>GPS 定位狀態</span>
         </div>
 
-        {gpsError ? (
+        {gpsError && !gpsRetrying ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: gpsWeak ? 'var(--orange, #fb923c)' : 'var(--red)', fontSize: 13 }}>
             {gpsWeak ? <AlertTriangle size={16} /> : <XCircle size={16} />}
             <span>{gpsError}</span>
           </div>
-        ) : !location ? (
-          <div style={{ fontSize: 13, color: 'var(--t3)' }}>定位中...</div>
+        ) : !location || gpsRetrying ? (
+          <div style={{ fontSize: 13, color: 'var(--t3)' }}>{gpsRetrying ? '重新定位中...' : '定位中...'}</div>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)', marginBottom: 8 }}>
