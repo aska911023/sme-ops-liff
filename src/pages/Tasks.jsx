@@ -538,19 +538,27 @@ export function TaskAttachments({ taskId, attachments = [], lineUserId, onChange
   }
 
   const viewFile = async (att) => {
-    // Bucket 可能是 private — 先用 signed URL (60 秒授權)，失敗才 fallback public
+    // 兩種來源的附件:
+    //   - 主系統 上傳 → 存 file_url (公開 URL)，storage_path 通常為 NULL
+    //   - LIFF 上傳   → 存 storage_path，file_url 為 NULL
     let url = null
-    try {
-      const { data: signed } = await supabase.storage
-        .from('task-attachments')
-        .createSignedUrl(att.storage_path, 60)
-      url = signed?.signedUrl || null
-    } catch { /* ignore */ }
-    if (!url) {
-      const { data: pub } = supabase.storage.from('task-attachments').getPublicUrl(att.storage_path)
-      url = pub?.publicUrl || null
+    if (att?.storage_path) {
+      // private bucket 用 signedUrl，失敗才 fallback publicUrl
+      try {
+        const { data: signed } = await supabase.storage
+          .from('task-attachments')
+          .createSignedUrl(att.storage_path, 60)
+        url = signed?.signedUrl || null
+      } catch { /* ignore */ }
+      if (!url) {
+        try {
+          const { data: pub } = supabase.storage.from('task-attachments').getPublicUrl(att.storage_path)
+          url = pub?.publicUrl || null
+        } catch { /* ignore */ }
+      }
     }
-    if (!url) { alert('無法取得檔案網址'); return }
+    if (!url && att?.file_url) url = att.file_url
+    if (!url) { alert('附件路徑遺失，無法下載'); return }
     // LIFF in-app WebView 對 window.open('_blank') 處理不可靠 → 改用 LIFF SDK 強制外部瀏覽器開
     if (typeof liff?.isInClient === 'function' && liff.isInClient()) {
       liff.openWindow({ url, external: true })
