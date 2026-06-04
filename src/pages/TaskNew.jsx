@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Paperclip, X, Image, FileText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -22,6 +22,14 @@ export default function TaskNew() {
   })
   const [colleagues, setColleagues] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState([]) // 待上傳的發起附件（建立任務後一併送出）
+
+  const handleFilesPicked = (e) => {
+    const list = Array.from(e.target.files || [])
+    e.target.value = ''
+    setPendingFiles(prev => [...prev, ...list])
+  }
+  const removePendingFile = (idx) => setPendingFiles(prev => prev.filter((_, i) => i !== idx))
 
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
@@ -46,9 +54,42 @@ export default function TaskNew() {
         workflow: form.workflow.trim() || null,
       },
     })
+    if (error) { setSubmitting(false); alert('系統錯誤：' + error.message); return }
+    if (!data?.ok) { setSubmitting(false); alert(ERR_MSG[data?.error] || `新增失敗：${data?.error || 'unknown'}`); return }
+
+    // 上傳發起附件（kind='initiator'）— 任務建立後才有 task_id
+    const newTaskId = data.task_id || data.id
+    if (newTaskId && pendingFiles.length > 0) {
+      let uploadedCount = 0
+      for (const file of pendingFiles) {
+        try {
+          const ext = file.name.split('.').pop()
+          const path = `tasks/${newTaskId}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`
+          const { error: upErr } = await supabase.storage.from('task-attachments').upload(path, file, { upsert: false })
+          if (upErr) { console.warn('upload err', upErr); continue }
+          const { data: ins, error: insErr } = await supabase.rpc('liff_insert_task_attachment', {
+            p_line_user_id: lineProfile.lineUserId,
+            p_payload: {
+              task_id:      newTaskId,
+              file_name:    file.name,
+              storage_path: path,
+              file_size:    file.size,
+              file_type:    file.type,
+              kind:         'initiator',
+            },
+          })
+          if (insErr || !ins?.ok) { console.warn('insert attachment err', insErr || ins?.error); continue }
+          uploadedCount++
+        } catch (err) {
+          console.warn('upload exception', err)
+        }
+      }
+      if (uploadedCount < pendingFiles.length) {
+        alert(`任務已建立，但 ${pendingFiles.length - uploadedCount} 個附件上傳失敗`)
+      }
+    }
+
     setSubmitting(false)
-    if (error) { alert('系統錯誤：' + error.message); return }
-    if (!data?.ok) { alert(ERR_MSG[data?.error] || `新增失敗：${data?.error || 'unknown'}`); return }
     navigate('/tasks', { replace: true })
   }
 
@@ -125,6 +166,50 @@ export default function TaskNew() {
             placeholder="例：每日開店作業"
             style={inputStyle}
           />
+        </Field>
+
+        <Field label={`📎 發起附件（選填，${pendingFiles.length} 個）`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <label style={{
+              cursor: 'pointer',
+              padding: '10px 12px', borderRadius: 8, border: '1px dashed var(--border2)',
+              background: 'var(--card)', color: 'var(--cyan)',
+              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600,
+              justifyContent: 'center',
+            }}>
+              <Paperclip size={14} /> 加照片/檔案
+              <input
+                type="file"
+                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                multiple
+                onChange={handleFilesPicked}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {pendingFiles.map((f, idx) => (
+              <div key={idx} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '6px 10px', borderRadius: 8,
+                background: 'var(--card)', border: '1px solid var(--border2)', fontSize: 12,
+              }}>
+                {f.type?.startsWith('image/')
+                  ? <Image size={14} style={{ color: 'var(--cyan)', flexShrink: 0 }} />
+                  : <FileText size={14} style={{ color: 'var(--purple)', flexShrink: 0 }} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {f.name}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--t3)' }}>
+                    {(f.size / 1024).toFixed(0)} KB
+                  </div>
+                </div>
+                <button type="button" onClick={() => removePendingFile(idx)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--red)', padding: 4, display: 'flex', alignItems: 'center',
+                }}><X size={14} /></button>
+              </div>
+            ))}
+          </div>
         </Field>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
