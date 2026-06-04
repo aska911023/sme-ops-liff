@@ -537,9 +537,19 @@ export function TaskAttachments({ taskId, attachments = [], lineUserId, onChange
     onChange?.()
   }
 
-  const viewFile = (att) => {
-    const { data } = supabase.storage.from('task-attachments').getPublicUrl(att.storage_path)
-    const url = data?.publicUrl
+  const viewFile = async (att) => {
+    // Bucket 可能是 private — 先用 signed URL (60 秒授權)，失敗才 fallback public
+    let url = null
+    try {
+      const { data: signed } = await supabase.storage
+        .from('task-attachments')
+        .createSignedUrl(att.storage_path, 60)
+      url = signed?.signedUrl || null
+    } catch { /* ignore */ }
+    if (!url) {
+      const { data: pub } = supabase.storage.from('task-attachments').getPublicUrl(att.storage_path)
+      url = pub?.publicUrl || null
+    }
     if (!url) { alert('無法取得檔案網址'); return }
     // LIFF in-app WebView 對 window.open('_blank') 處理不可靠 → 改用 LIFF SDK 強制外部瀏覽器開
     if (typeof liff?.isInClient === 'function' && liff.isInClient()) {
