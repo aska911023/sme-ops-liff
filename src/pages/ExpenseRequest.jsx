@@ -3,6 +3,7 @@ import { ChevronLeft, Plus, Upload, Image, FileText, X, Eye, Send } from 'lucide
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { liff } from '../lib/liff'
 // notifyNewSubmission 已拔除 — expense_request 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508110000_expense_request_chain_db_trigger.sql)
 // 其他 type (leave/overtime/...) trigger 還沒補，先保留 import 給其他頁面用
@@ -209,7 +210,13 @@ export default function ExpenseRequest() {
   // View file
   const viewFile = (att) => {
     const { data } = supabase.storage.from('attachments').getPublicUrl(att.storage_path)
-    if (data?.publicUrl) window.open(data.publicUrl, '_blank')
+    const url = data?.publicUrl
+    if (!url) { alert('無法取得檔案網址'); return }
+    if (typeof liff?.isInClient === 'function' && liff.isInClient()) {
+      liff.openWindow({ url, external: true })
+    } else {
+      window.open(url, '_blank')
+    }
   }
 
   // Open settle form

@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronDown, ChevronRight, Check, Send, Plus, Paperclip, I
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { liff } from '../lib/liff'
 
 const SCOPES = [
   { key: 'active',    label: '進行中' },
@@ -538,7 +539,14 @@ export function TaskAttachments({ taskId, attachments = [], lineUserId, onChange
 
   const viewFile = (att) => {
     const { data } = supabase.storage.from('task-attachments').getPublicUrl(att.storage_path)
-    if (data?.publicUrl) window.open(data.publicUrl, '_blank')
+    const url = data?.publicUrl
+    if (!url) { alert('無法取得檔案網址'); return }
+    // LIFF in-app WebView 對 window.open('_blank') 處理不可靠 → 改用 LIFF SDK 強制外部瀏覽器開
+    if (typeof liff?.isInClient === 'function' && liff.isInClient()) {
+      liff.openWindow({ url, external: true })
+    } else {
+      window.open(url, '_blank')
+    }
   }
 
   const isImage = (att) => att.file_type?.startsWith('image/')

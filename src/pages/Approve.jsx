@@ -3,6 +3,7 @@ import { ChevronLeft, Check, X, Lock, Users, Wallet, ChevronDown, ChevronRight, 
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { liff } from '../lib/liff'
 import TaskConfirmationList from '../components/TaskConfirmationList'
 import ChainTimeline from '../components/ChainTimeline'
 // notifyApprovalEvent 已拔除 — leave/overtime/trip/expense/expense_request/correction 簽核 LINE 統一走主系統 DB trigger
@@ -1770,7 +1771,13 @@ function ExpenseAttachments({ requestId }) {
 
   const viewFile = (att) => {
     const { data } = supabase.storage.from('attachments').getPublicUrl(att.storage_path)
-    if (data?.publicUrl) window.open(data.publicUrl, '_blank')
+    const url = data?.publicUrl
+    if (!url) { alert('無法取得檔案網址'); return }
+    if (typeof liff?.isInClient === 'function' && liff.isInClient()) {
+      liff.openWindow({ url, external: true })
+    } else {
+      window.open(url, '_blank')
+    }
   }
 
   if (atts === null) {
