@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle, CalendarDays } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -101,7 +101,7 @@ export default function ClockPage() {
   const [loading, setLoading] = useState(false)
   const [location, setLocation] = useState(null)
   const [gpsError, setGpsError] = useState('')
-  const [store, setStore] = useState(null)
+  const [stores, setStores] = useState([])  // 跨店打卡支援：候選店陣列（主要店 + additional_stores）
   const [gpsAccuracy, setGpsAccuracy] = useState(null)
   const [gpsWeak, setGpsWeak] = useState(false)
   const [distance, setDistance] = useState(null)
@@ -132,12 +132,12 @@ export default function ClockPage() {
         .then(({ data }) => setTodayRecord((data && data[0]) || null))
     }
 
-    // Get store GPS info via LIFF RPC (bypasses stores RLS for anon key)
+    // 跨店打卡：拿員工授權的所有候選店（主要店 + additional_stores）
     if (employee.id) {
       supabase
-        .rpc('liff_get_store_for_employee', { p_employee_id: employee.id })
+        .rpc('liff_get_stores_for_employee', { p_employee_id: employee.id })
         .then(({ data }) => {
-          if (data) setStore(data)
+          setStores(Array.isArray(data) ? data : [])
         })
     }
 
@@ -176,6 +176,46 @@ export default function ClockPage() {
       }
     })
   }, [employee])
+
+  // 跨店打卡：從候選店清單中挑出「員工現在實際在範圍內」的那家當 store
+  // store._matched=true → 真匹配可打卡；_matched=false → 只是 fallback 給距離顯示
+  const store = useMemo(() => {
+    if (!stores.length) return null
+
+    // Step 1：GPS 範圍內優先
+    if (location) {
+      for (const s of stores) {
+        if (s.lat == null || s.lng == null) continue
+        const d = Math.round(getDistance(location.lat, location.lng, s.lat, s.lng))
+        const radius = s.clock_radius || 150
+        if (d <= radius) return { ...s, _matched: true }
+      }
+    }
+
+    // Step 2：WiFi 範圍內次之
+    if (clientIp) {
+      for (const s of stores) {
+        if (!s.allowed_wifi?.length) continue
+        if (s.allowed_wifi.some(rule => ipMatchesCIDR(clientIp, rule))) return { ...s, _matched: true }
+      }
+    }
+
+    // Step 3：都不在範圍 → 取最近的（給距離顯示用，canClock 會 false）
+    if (location) {
+      let nearest = null
+      let minDist = Infinity
+      for (const s of stores) {
+        if (s.lat == null || s.lng == null) continue
+        const d = Math.round(getDistance(location.lat, location.lng, s.lat, s.lng))
+        if (d < minDist) { minDist = d; nearest = s }
+      }
+      if (nearest) return { ...nearest, _matched: false }
+    }
+
+    // Step 4：沒 GPS 也沒最近店 → 主要店（is_primary=true）作 fallback 顯示
+    const fallback = stores.find(s => s.is_primary) || stores[0]
+    return fallback ? { ...fallback, _matched: false } : null
+  }, [stores, location, clientIp])
 
   // Calculate distance when both location and store are available
   // + 距離落在 151–1800m 自動重試一次（iPhone 第一筆常吃 cached Wi-Fi 估算位置）
@@ -222,7 +262,9 @@ export default function ClockPage() {
   // Can clock if: GPS in range (and accurate) OR WiFi IP matches. If neither rule is set, allow.
   const gpsOk = (isInRange || !store?.lat) && !gpsWeak
   const wifiOk = !hasWifiRule || wifiMatch === true
-  const canClock = location && (gpsOk || wifiOk)
+  // 跨店打卡：store 若是 fallback (_matched=false) 則 canClock 一定 false
+  // 真匹配時才走原本 gpsOk / wifiOk 邏輯
+  const canClock = location && store?._matched !== false && (gpsOk || wifiOk)
 
   // Determine clock-in location name
   const getLocationName = () => {
