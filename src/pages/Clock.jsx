@@ -136,8 +136,14 @@ export default function ClockPage() {
     if (employee.id) {
       supabase
         .rpc('liff_get_stores_for_employee', { p_employee_id: employee.id })
-        .then(({ data }) => {
-          setStores(Array.isArray(data) ? data : [])
+        .then(({ data, error }) => {
+          if (error) {
+            console.error('[liff_get_stores_for_employee] failed:', error)
+            setMsg(`⚠️ 載入門市失敗：${error.message || '請聯絡管理員'}`)
+            setStores([])
+          } else {
+            setStores(Array.isArray(data) ? data : [])
+          }
         })
     }
 
