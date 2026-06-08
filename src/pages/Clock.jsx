@@ -141,25 +141,34 @@ export default function ClockPage() {
         })
     }
 
-    // Get current GPS
+    // Get current GPS — 第一次失敗自動 retry 一次（容忍 60s 快取）避免單次 race
     if (navigator.geolocation) {
+      const onSuccess = (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords
+        setLocation({ lat: latitude, lng: longitude })
+        setGpsAccuracy(Math.round(accuracy))
+        if (accuracy > GPS_ACCURACY_THRESHOLD) {
+          setGpsWeak(true)
+          setGpsError(`GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考`)
+        } else {
+          setGpsWeak(false)
+          setGpsError('')
+        }
+      }
+      const onFinalError = (err) => {
+        setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
+      }
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const { latitude, longitude, accuracy } = pos.coords
-          setLocation({ lat: latitude, lng: longitude })
-          setGpsAccuracy(Math.round(accuracy))
-          if (accuracy > GPS_ACCURACY_THRESHOLD) {
-            setGpsWeak(true)
-            setGpsError(`GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考`)
-          } else {
-            setGpsWeak(false)
-            setGpsError('')
-          }
+        onSuccess,
+        () => {
+          // 第一次失敗 → retry：放寬 timeout + 容忍 60s 快取
+          navigator.geolocation.getCurrentPosition(
+            onSuccess,
+            onFinalError,
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+          )
         },
-        (err) => {
-          setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
-        },
-        { enableHighAccuracy: true, timeout: 15000 }
+        { enableHighAccuracy: true, timeout: 25000 }
       )
     } else {
       setGpsError('此裝置不支援 GPS')
@@ -240,7 +249,7 @@ export default function ClockPage() {
             setGpsRetrying(false)
           },
           () => setGpsRetrying(false),
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+          { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }
         )
       }, 1500)
       return () => clearTimeout(timer)
