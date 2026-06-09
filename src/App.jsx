@@ -22,6 +22,7 @@ import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
 import LeaveOfAbsence from './pages/LeaveOfAbsence'
 import Overtime from './pages/Overtime'
+import TransferRequest from './pages/TransferRequest'
 import Approve from './pages/Approve'
 import TaskConfirmations from './pages/TaskConfirmations'
 import ClockCorrection from './pages/ClockCorrection'
@@ -201,6 +202,7 @@ export default function App() {
         <Route path="/business-trip" element={<BusinessTrip />} />
         <Route path="/leave-of-absence" element={<LeaveOfAbsence />} />
         <Route path="/overtime" element={<Overtime />} />
+        <Route path="/transfer-request" element={<TransferRequest />} />
         <Route path="/approve" element={<Approve />} />
         <Route path="/approve/:tabSlug" element={<Approve />} />
         <Route path="/task-confirmations" element={<TaskConfirmations />} />
