@@ -169,6 +169,19 @@ export default function TransferRequest() {
     setDetailRow(null); reload()
   }
 
+  // 一鍵重送：已駁回 → 申請審核中（內容不變）
+  const handleResubmit = async (row) => {
+    if (!window.confirm(`確定一鍵重送單號 ${row.document_no}？（內容不變，重跑申請鏈）`)) return
+    setSubmitting(true)
+    const { data, error } = await supabase.rpc('liff_resubmit_transfer_request', {
+      p_line_user_id: lineProfile.lineUserId, p_id: row.id,
+    })
+    setSubmitting(false)
+    if (error || !data?.ok) { alert('重送失敗：' + (error?.message || data?.error)); return }
+    alert('已重送，狀態回到申請審核中')
+    setDetailRow(null); reload()
+  }
+
   if (loading) return <div className="page"><div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div></div>
 
   const records = tab === 'mine' ? myRecords : approvals
@@ -438,6 +451,18 @@ function DetailModal({ row, employee, onClose, onSubmitReceipt, onApprove, submi
           <div style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(248,113,113,0.12)', color: 'var(--red)', fontSize: 12, marginBottom: 12 }}>
             <b>駁回原因：</b>{row.reject_reason}
           </div>
+        )}
+
+        {/* 一鍵重送 — 已駁回單，僅申請人可重送 */}
+        {row.status === '已駁回' && row.applicant_id === employee?.id && (
+          <button onClick={() => handleResubmit(row)} disabled={submitting} style={{
+            width: '100%', padding: '12px', borderRadius: 8, marginBottom: 12,
+            background: 'var(--cyan)', color: '#fff', border: 'none',
+            fontSize: 14, fontWeight: 700, cursor: submitting ? 'not-allowed' : 'pointer',
+            opacity: submitting ? 0.6 : 1,
+          }}>
+            🔁 一鍵重送
+          </button>
         )}
 
         {/* 申請附件 */}
