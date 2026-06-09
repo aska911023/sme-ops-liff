@@ -140,17 +140,15 @@ export default function Leave() {
       const leaveList = Array.isArray(lr.data) ? lr.data : []
       setRecords(leaveList)
       setHolidays((Array.isArray(hd.data) ? hd.data : []).map(h => h.date))
-      // 抓「已有人簽過」的 leave id
+      // 抓「已有人 approved 過」的 leave id（駁回不算）— 走 SECURITY DEFINER RPC 繞 anon RLS
       const ids = leaveList.map(x => x.id).filter(Boolean)
       if (ids.length) {
-        supabase.from('approval_step_history')
-          .select('request_id')
-          .eq('request_type', 'leave')
-          .not('exited_at', 'is', null)
-          .in('request_id', ids)
-          .then(({ data }) => {
-            setSignedIds(new Set((data || []).map(r => r.request_id)))
-          })
+        supabase.rpc('list_request_ids_with_approved_step', {
+          p_request_type: 'leave',
+          p_request_ids: ids,
+        }).then(({ data }) => {
+          setSignedIds(new Set((data || []).map(r => typeof r === 'number' ? r : r.list_request_ids_with_approved_step)))
+        })
       }
 
       // Benefit policy 優先序：employee_id > store_id > global

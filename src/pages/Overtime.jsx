@@ -45,20 +45,28 @@ export default function Overtime() {
       .then(({ data }) => { setRecords(Array.isArray(data) ? data : []); setLoading(false) })
   }
 
-  // 抓「已有人簽過」的 OT id — 用來鎖編輯/撤回
+  // 抓「已有人 approved 過」的 OT id（駁回不算）— 走 SECURITY DEFINER RPC 繞 anon RLS
   useEffect(() => {
     if (!records.length) { setSignedIds(new Set()); return }
     const ids = records.map(r => r.id).filter(Boolean)
     if (!ids.length) return
-    supabase.from('approval_step_history')
-      .select('request_id')
-      .eq('request_type', 'overtime')
-      .not('exited_at', 'is', null)
-      .in('request_id', ids)
-      .then(({ data }) => {
-        setSignedIds(new Set((data || []).map(r => r.request_id)))
-      })
+    supabase.rpc('list_request_ids_with_approved_step', {
+      p_request_type: 'overtime',
+      p_request_ids: ids,
+    }).then(({ data }) => {
+      setSignedIds(new Set((data || []).map(r => typeof r === 'number' ? r : r.list_request_ids_with_approved_step)))
+    })
   }, [records])
+
+  // 表單選好日期 → 自動分類 ot_category（給 FT 例假 UI 鎖用）
+  const [otCategory, setOtCategory] = useState(null)
+  useEffect(() => {
+    if (!form.date || !employee?.id) { setOtCategory(null); return }
+    supabase.rpc('classify_ot_category_safe', {
+      p_date: form.date,
+      p_employee_id: employee.id,
+    }).then(({ data }) => setOtCategory(data))
+  }, [form.date, employee?.id])
 
   // 載入加班 step 設定
   useEffect(() => {
@@ -259,10 +267,9 @@ export default function Overtime() {
             <textarea className="form-input" placeholder="請說明加班原因..." value={form.reason} onChange={e => set('reason', e.target.value)} />
           </div>
           {(() => {
-            // FT 例假偵測：employee.salary_type='monthly' 且日期 DOW=0（週日）→ 強制 ×2 + 自動補休
+            // FT 例假偵測：靠 PG classify_ot_category_safe RPC（吃排班 shift '例假' / 國定假日 / DOW fallback）
             const isFT = (employee?.salary_type || 'monthly') === 'monthly'
-            const dowZero = form.date && new Date(form.date + 'T00:00:00').getDay() === 0
-            const isFTWeeklyOff = isFT && dowZero
+            const isFTWeeklyOff = isFT && otCategory === 'weekly_off'
             if (isFTWeeklyOff && (form.ot_type || 'pay') !== 'pay') {
               setTimeout(() => set('ot_type', 'pay'), 0)
             }
