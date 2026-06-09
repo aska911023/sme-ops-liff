@@ -39,7 +39,30 @@ const emptyForm = () => ({
   reasons: [],
   reason_other: '',
   items: [{ product_code: '', product_name: '', spec: '', unit: '', requested_qty: '' }],
+  attachFiles: [],  // [{ file, preview }]
 })
+
+// 直接上傳到 supabase storage（LIFF 簡化版）
+async function uploadAttachments({ stage, formId, empId, files }) {
+  if (!files?.length) return []
+  const dir = stage === 'apply' ? 'goods-transfer-apply' : 'goods-transfer-receipt'
+  const urls = []
+  for (const { file } of files) {
+    const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
+    const path = `${dir}/emp-${empId || 'unknown'}/${formId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+    const { error } = await supabase.storage.from('attachments').upload(path, file, { cacheControl: '3600', upsert: false })
+    if (error) { alert(`附件上傳失敗：${file.name} - ${error.message}`); continue }
+    const { data } = supabase.storage.from('attachments').getPublicUrl(path)
+    urls.push({ url: data.publicUrl, name: file.name, path })
+    // 寫 form_attachments metadata（給主系統可看到）
+    await supabase.from('form_attachments').insert({
+      form_type: stage === 'apply' ? 'goods_transfer_apply' : 'goods_transfer_receipt',
+      form_id: formId, storage_bucket: 'attachments', storage_path: path,
+      file_name: file.name, file_size: file.size, mime_type: file.type, uploaded_by_id: empId,
+    })
+  }
+  return urls
+}
 
 export default function TransferRequest() {
   const { lineProfile, employee } = useAuth()
@@ -100,16 +123,23 @@ export default function TransferRequest() {
         items:         form.items.map(it => ({ ...it, requested_qty: Number(it.requested_qty) })),
       },
     })
+    if (error) { setSubmitting(false); alert('送出失敗：' + error.message); return }
+    // 上傳附件
+    if (form.attachFiles.length > 0 && data?.id) {
+      await uploadAttachments({ stage: 'apply', formId: data.id, empId: employee?.id, files: form.attachFiles })
+    }
     setSubmitting(false)
-    if (error) { alert('送出失敗：' + error.message); return }
     alert(`已送出 ${data?.document_no || ''}`)
     setForm(emptyForm())
     setShowForm(false)
     reload()
   }
 
-  const handleSubmitReceipt = async (row, items) => {
+  const handleSubmitReceipt = async (row, items, receiptFiles) => {
     setSubmitting(true)
+    if (receiptFiles?.length > 0) {
+      await uploadAttachments({ stage: 'receipt', formId: row.id, empId: employee?.id, files: receiptFiles })
+    }
     const { data, error } = await supabase.rpc('liff_submit_transfer_receipt', {
       p_line_user_id: lineProfile.lineUserId,
       p_id: row.id,
@@ -246,6 +276,41 @@ export default function TransferRequest() {
               value={form.reason_other} onChange={e => set('reason_other', e.target.value)} />
           </div>
 
+          <div className="form-group">
+            <label className="form-label">附件（截圖 / PDF，最多 5 個）</label>
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '10px', borderRadius: 10, border: '2px dashed var(--border2)',
+              color: 'var(--cyan)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}>
+              📎 選擇檔案
+              <input type="file" multiple accept="image/*,.pdf" hidden
+                onChange={e => {
+                  const files = Array.from(e.target.files || [])
+                  const newOnes = files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))
+                  setForm(f => ({ ...f, attachFiles: [...(f.attachFiles || []), ...newOnes].slice(0, 5) }))
+                  e.target.value = ''
+                }} />
+            </label>
+            {form.attachFiles?.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                {form.attachFiles.map((a, i) => (
+                  <div key={i} style={{ position: 'relative', width: 60, height: 60, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border2)' }}>
+                    {a.file.type.startsWith('image/')
+                      ? <img src={a.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', fontSize: 9, color: 'var(--t3)' }}>
+                          {(a.file.name.split('.').pop() || '?').toUpperCase()}
+                        </div>}
+                    <button onClick={() => setForm(f => ({ ...f, attachFiles: f.attachFiles.filter((_, j) => j !== i) }))}
+                      style={{ position: 'absolute', top: 1, right: 1, width: 16, height: 16, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <X size={9} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-success" style={{ flex: 3 }} onClick={handleSubmit} disabled={submitting || blockedAsNonManager}>
               {submitting ? '送出中…' : '送出申請'}
@@ -293,11 +358,29 @@ function DetailModal({ row, employee, onClose, onSubmitReceipt, onApprove, submi
   const [items, setItems] = useState(
     (row.items || []).sort((a, b) => a.line_no - b.line_no).map(it => ({ ...it, received_qty: it.received_qty ?? it.requested_qty }))
   )
+  const [applyAtts, setApplyAtts] = useState([])
+  const [receiptAtts, setReceiptAtts] = useState([])
+  const [receiptFiles, setReceiptFiles] = useState([])
 
   const canSubmitReceipt = row.status === '待驗收' && row.applicant_id === employee?.id
-  const canApprove = ['申請審核中', '驗收審核中'].includes(row.status)  // approvals tab 出現的就是 approver
+  const canApprove = ['申請審核中', '驗收審核中'].includes(row.status)
 
   const st = STATUS_STYLE[row.status] || {}
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from('form_attachments').select('*').eq('form_type', 'goods_transfer_apply').eq('form_id', row.id),
+      supabase.from('form_attachments').select('*').eq('form_type', 'goods_transfer_receipt').eq('form_id', row.id),
+    ]).then(([a, b]) => {
+      setApplyAtts(a.data || [])
+      setReceiptAtts(b.data || [])
+    })
+  }, [row.id])
+
+  const openAtt = (a) => {
+    const { data } = supabase.storage.from(a.storage_bucket || 'attachments').getPublicUrl(a.storage_path)
+    if (data?.publicUrl) window.open(data.publicUrl, '_blank')
+  }
 
   return (
     <div style={{
@@ -357,9 +440,77 @@ function DetailModal({ row, employee, onClose, onSubmitReceipt, onApprove, submi
           </div>
         )}
 
+        {/* 申請附件 */}
+        {applyAtts.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>📎 申請附件</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {applyAtts.map((a, i) => (
+                <button key={i} onClick={() => openAtt(a)} style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                  background: 'var(--cyan-dim)', color: 'var(--cyan)', border: 'none',
+                }}>{a.file_name || `附件 ${i+1}`}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 驗收附件 */}
+        {receiptAtts.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>📎 驗收附件</div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {receiptAtts.map((a, i) => (
+                <button key={i} onClick={() => openAtt(a)} style={{
+                  padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                  background: 'rgba(167,139,250,0.15)', color: '#a78bfa', border: 'none',
+                }}>{a.file_name || `附件 ${i+1}`}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 驗收時可上傳新附件 */}
+        {canSubmitReceipt && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>📎 上傳驗收附件（截圖 / PDF，最多 5 個）</div>
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              padding: '8px', borderRadius: 8, border: '2px dashed var(--border2)',
+              color: 'var(--cyan)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+            }}>
+              📎 選擇檔案
+              <input type="file" multiple accept="image/*,.pdf" hidden
+                onChange={e => {
+                  const files = Array.from(e.target.files || [])
+                  const newOnes = files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))
+                  setReceiptFiles(prev => [...prev, ...newOnes].slice(0, 5))
+                  e.target.value = ''
+                }} />
+            </label>
+            {receiptFiles.length > 0 && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                {receiptFiles.map((a, i) => (
+                  <div key={i} style={{ position: 'relative', width: 50, height: 50, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border2)' }}>
+                    {a.file.type.startsWith('image/')
+                      ? <img src={a.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', fontSize: 9, color: 'var(--t3)' }}>
+                          {(a.file.name.split('.').pop() || '?').toUpperCase()}
+                        </div>}
+                    <button onClick={() => setReceiptFiles(prev => prev.filter((_, j) => j !== i))}
+                      style={{ position: 'absolute', top: 1, right: 1, width: 14, height: 14, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', padding: 0 }}>
+                      <X size={8} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {canSubmitReceipt && (
           <button className="btn btn-primary" style={{ width: '100%', marginTop: 8 }}
-            onClick={() => onSubmitReceipt(row, items)} disabled={submitting}>
+            onClick={() => onSubmitReceipt(row, items, receiptFiles)} disabled={submitting}>
             <FileCheck size={14} /> 送驗收審核
           </button>
         )}
