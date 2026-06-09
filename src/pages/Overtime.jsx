@@ -18,9 +18,10 @@ function computeOvertimeHours(start, end, step = 0.5) {
 }
 
 export default function Overtime() {
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
+  const [signedIds, setSignedIds] = useState(new Set())  // 已有人簽過的 OT id（編輯/撤回鎖用）
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -43,6 +44,21 @@ export default function Overtime() {
     supabase.rpc('liff_list_overtime_requests', { p_line_user_id: lineProfile.lineUserId })
       .then(({ data }) => { setRecords(Array.isArray(data) ? data : []); setLoading(false) })
   }
+
+  // 抓「已有人簽過」的 OT id — 用來鎖編輯/撤回
+  useEffect(() => {
+    if (!records.length) { setSignedIds(new Set()); return }
+    const ids = records.map(r => r.id).filter(Boolean)
+    if (!ids.length) return
+    supabase.from('approval_step_history')
+      .select('request_id')
+      .eq('request_type', 'overtime')
+      .not('exited_at', 'is', null)
+      .in('request_id', ids)
+      .then(({ data }) => {
+        setSignedIds(new Set((data || []).map(r => r.request_id)))
+      })
+  }, [records])
 
   // 載入加班 step 設定
   useEffect(() => {
@@ -242,35 +258,61 @@ export default function Overtime() {
             <label className="form-label">加班原因</label>
             <textarea className="form-input" placeholder="請說明加班原因..." value={form.reason} onChange={e => set('reason', e.target.value)} />
           </div>
-          <div className="form-group">
-            <label className="form-label">結算方式</label>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[
-                { v: 'pay',       label: '💰 加班費', hint: '當月薪資領取' },
-                { v: 'comp_time', label: '🕐 補休',   hint: '1 年內有效' },
-              ].map(opt => {
-                const selected = (form.ot_type || 'pay') === opt.v
-                return (
-                  <label key={opt.v} style={{
-                    flex: 1, cursor: 'pointer',
+          {(() => {
+            // FT 例假偵測：employee.salary_type='monthly' 且日期 DOW=0（週日）→ 強制 ×2 + 自動補休
+            const isFT = (employee?.salary_type || 'monthly') === 'monthly'
+            const dowZero = form.date && new Date(form.date + 'T00:00:00').getDay() === 0
+            const isFTWeeklyOff = isFT && dowZero
+            if (isFTWeeklyOff && (form.ot_type || 'pay') !== 'pay') {
+              setTimeout(() => set('ot_type', 'pay'), 0)
+            }
+            return (
+              <div className="form-group">
+                <label className="form-label">結算方式</label>
+                {isFTWeeklyOff ? (
+                  <div style={{
                     padding: '10px 12px', borderRadius: 10,
-                    background: selected ? 'var(--cyan-dim)' : 'var(--card)',
-                    border: `1.5px solid ${selected ? 'var(--cyan)' : 'var(--border2)'}`,
+                    background: 'rgba(251,146,60,0.10)', border: '1px solid rgba(251,146,60,0.30)',
+                    fontSize: 12, color: 'var(--orange)', fontWeight: 600, lineHeight: 1.5,
                   }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <input type="radio" name="ot_type" value={opt.v} checked={selected}
-                        onChange={() => set('ot_type', opt.v)} style={{ accentColor: 'var(--cyan)' }} />
-                      <span style={{ fontWeight: 700, fontSize: 13, color: selected ? 'var(--cyan)' : 'var(--t2)' }}>{opt.label}</span>
+                    🔒 正職員工例假上班 → 自動「加班費 ×2 + 補休」
+                    <div style={{ fontSize: 10, fontWeight: 400, marginTop: 3, color: 'var(--t3)' }}>
+                      系統強制套用，無法選擇純補休
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, marginLeft: 22 }}>{opt.hint}</div>
-                  </label>
-                )
-              })}
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>
-              💡 補休送出後不能改成加班費；未用過期會自動兌換加班費
-            </div>
-          </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {[
+                        { v: 'pay',       label: '💰 加班費', hint: '當月薪資領取' },
+                        { v: 'comp_time', label: '🕐 補休',   hint: '1 年內有效' },
+                      ].map(opt => {
+                        const selected = (form.ot_type || 'pay') === opt.v
+                        return (
+                          <label key={opt.v} style={{
+                            flex: 1, cursor: 'pointer',
+                            padding: '10px 12px', borderRadius: 10,
+                            background: selected ? 'var(--cyan-dim)' : 'var(--card)',
+                            border: `1.5px solid ${selected ? 'var(--cyan)' : 'var(--border2)'}`,
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <input type="radio" name="ot_type" value={opt.v} checked={selected}
+                                onChange={() => set('ot_type', opt.v)} style={{ accentColor: 'var(--cyan)' }} />
+                              <span style={{ fontWeight: 700, fontSize: 13, color: selected ? 'var(--cyan)' : 'var(--t2)' }}>{opt.label}</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, marginLeft: 22 }}>{opt.hint}</div>
+                          </label>
+                        )
+                      })}
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>
+                      💡 補休送出後不能改成加班費；未用過期會自動兌換加班費
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })()}
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-success" style={{ flex: 3 }} onClick={handleSubmit} disabled={submitting}>
               {submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
@@ -307,19 +349,24 @@ export default function Overtime() {
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{r.date}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
+              {/* 編輯/撤回：待審核 且 沒人簽過 才可以；有人簽過顯示鎖 */}
               {r.status === '待審核' && (
-                <>
-                  <button onClick={() => handleEdit(r)} style={{
-                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
-                    background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
-                    display: 'flex', alignItems: 'center', gap: 3,
-                  }}><Pencil size={11} /> 編輯</button>
-                  <button onClick={() => handleDelete(r)} style={{
-                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
-                    background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
-                    display: 'flex', alignItems: 'center', gap: 3,
-                  }}><Trash2 size={11} /> 撤回</button>
-                </>
+                signedIds.has(r.id) ? (
+                  <span style={{ fontSize: 11, color: 'var(--t3)' }} title="已有人簽核">🔒 簽核中</span>
+                ) : (
+                  <>
+                    <button onClick={() => handleEdit(r)} style={{
+                      padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                      background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
+                      display: 'flex', alignItems: 'center', gap: 3,
+                    }}><Pencil size={11} /> 編輯</button>
+                    <button onClick={() => handleDelete(r)} style={{
+                      padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                      background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
+                      display: 'flex', alignItems: 'center', gap: 3,
+                    }}><Trash2 size={11} /> 撤回</button>
+                  </>
+                )
               )}
             </div>
           </div>

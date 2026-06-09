@@ -95,6 +95,7 @@ export default function Leave() {
   const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
+  const [signedIds, setSignedIds] = useState(new Set())  // 已有人簽過的 leave id（編輯/撤回鎖用）
   const [holidays, setHolidays] = useState([]) // ['2026-04-04', ...]
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -136,8 +137,21 @@ export default function Leave() {
       supabase.rpc('liff_list_holidays'),
       supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
     ]).then(([lr, hd, bp]) => {
-      setRecords(Array.isArray(lr.data) ? lr.data : [])
+      const leaveList = Array.isArray(lr.data) ? lr.data : []
+      setRecords(leaveList)
       setHolidays((Array.isArray(hd.data) ? hd.data : []).map(h => h.date))
+      // 抓「已有人簽過」的 leave id
+      const ids = leaveList.map(x => x.id).filter(Boolean)
+      if (ids.length) {
+        supabase.from('approval_step_history')
+          .select('request_id')
+          .eq('request_type', 'leave')
+          .not('exited_at', 'is', null)
+          .in('request_id', ids)
+          .then(({ data }) => {
+            setSignedIds(new Set((data || []).map(r => r.request_id)))
+          })
+      }
 
       // Benefit policy 優先序：employee_id > store_id > global
       const storeId = employee?.store_id
@@ -867,18 +881,22 @@ export default function Leave() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
               {r.status === '待審核' && (
-                <>
-                  <button onClick={() => handleEdit(r)} style={{
-                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
-                    background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
-                    display: 'flex', alignItems: 'center', gap: 3,
-                  }}><Pencil size={11} /> 編輯</button>
-                  <button onClick={() => handleDelete(r)} style={{
-                    padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
-                    background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
-                    display: 'flex', alignItems: 'center', gap: 3,
-                  }}><Trash2 size={11} /> 撤回</button>
-                </>
+                signedIds.has(r.id) ? (
+                  <span style={{ fontSize: 11, color: 'var(--t3)' }} title="已有人簽核">🔒 簽核中</span>
+                ) : (
+                  <>
+                    <button onClick={() => handleEdit(r)} style={{
+                      padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                      background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
+                      display: 'flex', alignItems: 'center', gap: 3,
+                    }}><Pencil size={11} /> 編輯</button>
+                    <button onClick={() => handleDelete(r)} style={{
+                      padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
+                      background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
+                      display: 'flex', alignItems: 'center', gap: 3,
+                    }}><Trash2 size={11} /> 撤回</button>
+                  </>
+                )
               )}
               {r.status === '已核准' && (
                 <button onClick={() => generateCertificate(r)} style={{
