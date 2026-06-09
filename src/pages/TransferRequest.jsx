@@ -206,19 +206,19 @@ export default function TransferRequest() {
             </select>
           </div>
 
-          {form.transfer_type !== 'warehouse_to_store' && (
+          {form.transfer_type !== 'store_to_warehouse' && (
             <div className="form-group">
-              <label className="form-label">調出門市</label>
-              <select className="form-input" value={form.from_store_id} onChange={e => set('from_store_id', e.target.value)}>
+              <label className="form-label">調入門市</label>
+              <select className="form-input" value={form.to_store_id} onChange={e => set('to_store_id', e.target.value)}>
                 <option value="">— 選擇 —</option>
                 {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
           )}
-          {form.transfer_type !== 'store_to_warehouse' && (
+          {form.transfer_type !== 'warehouse_to_store' && (
             <div className="form-group">
-              <label className="form-label">調入門市</label>
-              <select className="form-input" value={form.to_store_id} onChange={e => set('to_store_id', e.target.value)}>
+              <label className="form-label">調出門市</label>
+              <select className="form-input" value={form.from_store_id} onChange={e => set('from_store_id', e.target.value)}>
                 <option value="">— 選擇 —</option>
                 {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
