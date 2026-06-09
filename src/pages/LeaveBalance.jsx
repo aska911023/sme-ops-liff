@@ -38,6 +38,7 @@ export default function LeaveBalance() {
   const [totals, setTotals] = useState({ total: 0, used: 0, remaining: 0 })
   const [teamLeaves, setTeamLeaves] = useState([])
   const [myLeaves, setMyLeaves] = useState([])
+  const [compBalance, setCompBalance] = useState(null)
   const [loading, setLoading] = useState(true)
 
   const employee = ctxEmployee
@@ -49,7 +50,15 @@ export default function LeaveBalance() {
     Promise.all([
       supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([reqRes, polRes]) => {
+      supabase.rpc('liff_get_my_comp_time_balance', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([reqRes, polRes, ctRes]) => {
+      // 補休餘額
+      if (ctRes.data?.ok) {
+        setCompBalance({
+          total_remaining: Number(ctRes.data.total_remaining || 0),
+          ledgers: ctRes.data.ledgers || [],
+        })
+      }
       const reqs = Array.isArray(reqRes.data) ? reqRes.data : []
       const policies = Array.isArray(polRes.data) ? polRes.data : []
       const benefitExtras = parseBenefitExtras(policies)
@@ -175,6 +184,41 @@ export default function LeaveBalance() {
               </div>
             </div>
           </div>
+
+          {/* 補休餘額 — 加班選補休累積，FIFO 扣，過期月結自動兌換加班費 */}
+          {compBalance && compBalance.total_remaining > 0 && (
+            <div style={{
+              padding: '14px 16px', marginBottom: 12, borderRadius: 14,
+              background: 'rgba(167,139,250,0.10)', border: '1px solid rgba(167,139,250,0.25)',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>🕐 補休</div>
+                  <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 2 }}>加班累積 · FIFO 扣最早到期</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#a78bfa' }}>{compBalance.total_remaining}</div>
+                  <div style={{ fontSize: 10, color: 'var(--t3)' }}>小時</div>
+                </div>
+              </div>
+              {compBalance.ledgers.length > 0 && (
+                <div style={{ fontSize: 11, color: 'var(--t3)', lineHeight: 1.6, paddingTop: 8, borderTop: '1px dashed rgba(167,139,250,0.25)' }}>
+                  {compBalance.ledgers.slice(0, 5).map(l => (
+                    <div key={l.ledger_id} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{l.ot_date} → 剩 {Number(l.hours_remaining).toFixed(1)}h</span>
+                      <span style={{ color: l.days_to_expire <= 30 ? 'var(--orange)' : 'var(--t3)' }}>
+                        {l.expires_at} 到期
+                        {l.days_to_expire <= 30 && ` (${l.days_to_expire}天)`}
+                      </span>
+                    </div>
+                  ))}
+                  {compBalance.ledgers.length > 5 && (
+                    <div style={{ marginTop: 4, fontStyle: 'italic' }}>… 另有 {compBalance.ledgers.length - 5} 筆</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 各假別 — 跟 Leave.jsx 假期餘額同步 */}
           {balances.length === 0 ? (

@@ -27,7 +27,7 @@ export default function Overtime() {
   const [searchParams] = useSearchParams()
   const resubmitId = searchParams.get('resubmit')
   const [step, setStep] = useState(0.5)  // 廠商設定的最小單位
-  const [form, setForm] = useState({ date: '', start_time: '', end_time: '', hours: 0, reason: '', store: '' })
+  const [form, setForm] = useState({ date: '', start_time: '', end_time: '', hours: 0, reason: '', store: '', ot_type: 'pay' })
   const [stores, setStores] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
@@ -71,7 +71,7 @@ export default function Overtime() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', start_time: '', end_time: '', hours: 0, reason: '', store: '' })
+    setForm({ date: '', start_time: '', end_time: '', hours: 0, reason: '', store: '', ot_type: 'pay' })
     setEditingId(null)
     setShowForm(false)
   }
@@ -84,6 +84,7 @@ export default function Overtime() {
       hours: r.hours || 0,
       reason: r.reason || '',
       store: r.store || '',
+      ot_type: r.ot_type || 'pay',
     })
     setEditingId(r.id)
     setShowForm(true)
@@ -119,6 +120,7 @@ export default function Overtime() {
       hours: parseFloat(form.hours),
       reason: form.reason,
       store: form.store,
+      ot_type: form.ot_type || 'pay',
     }
 
     let error
@@ -240,6 +242,35 @@ export default function Overtime() {
             <label className="form-label">加班原因</label>
             <textarea className="form-input" placeholder="請說明加班原因..." value={form.reason} onChange={e => set('reason', e.target.value)} />
           </div>
+          <div className="form-group">
+            <label className="form-label">結算方式</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[
+                { v: 'pay',       label: '💰 加班費', hint: '當月薪資領取' },
+                { v: 'comp_time', label: '🕐 補休',   hint: '1 年內有效' },
+              ].map(opt => {
+                const selected = (form.ot_type || 'pay') === opt.v
+                return (
+                  <label key={opt.v} style={{
+                    flex: 1, cursor: 'pointer',
+                    padding: '10px 12px', borderRadius: 10,
+                    background: selected ? 'var(--cyan-dim)' : 'var(--card)',
+                    border: `1.5px solid ${selected ? 'var(--cyan)' : 'var(--border2)'}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input type="radio" name="ot_type" value={opt.v} checked={selected}
+                        onChange={() => set('ot_type', opt.v)} style={{ accentColor: 'var(--cyan)' }} />
+                      <span style={{ fontWeight: 700, fontSize: 13, color: selected ? 'var(--cyan)' : 'var(--t2)' }}>{opt.label}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3, marginLeft: 22 }}>{opt.hint}</div>
+                  </label>
+                )
+              })}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>
+              💡 補休送出後不能改成加班費；未用過期會自動兌換加班費
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-success" style={{ flex: 3 }} onClick={handleSubmit} disabled={submitting}>
               {submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
@@ -292,8 +323,14 @@ export default function Overtime() {
               )}
             </div>
           </div>
-          <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700 }}>
+          <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
             {r.hours} 小時
+            {r.ot_type === 'comp_time' && (
+              <span style={{
+                padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                background: 'rgba(167,139,250,0.15)', color: '#a78bfa',
+              }}>🕐 補休</span>
+            )}
           </div>
           {r.reason && (
             <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{r.reason}</div>

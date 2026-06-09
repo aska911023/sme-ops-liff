@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508130000_hr_a_chain_db_trigger.sql)
 
-const TYPES = ['特休', '事假', '病假', '公假', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理假', '產檢假', '家庭照顧假', '公傷病假']
+const TYPES = ['特休', '事假', '病假', '補休', '公假', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理假', '產檢假', '家庭照顧假', '公傷病假']
 
 // 特休天數依年資計算（勞基法 §38）
 function calcAnnualLeave(joinDate) {
@@ -27,6 +27,7 @@ const LEAVE_INFO = {
   '特休': { max: null, paid: '有薪', law: '勞基法 §38', note: '依年資計算，未休完應折算工資' },
   '事假': { max: 14, paid: '無薪', law: '勞工請假規則 §7', note: '因事必須親自處理' },
   '病假': { max: 30, paid: '半薪', law: '勞工請假規則 §4', note: '未住院30天/年，2026新制10天內不得不利處分' },
+  '補休': { max: null, paid: '由補休時數抵扣', law: '', note: '加班申請選補休累積；FIFO 扣最早到期那筆' },
   '心理假': { max: 3, paid: '有薪', law: '2025新制', note: '不需診斷證明，不列入考績' },
   '家庭照顧假': { max: 7, paid: '無薪', law: '性平法 §20', note: '2026起可以小時為單位，不扣全勤' },
   '生理假': { max: 12, paid: '半薪', law: '性平法 §14', note: '每月1天，女性員工適用' },
@@ -108,6 +109,7 @@ export default function Leave() {
   const [uploading, setUploading] = useState(false)
   const [benefitExtras, setBenefitExtras] = useState({}) // code → extra_days from benefit_policies
   const [leaveSteps, setLeaveSteps] = useState({}) // 中文假別名稱 → {step, unit}
+  const [compBalance, setCompBalance] = useState(null) // { total_remaining, ledgers: [...] }
 
   // 取目前選的假別 step（如 type='特休'，看 leaveSteps 有沒有 'annual' override）
   const currentStep = (() => {
@@ -181,6 +183,16 @@ export default function Leave() {
         }
       })
   }, [lineProfile])
+
+  // 載入補休餘額（給「補休」假別 + 假期餘額卡顯示）
+  const reloadCompBalance = () => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_get_my_comp_time_balance', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => {
+        if (data?.ok) setCompBalance({ total_remaining: Number(data.total_remaining || 0), ledgers: data.ledgers || [] })
+      })
+  }
+  useEffect(() => { reloadCompBalance() }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -276,6 +288,28 @@ export default function Leave() {
       }
     }
 
+    // 補休：先擋餘額不足（RPC 也會擋；前端先擋給 UX）
+    if (form.type === '補休') {
+      if (!compBalance || compBalance.total_remaining <= 0) {
+        alert('沒有補休餘額，需先有加班申請選「補休」並核准')
+        return
+      }
+      // 預估扣多少小時
+      let needHours
+      if (form.unit === 'hour') {
+        const [sh, sm] = form.start_time.split(':').map(Number)
+        const [eh, em] = form.end_time.split(':').map(Number)
+        needHours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+      } else {
+        const wd = countWorkDays(form.start_date, form.end_date || form.start_date, holidays)
+        needHours = wd * 8
+      }
+      if (compBalance.total_remaining < needHours) {
+        alert(`補休餘額不足：剩 ${compBalance.total_remaining} 小時，本次要請 ${needHours} 小時`)
+        return
+      }
+    }
+
     // Check date overlap with existing leaves
     const startD = new Date(form.start_date)
     const endD = new Date(form.end_date || form.start_date)
@@ -364,6 +398,7 @@ export default function Leave() {
     // ★ 2026-05-08：client-side notifyNewSubmission 已拔除，由主系統 DB trigger 推送
 
     reload()
+    reloadCompBalance()  // 補休扣完要更新餘額顯示
     resetForm()
     setSubmitting(false)
   }
@@ -483,6 +518,44 @@ export default function Leave() {
               本店此假別最小單位：<b style={{ color: 'var(--cyan)' }}>{currentStep.step} {currentStep.unit === 'day' ? '天' : '小時'}</b>
               <span style={{ marginLeft: 4 }}>· 不滿一個單位會自動進位</span>
             </div>
+            {form.type === '補休' && compBalance && (
+              <div style={{
+                marginTop: 8, padding: '10px 12px', borderRadius: 10,
+                background: 'rgba(167,139,250,0.10)', border: '1px solid rgba(167,139,250,0.25)',
+                fontSize: 12, color: 'var(--t2)', lineHeight: 1.5,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700 }}>🕐 補休餘額</span>
+                  <span style={{
+                    fontWeight: 800, fontSize: 14,
+                    color: compBalance.total_remaining > 0 ? '#a78bfa' : 'var(--red)',
+                  }}>
+                    {compBalance.total_remaining} 小時
+                  </span>
+                </div>
+                {compBalance.ledgers.length > 0 ? (
+                  <div style={{ marginTop: 6, fontSize: 11, color: 'var(--t3)' }}>
+                    <div style={{ marginBottom: 4 }}>📋 明細（最早到期先扣）：</div>
+                    {compBalance.ledgers.slice(0, 3).map(l => (
+                      <div key={l.ledger_id}>
+                        • {l.ot_date} 加班 → 剩 <b style={{ color: 'var(--t2)' }}>{Number(l.hours_remaining).toFixed(1)}h</b>，
+                        {l.expires_at} 到期
+                        {l.days_to_expire <= 30 && (
+                          <span style={{ color: 'var(--orange)', marginLeft: 4 }}>（{l.days_to_expire}天）</span>
+                        )}
+                      </div>
+                    ))}
+                    {compBalance.ledgers.length > 3 && (
+                      <div style={{ marginTop: 2, fontStyle: 'italic' }}>… 另有 {compBalance.ledgers.length - 3} 筆</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+                    沒有餘額。先去加班申請選「補休」累積。
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           {/* Day / Hour toggle */}
           <div className="form-group">
@@ -682,6 +755,29 @@ export default function Leave() {
         return (
           <div className="card" style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 12 }}>假期餘額</div>
+            {compBalance && compBalance.total_remaining > 0 && (
+              <div style={{
+                marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+                background: 'rgba(167,139,250,0.10)', border: '1px solid rgba(167,139,250,0.20)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12 }}>
+                  <span style={{ color: 'var(--t2)', fontWeight: 700 }}>
+                    🕐 補休
+                    <span style={{ color: 'var(--t3)', fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
+                      加班累積 · FIFO 扣
+                    </span>
+                  </span>
+                  <span style={{ color: '#a78bfa', fontWeight: 700 }}>
+                    剩 {compBalance.total_remaining} 小時
+                  </span>
+                </div>
+                {compBalance.ledgers.some(l => l.days_to_expire <= 30) && (
+                  <div style={{ fontSize: 10, color: 'var(--orange)', marginTop: 4 }}>
+                    ⚠️ 有 {compBalance.ledgers.filter(l => l.days_to_expire <= 30).length} 筆 30 天內到期，未用會自動兌換加班費
+                  </div>
+                )}
+              </div>
+            )}
             {displayed.map(b => {
               const info = LEAVE_INFO[b.label]
               const remaining = b.total - b.used
