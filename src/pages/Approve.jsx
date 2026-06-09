@@ -90,13 +90,15 @@ const GROUPS = {
       { key: 'headcount',   label: '人力需求', pendingStatus: '申請中' },
     ],
   },
-  // 自訂表單（form_submissions）
+  // 自訂表單（form_submissions）+ 商品調撥
   form: {
     label: '自訂表單',
     icon: FileText,
     color: 'blue',
     tabs: [
       { key: 'form_submission', label: '表單申請', pendingStatus: '申請中' },
+      { key: 'goods_transfer_apply',   label: '調撥-申請', pendingStatus: '申請審核中' },
+      { key: 'goods_transfer_receipt', label: '調撥-驗收', pendingStatus: '驗收審核中' },
     ],
   },
 }
@@ -126,6 +128,10 @@ function PendingApprovalsView() {
     // HR 異動 3 表 + 人力需求
     resignation: 'resignation', loa: 'loa', transfer: 'transfer',
     headcount: 'headcount',
+    // 商品調撥
+    goods_transfer_apply: 'transfer-apply',
+    goods_transfer_receipt: 'transfer-receipt',
+    form_submission: 'form',
   }
   const SLUG_TO_TAB = Object.fromEntries(Object.entries(TAB_TO_SLUG).map(([k, v]) => [v, k]))
 
@@ -159,6 +165,8 @@ function PendingApprovalsView() {
     resignation_requests: [], leave_of_absence_requests: [], personnel_transfer_requests: [],
     headcount_requests: [],
     form_submissions: [],
+    goods_transfer_apply_requests: [],
+    goods_transfer_receipt_requests: [],
     shift_swaps_for_peer: [], shift_swaps_for_manager: [], off_requests: [],
     task_confirmations: [],
     can: { hr: false, finance: false },
@@ -175,11 +183,17 @@ function PendingApprovalsView() {
 
   const reload = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
-    const [{ data: rpc, error }, { data: taskConfs }] = await Promise.all([
+    const [{ data: rpc, error }, { data: taskConfs }, { data: transferList }] = await Promise.all([
       supabase.rpc('liff_list_pending_approvals', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_my_task_confirmations', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_list_transfer_approvals', { p_line_user_id: lineProfile.lineUserId }),
     ])
     if (error) { console.error('load approvals', error); setLoading(false); return }
+
+    // 商品調撥：依 current_stage 切兩個 tab（申請 / 驗收）
+    const transferAll = Array.isArray(transferList) ? transferList : []
+    const transferApply   = transferAll.filter(r => r.current_stage === 'apply')
+    const transferReceipt = transferAll.filter(r => r.current_stage === 'receipt')
 
     // ★ chain_total_steps 改 snapshot 感知：load 完 pending approvals 後批次拿正確 total
     //   覆蓋 RPC 內讀 live 的 chain_total_steps（chain 改動後 in-flight 單仍走 snapshot
@@ -214,6 +228,9 @@ function PendingApprovalsView() {
       headcount_requests:          rpc?.headcount_requests          || [],
       // 自訂表單 (2026-05-19 phase 2)
       form_submissions:            rpc?.form_submissions            || [],
+      // 商品調撥（2026-06-09 — 從專屬 RPC 拉，依 stage 切兩 tab）
+      goods_transfer_apply_requests:   transferApply,
+      goods_transfer_receipt_requests: transferReceipt,
       shift_swaps_for_peer:    rpc?.shift_swaps_for_peer    || [],
       shift_swaps_for_manager: rpc?.shift_swaps_for_manager || [],
       off_requests:            rpc?.off_requests            || [],
@@ -326,7 +343,13 @@ function PendingApprovalsView() {
     setProcessing(id)
 
     let result, error
-    if (type === 'form_submission') {
+    if (type === 'goods_transfer_apply' || type === 'goods_transfer_receipt') {
+      // 商品調撥（申請鏈 / 驗收鏈）— 走 liff_approve_transfer
+      ;({ data: result, error } = await supabase.rpc('liff_approve_transfer', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_id: id, p_action: action, p_reason: reason,
+      }))
+    } else if (type === 'form_submission') {
       // 自訂表單核准（reject 已在上方攔截）
       if (!employee?.id) {
         setProcessing(null)
@@ -910,6 +933,52 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
       />
     ))
   }
+  // 商品調撥（申請鏈 / 驗收鏈）— UI 一致，差別在 type 字串給 handle 用
+  if (tab === 'goods_transfer_apply' || tab === 'goods_transfer_receipt') {
+    const list = tab === 'goods_transfer_apply'
+      ? data.goods_transfer_apply_requests
+      : data.goods_transfer_receipt_requests
+    if (list.length === 0) {
+      return empty(tab === 'goods_transfer_apply' ? '沒有等你審的調撥申請' : '沒有等你審的調撥驗收')
+    }
+    const TYPE_LABEL = { warehouse_to_store: '總倉→門市', store_to_store: '門市→門市', store_to_warehouse: '門市→總倉' }
+    return list.map(r => (
+      <Row key={r.id}
+        item={{ ...r, employee: r.applicant_name || '—', employee_id: r.applicant_id }}
+        type={tab}
+        processing={processing} handle={handle} statusBadge={statusBadge}
+        body={<>
+          <div style={{ fontSize: 13, color: 'var(--t2)' }}>
+            <span className="badge badge-orange" style={{ marginRight: 6 }}>{r.document_no}</span>
+            <span style={{ color: 'var(--t3)' }}>{TYPE_LABEL[r.transfer_type] || r.transfer_type}</span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--t2)' }}>
+            <b>{r.from_label || '—'}</b> → <b>{r.to_label || '—'}</b>
+          </div>
+          {Array.isArray(r.items) && r.items.length > 0 && (
+            <div style={{ marginTop: 8, padding: 10, background: 'var(--bg-card-alt, rgba(0,0,0,0.02))', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {r.items.map((it, i) => (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 6, fontSize: 12 }}>
+                  <span style={{ color: 'var(--t1)' }}>{it.product_code} · {it.product_name}{it.spec ? ` (${it.spec})` : ''}</span>
+                  <span style={{ color: 'var(--t3)' }}>
+                    {tab === 'goods_transfer_receipt' && it.received_qty != null
+                      ? `申 ${it.requested_qty} / 實 ${it.received_qty}`
+                      : `${it.requested_qty} ${it.unit || ''}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {r.reasons && Array.isArray(r.reasons) && r.reasons.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 12, color: 'var(--t3)' }}>
+              原因：{r.reasons.join('、')}{r.reason_other ? ` · ${r.reason_other}` : ''}
+            </div>
+          )}
+        </>}
+      />
+    ))
+  }
+
   if (tab === 'form_submission') {
     if (data.form_submissions.length === 0) return empty('沒有等你審的自訂表單')
     return data.form_submissions.map(r => {

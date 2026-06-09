@@ -67,9 +67,9 @@ async function uploadAttachments({ stage, formId, empId, files }) {
 export default function TransferRequest() {
   const { lineProfile, employee } = useAuth()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('mine')  // mine / approve
+  // 簽核已搬到 /approve 簽核中心（form group 下的「調撥-申請 / 調撥-驗收」tab）
+  // 這頁只負責「我的調撥」(申請/重送/填驗收)
   const [myRecords, setMyRecords] = useState([])
-  const [approvals, setApprovals] = useState([])
   const [stores, setStores] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -81,16 +81,22 @@ export default function TransferRequest() {
     if (!lineProfile?.lineUserId) return
     Promise.all([
       supabase.rpc('liff_list_my_transfer_requests', { p_line_user_id: lineProfile.lineUserId }),
-      supabase.rpc('liff_list_transfer_approvals',   { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_stores_for_transfer',  { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([m, a, s]) => {
+    ]).then(([m, s]) => {
       setMyRecords(Array.isArray(m.data) ? m.data : [])
-      setApprovals(Array.isArray(a.data) ? a.data : [])
       setStores(Array.isArray(s.data) ? s.data : [])
       setLoading(false)
     })
   }
   useEffect(() => { reload() }, [lineProfile])
+
+  // URL 帶 ?id=X 時自動開該單詳情（給 LINE 卡片「填驗收」按鈕用）
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('id')
+    if (!id || !myRecords.length || detailRow) return
+    const target = myRecords.find(r => String(r.id) === String(id))
+    if (target) setDetailRow(target)
+  }, [myRecords, detailRow])
 
   const isStoreToStore = form.transfer_type === 'store_to_store'
   const targetStore = isStoreToStore && form.to_store_id ? stores.find(s => s.id === Number(form.to_store_id)) : null
@@ -184,33 +190,26 @@ export default function TransferRequest() {
 
   if (loading) return <div className="page"><div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div></div>
 
-  const records = tab === 'mine' ? myRecords : approvals
+  const records = myRecords
 
   return (
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
         <div className="header-title">📦 商品調撥</div>
-        {tab === 'mine' && (
-          <button className="btn btn-primary btn-sm" onClick={() => { setForm(emptyForm()); setShowForm(true) }}>
-            <Plus size={14} /> 新增
-          </button>
-        )}
+        <button className="btn btn-primary btn-sm" onClick={() => { setForm(emptyForm()); setShowForm(true) }}>
+          <Plus size={14} /> 新增
+        </button>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, padding: 4, marginBottom: 12, borderRadius: 12, background: 'var(--card)', border: '1px solid var(--border)' }}>
-        {[{ k: 'mine', l: `我的 (${myRecords.length})` }, { k: 'approve', l: `待我簽 (${approvals.length})` }].map(t => (
-          <button key={t.k} onClick={() => setTab(t.k)} style={{
-            flex: 1, padding: '8px', borderRadius: 10, fontSize: 13, fontWeight: 700, border: 'none',
-            background: tab === t.k ? 'var(--cyan-dim)' : 'transparent',
-            color: tab === t.k ? 'var(--cyan)' : 'var(--t2)', cursor: 'pointer',
-          }}>{t.l}</button>
-        ))}
+      {/* 提示：簽核去簽核中心 */}
+      <div style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--cyan-dim)', color: 'var(--cyan)', fontSize: 12, marginBottom: 12, cursor: 'pointer' }}
+        onClick={() => navigate('/approve/transfer-apply')}>
+        💡 要簽核別人的調撥單？去 <b>簽核中心 → 自訂表單 → 調撥-申請/驗收</b>
       </div>
 
       {/* 表單 */}
-      {showForm && tab === 'mine' && (
+      {showForm && (
         <div className="card" style={{ borderColor: 'rgba(34,211,238,0.2)' }}>
           <div className="form-group">
             <label className="form-label">調撥類型</label>
