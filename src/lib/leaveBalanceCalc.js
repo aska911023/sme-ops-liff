@@ -13,6 +13,12 @@ export function calcAnnualLeave(joinDate) {
   return Math.min(30, 15 + (Math.floor(years) - 10))
 }
 
+export function calcPTAnnualLeaveHours(joinDate, weeklyHours) {
+  const days = calcAnnualLeave(joinDate)
+  const ratio = Math.min(1, (Number(weeklyHours) || 0) / 40)
+  return { hours: Math.round(days * 8 * ratio * 10) / 10, days, ratio }
+}
+
 // 各假別年度上限 + 說明（曆年制：1/1 ~ 12/31）
 export const LEAVE_INFO = {
   '特休':     { max: null, paid: '有薪',  law: '勞基法 §38',     note: '依年資計算，未休完應折算工資' },
@@ -72,19 +78,37 @@ export function getCalendarYearRange(year) {
  *   - calendarYear: 計算「其他假別」的曆年（預設今年）
  * @returns Array<{ label, total, used, extra }>
  */
-export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear }) {
+export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0 }) {
   const approved = leaveRequests.filter(r => r.status !== '已拒絕')
 
   // 特休：到職週年制
   const annualRange = joinDate ? getAnnualLeaveRange(joinDate) : null
   const annualLegal = calcAnnualLeave(joinDate)
   const annualExtra = benefitExtras['特休']?.extra_days || 0
-  const annualTotal = annualLegal + annualExtra
-  const annualUsed = annualRange
-    ? approved
-        .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-        .reduce((s, r) => s + (r.days || 0), 0)
-    : 0
+
+  let annualTotal, annualUsed, annualExtraDisplay, annualIsHours
+  if (isPartTime) {
+    const ptInfo = calcPTAnnualLeaveHours(joinDate, weeklyHours)
+    const dailyHours = (Number(weeklyHours) || 0) / 5 || 8
+    const ptExtraHours = Math.round(annualExtra * 8 * Math.min(1, (Number(weeklyHours) || 0) / 40) * 10) / 10
+    annualTotal = Math.round((ptInfo.hours + ptExtraHours) * 10) / 10
+    annualUsed = annualRange
+      ? approved
+          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
+      : 0
+    annualExtraDisplay = ptExtraHours
+    annualIsHours = true
+  } else {
+    annualTotal = annualLegal + annualExtra
+    annualUsed = annualRange
+      ? approved
+          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+          .reduce((s, r) => s + (r.days || 0), 0)
+      : 0
+    annualExtraDisplay = annualExtra
+    annualIsHours = false
+  }
 
   // 其他假別：曆年制
   const calRange = getCalendarYearRange(calendarYear)
@@ -94,7 +118,7 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
       .reduce((s, r) => s + (r.days || 0), 0)
 
   return [
-    { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtra },
+    { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtraDisplay, isHours: annualIsHours },
     // onDemand 假別（產假/陪產/產檢/育嬰）不灌進預設額度 — 不是每人每年固定有
     // 員工真要申請時 Leave.jsx 的下拉選單仍可選到，LEAVE_INFO 上限仍可驗證
     ...Object.entries(LEAVE_LIMITS)

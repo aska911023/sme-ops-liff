@@ -22,6 +22,13 @@ function calcAnnualLeave(joinDate) {
   return Math.min(30, 15 + (Math.floor(years) - 10))
 }
 
+// 兼職特休時數 = 天數 × 8 × (週工時 / 40)
+function calcPTAnnualLeaveHours(joinDate, weeklyHours) {
+  const days = calcAnnualLeave(joinDate)
+  const ratio = Math.min(1, (Number(weeklyHours) || 0) / 40)
+  return { hours: Math.round(days * 8 * ratio * 10) / 10, days, ratio }
+}
+
 // 各假別年度上限 + 說明（曆年制：1/1 ~ 12/31）
 const LEAVE_INFO = {
   '特休': { max: null, paid: '有薪', law: '勞基法 §38', note: '依年資計算，未休完應折算工資' },
@@ -297,6 +304,28 @@ export default function Leave() {
       if (entitlement === 0) {
         alert('未滿 6 個月年資，尚無特休資格，無法申請特休')
         return
+      }
+      // 兼職：用時數上限驗證
+      if (employee?.salary_type === 'hourly') {
+        const empWeeklyHours = Number(employee?.weekly_hours) || 0
+        const { hours: ptEntitleHours } = calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours)
+        const annualRange = getAnnualLeaveRange(employee.join_date)
+        const dailyHours = empWeeklyHours / 5 || 8
+        const usedHoursThisYear = records
+          .filter(r => r.status !== '已拒絕' && r.type === '特休' && r.id !== editingId &&
+            new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
+        const requestHours = form.unit === 'hour'
+          ? (() => {
+              const [sh, sm] = form.start_time.split(':').map(Number)
+              const [eh, em] = form.end_time.split(':').map(Number)
+              return Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+            })()
+          : countWorkDays(form.start_date, form.end_date || form.start_date, holidays) * dailyHours
+        if (usedHoursThisYear + requestHours > ptEntitleHours) {
+          alert(`特休時數不足：本期可用 ${ptEntitleHours} 小時，已用 ${usedHoursThisYear} 小時，本次申請 ${requestHours} 小時`)
+          return
+        }
       }
     }
 
@@ -734,16 +763,27 @@ export default function Leave() {
 
       {/* Leave Balance */}
       {employee?.join_date && (() => {
+        const isEmpPT = employee?.salary_type === 'hourly'
+        const empWeeklyHours = Number(employee?.weekly_hours) || 0
         const annualLegal = calcAnnualLeave(employee.join_date)
         const annualExtra = benefitExtras['特休']?.extra_days || 0
-        const annualTotal = annualLegal + annualExtra
         const approved = records.filter(r => r.status !== '已拒絕')
 
         // 特休：到職週年制
         const annualRange = getAnnualLeaveRange(employee.join_date)
+
+        // 兼職改用時數；正職用天數
+        const ptInfo = isEmpPT ? calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours) : null
+        const ptExtraHours = isEmpPT ? (annualExtra * 8 * Math.min(1, empWeeklyHours / 40)) : 0
+        const annualTotal = isEmpPT
+          ? Math.round((ptInfo.hours + ptExtraHours) * 10) / 10
+          : annualLegal + annualExtra
+        const dailyHours = isEmpPT ? (empWeeklyHours / 5 || 8) : 8
         const annualUsed = approved
           .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-          .reduce((s, r) => s + (r.days || 0), 0)
+          .reduce((s, r) => isEmpPT
+            ? s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours)
+            : s + (r.days || 0), 0)
 
         // 其他假別：曆年制（法定 + 加給）
         const calRange = getCalendarYearRange()
@@ -751,7 +791,7 @@ export default function Leave() {
           .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
           .reduce((s, r) => s + (r.days || 0), 0)
         const allBalances = [
-          { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtra },
+          { label: '特休', total: annualTotal, used: annualUsed, extra: isEmpPT ? ptExtraHours : annualExtra },
           // onDemand 假別（產假/陪產/產檢/育嬰）不顯示在「假期餘額」— 不是每人每年固定有
           ...Object.entries(LEAVE_LIMITS)
             .filter(([type]) => !LEAVE_INFO[type]?.onDemand)
@@ -801,9 +841,16 @@ export default function Leave() {
                       {info && <span style={{ color: 'var(--t3)', fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
                         {info.paid} · {info.law}
                       </span>}
+                      {b.label === '特休' && isEmpPT && (
+                        <span style={{ color: 'var(--cyan)', fontWeight: 400, marginLeft: 6, fontSize: 10 }}>
+                          兼職 週{empWeeklyHours}h
+                        </span>
+                      )}
                     </span>
                     <span style={{ color: remaining <= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
-                      剩 {remaining} / {b.total} 天
+                      {b.label === '特休' && isEmpPT
+                        ? `剩 ${Math.round((remaining) * 10) / 10} / ${b.total} 小時`
+                        : `剩 ${remaining} / ${b.total} 天`}
                       {b.extra > 0 && <span style={{ color: 'var(--cyan)', fontSize: 10, fontWeight: 500 }}> (+{b.extra})</span>}
                     </span>
                   </div>

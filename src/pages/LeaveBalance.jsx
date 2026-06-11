@@ -67,6 +67,8 @@ export default function LeaveBalance() {
         leaveRequests: reqs,
         benefitExtras,
         calendarYear: year,
+        isPartTime: ctxEmployee?.salary_type === 'hourly',
+        weeklyHours: Number(ctxEmployee?.weekly_hours) || 0,
       })
       setBalances(all)
       const total = all.reduce((s, b) => s + (b.total || 0), 0)
@@ -249,7 +251,8 @@ export default function LeaveBalance() {
                       )}
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: c }}>
-                      剩 {remaining} <span style={{ fontSize: 11, color: 'var(--t3)' }}>/ {total} 天</span>
+                      剩 {Math.round(remaining * 10) / 10}{' '}
+                      <span style={{ fontSize: 11, color: 'var(--t3)' }}>/ {total} {b.isHours ? '小時' : '天'}</span>
                       {b.extra > 0 && <span style={{ color: 'var(--cyan)', fontSize: 10, marginLeft: 4 }}>(+{b.extra})</span>}
                     </div>
                   </div>
