@@ -125,28 +125,63 @@ function Block({ title, buckets, statuses, amounts, amountLabel, isActual }) {
 }
 
 // ── DateFilter ───────────────────────────────────────────────────────────────
-function DateFilter({ from, to, onChange, onClear }) {
+const fmtDate = (d) => {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// 快捷區間 presets（避開手機原生 date picker 自動帶今天的 bug）
+function DateFilter({ from, to, onSet }) {
+  const [custom, setCustom] = useState(false)
+
+  const presets = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const t = fmtDate(today)
+    const minus = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return fmtDate(d) }
+    const monthStart = fmtDate(new Date(today.getFullYear(), today.getMonth(), 1))
+    return [
+      { key: 'all',   label: '全部',  from: '', to: '' },
+      { key: 'today', label: '今天',  from: t, to: t },
+      { key: '7d',    label: '近7天', from: minus(6),  to: t },
+      { key: '30d',   label: '近30天', from: minus(29), to: t },
+      { key: 'month', label: '本月',  from: monthStart, to: t },
+    ]
+  }, [])
+
+  const activeKey = presets.find(p => p.from === from && p.to === to)?.key
+    || ((from || to) ? 'custom' : 'all')
+
+  const chipStyle = (active) => ({
+    padding: '6px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+    border: `1px solid ${active ? 'var(--cyan)' : 'var(--border)'}`,
+    background: active ? 'var(--cyan)' : 'var(--card)',
+    color: active ? '#fff' : 'var(--t2)',
+    fontWeight: active ? 600 : 400, whiteSpace: 'nowrap',
+  })
   const st = { padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 12, flex: 1, minWidth: 0, outline: 'none' }
-  const hasValue = from || to
+
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      <input type="date" value={from} max={to || undefined} onChange={e => onChange('from', e.target.value)} style={st} />
-      <span style={{ fontSize: 12, color: 'var(--t3)' }}>—</span>
-      <input type="date" value={to} min={from || undefined} onChange={e => onChange('to', e.target.value)} style={st} />
-      <button
-        onClick={onClear}
-        disabled={!hasValue}
-        title="清除日期"
-        style={{
-          flexShrink: 0, width: 32, height: 32, borderRadius: 8,
-          border: '1px solid var(--border)', background: 'var(--card)',
-          color: hasValue ? 'var(--red)' : 'var(--t3)',
-          fontSize: 14, cursor: hasValue ? 'pointer' : 'default',
-          opacity: hasValue ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}
-      >
-        ✕
-      </button>
+    <div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {presets.map(p => (
+          <button key={p.key} onClick={() => { onSet(p.from, p.to); setCustom(false) }} style={chipStyle(activeKey === p.key)}>
+            {p.label}
+          </button>
+        ))}
+        <button onClick={() => setCustom(c => !c)} style={chipStyle(activeKey === 'custom')}>
+          自訂{activeKey === 'custom' ? `（${from || '…'}~${to || '…'}）` : ''}
+        </button>
+      </div>
+      {custom && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
+          <input type="date" value={from} max={to || undefined} onChange={e => onSet(e.target.value, to)} style={st} />
+          <span style={{ fontSize: 12, color: 'var(--t3)' }}>—</span>
+          <input type="date" value={to} min={from || undefined} onChange={e => onSet(from, e.target.value)} style={st} />
+        </div>
+      )}
     </div>
   )
 }
@@ -237,7 +272,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
         <div style={{ flex: 2, minWidth: 0 }}>
-          <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} onClear={() => { setDateFrom(''); setDateTo('') }} />
+          <DateFilter from={dateFrom} to={dateTo} onSet={(f, t) => { setDateFrom(f); setDateTo(t) }} />
         </div>
         {accountOptions.length > 0 && (
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -274,7 +309,7 @@ export function NonExpenseDashboardTab({ lineUserId }) {
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
-        <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} onClear={() => { setDateFrom(''); setDateTo('') }} />
+        <DateFilter from={dateFrom} to={dateTo} onSet={(f, t) => { setDateFrom(f); setDateTo(t) }} />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <Block title="📋 申請狀態" buckets={applyBuckets}
