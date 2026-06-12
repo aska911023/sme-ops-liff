@@ -227,8 +227,9 @@ export function ExpenseDashboardTab({ lineUserId }) {
     if (dateFrom) params.p_date_from = dateFrom
     if (dateTo)   params.p_date_to   = dateTo
     if (selAccounts.length > 0) params.p_account_codes = selAccounts.join(',')
-    const { data: resp } = await supabase.rpc('liff_expense_dashboard', params)
+    const { data: resp, error: rpcErr } = await supabase.rpc('liff_expense_dashboard', params)
     setLoading(false)
+    if (rpcErr) { setData({ ok: false, error: rpcErr.message || JSON.stringify(rpcErr) }); return }
     setData(resp)
   }, [lineUserId, dateFrom, dateTo, selAccounts])
 
@@ -243,7 +244,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
   const settleRows  = data?.settle_rows  || []
 
   if (loading) return <div style={{ textAlign: 'center', padding: 32, color: 'var(--t3)' }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
-  if (!data?.ok) return <div style={{ textAlign: 'center', padding: 32, color: 'var(--red)', fontSize: 13 }}>無法載入費用資料</div>
+  if (!data?.ok) return <div style={{ textAlign: 'center', padding: 32, color: 'var(--red)', fontSize: 13 }}>{data?.error || '無法載入費用資料'}</div>
 
   return (
     <div>
