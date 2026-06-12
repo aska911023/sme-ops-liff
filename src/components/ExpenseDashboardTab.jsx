@@ -132,6 +132,36 @@ const fmtDate = (d) => {
   return `${y}-${m}-${day}`
 }
 
+// 年/月/日 下拉（完全避開手機原生 date picker）
+function YmdSelect({ value, onChange }) {
+  const [y, m, d] = value ? value.split('-') : ['', '', '']
+  const thisYear = new Date().getFullYear()
+  const years = []
+  for (let i = thisYear; i >= thisYear - 4; i--) years.push(i)
+  const sel = { padding: '7px 6px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 12, outline: 'none' }
+
+  const emit = (ny, nm, nd) => {
+    if (ny && nm && nd) onChange(`${ny}-${String(nm).padStart(2, '0')}-${String(nd).padStart(2, '0')}`)
+    else onChange('')
+  }
+  return (
+    <div style={{ display: 'flex', gap: 4, flex: 1 }}>
+      <select value={y} onChange={e => emit(e.target.value, m, d)} style={{ ...sel, flex: 1.3 }}>
+        <option value="">年</option>
+        {years.map(yy => <option key={yy} value={yy}>{yy}</option>)}
+      </select>
+      <select value={m ? String(Number(m)) : ''} onChange={e => emit(y, e.target.value, d)} style={{ ...sel, flex: 1 }}>
+        <option value="">月</option>
+        {Array.from({ length: 12 }, (_, i) => i + 1).map(mm => <option key={mm} value={mm}>{mm}</option>)}
+      </select>
+      <select value={d ? String(Number(d)) : ''} onChange={e => emit(y, m, e.target.value)} style={{ ...sel, flex: 1 }}>
+        <option value="">日</option>
+        {Array.from({ length: 31 }, (_, i) => i + 1).map(dd => <option key={dd} value={dd}>{dd}</option>)}
+      </select>
+    </div>
+  )
+}
+
 // 快捷區間 presets（避開手機原生 date picker 自動帶今天的 bug）
 function DateFilter({ from, to, onSet }) {
   const [custom, setCustom] = useState(false)
@@ -161,7 +191,6 @@ function DateFilter({ from, to, onSet }) {
     color: active ? '#fff' : 'var(--t2)',
     fontWeight: active ? 600 : 400, whiteSpace: 'nowrap',
   })
-  const st = { padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 12, flex: 1, minWidth: 0, outline: 'none' }
 
   return (
     <div>
@@ -176,10 +205,15 @@ function DateFilter({ from, to, onSet }) {
         </button>
       </div>
       {custom && (
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 8 }}>
-          <input type="date" value={from} max={to || undefined} onChange={e => onSet(e.target.value, to)} style={st} />
-          <span style={{ fontSize: 12, color: 'var(--t3)' }}>—</span>
-          <input type="date" value={to} min={from || undefined} onChange={e => onSet(from, e.target.value)} style={st} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--t3)', width: 28, flexShrink: 0 }}>起</span>
+            <YmdSelect value={from} onChange={v => onSet(v, to)} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: 'var(--t3)', width: 28, flexShrink: 0 }}>迄</span>
+            <YmdSelect value={to} onChange={v => onSet(from, v)} />
+          </div>
         </div>
       )}
     </div>
