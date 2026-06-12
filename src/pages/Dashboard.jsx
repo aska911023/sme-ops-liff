@@ -193,7 +193,7 @@ export default function Dashboard() {
         <div>
           <div className="header-title">📊 儀表板</div>
           <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
-            {data?.employee_name ? `${data.employee_name}，` : ''}流程、任務與查核清單概況
+            {data?.employee_name ? `${data.employee_name}，` : ''}流程、費用與非費用申請概況
           </div>
         </div>
         <button
