@@ -98,7 +98,7 @@ function AmountBreakdown({ amounts, isActual }) {
 }
 
 // ── Block：一個區塊（申請 或 核銷）──────────────────────────────────────────
-function Block({ title, buckets, statuses, amounts, amountLabel, isActual }) {
+function Block({ title, buckets, statuses, amounts, amountLabel, isActual, labelSuffix = '' }) {
   const total = statuses.reduce((s, k) => s + (buckets[k] || 0), 0)
   const segments = statuses
     .filter(s => (buckets[s] || 0) > 0)
@@ -111,7 +111,7 @@ function Block({ title, buckets, statuses, amounts, amountLabel, isActual }) {
         {statuses.map(s => {
           const cnt = buckets[s] || 0
           const pct = total > 0 ? Math.round(cnt / total * 100) : 0
-          return <StatusRow key={s} label={s} count={cnt} pct={pct} color={STATUS_COLOR[s]} />
+          return <StatusRow key={s} label={s + labelSuffix} count={cnt} pct={pct} color={STATUS_COLOR[s]} />
         })}
       </div>
       {amounts && (
@@ -320,6 +320,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
           amounts={applyAmounts} amountLabel="預估金額（估算匯率）" isActual={false} />
         <Block title="🧾 核銷狀態" buckets={settleBuckets}
           statuses={['未送核銷', '待核銷', '已核銷', '核銷被駁回']}
+          labelSuffix="(驗收)"
           amounts={settleAmounts} amountLabel="實際金額" isActual={true} />
       </div>
     </div>
@@ -349,7 +350,8 @@ export function NonExpenseDashboardTab({ lineUserId }) {
         <Block title="📋 申請狀態" buckets={applyBuckets}
           statuses={['申請中', '已核准', '已駁回']} />
         <Block title="✅ 驗收狀態" buckets={settleBuckets}
-          statuses={['未送核銷', '待核銷', '已核銷', '核銷被駁回']} />
+          statuses={['未送核銷', '待核銷', '已核銷', '核銷被駁回']}
+          labelSuffix="(驗收)" />
       </div>
     </div>
   )
