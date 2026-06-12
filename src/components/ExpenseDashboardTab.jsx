@@ -125,13 +125,28 @@ function Block({ title, buckets, statuses, amounts, amountLabel, isActual }) {
 }
 
 // ── DateFilter ───────────────────────────────────────────────────────────────
-function DateFilter({ from, to, onChange }) {
-  const st = { padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 12, flex: 1, outline: 'none' }
+function DateFilter({ from, to, onChange, onClear }) {
+  const st = { padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 12, flex: 1, minWidth: 0, outline: 'none' }
+  const hasValue = from || to
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      <input type="date" value={from} onChange={e => onChange('from', e.target.value)} style={st} />
+      <input type="date" value={from} max={to || undefined} onChange={e => onChange('from', e.target.value)} style={st} />
       <span style={{ fontSize: 12, color: 'var(--t3)' }}>—</span>
-      <input type="date" value={to} onChange={e => onChange('to', e.target.value)} style={st} />
+      <input type="date" value={to} min={from || undefined} onChange={e => onChange('to', e.target.value)} style={st} />
+      <button
+        onClick={onClear}
+        disabled={!hasValue}
+        title="清除日期"
+        style={{
+          flexShrink: 0, width: 32, height: 32, borderRadius: 8,
+          border: '1px solid var(--border)', background: 'var(--card)',
+          color: hasValue ? 'var(--red)' : 'var(--t3)',
+          fontSize: 14, cursor: hasValue ? 'pointer' : 'default',
+          opacity: hasValue ? 1 : 0.4, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        ✕
+      </button>
     </div>
   )
 }
@@ -222,7 +237,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
         <div style={{ flex: 2, minWidth: 0 }}>
-          <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} />
+          <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} onClear={() => { setDateFrom(''); setDateTo('') }} />
         </div>
         {accountOptions.length > 0 && (
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -259,7 +274,7 @@ export function NonExpenseDashboardTab({ lineUserId }) {
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
-        <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} />
+        <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} onClear={() => { setDateFrom(''); setDateTo('') }} />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <Block title="📋 申請狀態" buckets={applyBuckets}
