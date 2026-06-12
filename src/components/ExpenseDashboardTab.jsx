@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 
+const EMPTY = []
+
 // 估算匯率（TWD 為基準）
 const RATES = { TWD: 1, USD: 32, JPY: 0.21, CNY: 4.4, EUR: 35 }
 const RATE_NOTE = 'USD×32、JPY×0.21、CNY×4.4、EUR×35'
@@ -245,7 +247,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
 export function NonExpenseDashboardTab({ lineUserId }) {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const { data, loading } = useDashboard(lineUserId, dateFrom, dateTo, [])
+  const { data, loading } = useDashboard(lineUserId, dateFrom, dateTo, EMPTY)
 
   if (loading) return <div style={{ textAlign: 'center', padding: 32 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
   if (!data?.ok) return <div style={{ textAlign: 'center', padding: 32, color: 'var(--red)', fontSize: 13 }}>{data?.error || '無法載入資料'}</div>
