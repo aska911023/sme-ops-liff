@@ -221,6 +221,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
   const [selAccounts, setSelAccounts] = useState([])
 
   const fetch = useCallback(async () => {
+    if (!lineUserId) return
     setLoading(true)
     const params = { p_line_user_id: lineUserId }
     if (dateFrom) params.p_date_from = dateFrom
@@ -296,6 +297,7 @@ export function NonExpenseDashboardTab({ lineUserId }) {
   const [selTemplates, setSelTemplates] = useState([])
 
   const fetch = useCallback(async () => {
+    if (!lineUserId) return
     setLoading(true)
     const params = { p_line_user_id: lineUserId }
     if (dateFrom) params.p_date_from = dateFrom
