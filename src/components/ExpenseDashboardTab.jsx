@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase'
 // 估算匯率（TWD 為基準）
 const RATES = { TWD: 1, USD: 32, JPY: 0.21, CNY: 4.4, EUR: 35 }
 const RATE_NOTE = 'USD×32、JPY×0.21、CNY×4.4、EUR×35'
-const CURRENCIES = ['TWD', 'USD', 'JPY', 'CNY', 'EUR']
 
 const toTWD = (amount, currency) =>
   Math.round((amount || 0) * (RATES[currency] || 1))
@@ -223,13 +222,11 @@ export function ExpenseDashboardTab({ lineUserId }) {
 
   const fetch = useCallback(async () => {
     setLoading(true)
-    const { data: resp } = await supabase.rpc('liff_expense_dashboard', {
-      p_line_user_id: lineUserId,
-      p_date_from: dateFrom || null,
-      p_date_to:   dateTo   || null,
-      p_account_codes: selAccounts.length > 0 ? selAccounts : null,
-      p_template_ids: null,
-    })
+    const params = { p_line_user_id: lineUserId }
+    if (dateFrom) params.p_date_from = dateFrom
+    if (dateTo)   params.p_date_to   = dateTo
+    if (selAccounts.length > 0) params.p_account_codes = selAccounts
+    const { data: resp } = await supabase.rpc('liff_expense_dashboard', params)
     setLoading(false)
     setData(resp)
   }, [lineUserId, dateFrom, dateTo, selAccounts])
@@ -300,13 +297,11 @@ export function NonExpenseDashboardTab({ lineUserId }) {
 
   const fetch = useCallback(async () => {
     setLoading(true)
-    const { data: resp } = await supabase.rpc('liff_expense_dashboard', {
-      p_line_user_id: lineUserId,
-      p_date_from:    dateFrom || null,
-      p_date_to:      dateTo   || null,
-      p_account_codes: null,
-      p_template_ids: selTemplates.length > 0 ? selTemplates : null,
-    })
+    const params = { p_line_user_id: lineUserId }
+    if (dateFrom) params.p_date_from = dateFrom
+    if (dateTo)   params.p_date_to   = dateTo
+    if (selTemplates.length > 0) params.p_template_ids = selTemplates
+    const { data: resp } = await supabase.rpc('liff_expense_dashboard', params)
     setLoading(false)
     setData(resp)
   }, [lineUserId, dateFrom, dateTo, selTemplates])
@@ -380,7 +375,6 @@ export function NonExpenseDashboardTab({ lineUserId }) {
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
             {[...new Set(rows.map(r => r.template_name))].map(tn => {
               const tnRows = rows.filter(r => r.template_name === tn)
-              const tnTotal = tnRows.reduce((s, r) => s + r.count, 0)
               return (
                 <div key={tn} style={{ marginBottom: 8 }}>
                   <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 3 }}>{tn}</div>
