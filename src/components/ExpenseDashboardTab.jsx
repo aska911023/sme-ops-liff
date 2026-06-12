@@ -145,7 +145,7 @@ function MultiSelect({ options, selected, onChange, placeholder }) {
         <span>{label}</span><span style={{ color: 'var(--t3)' }}>{open ? '▲' : '▼'}</span>
       </button>
       {open && (
-        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, maxHeight: 200, overflowY: 'auto', marginTop: 2, boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, maxHeight: 200, overflowY: 'auto', marginTop: 2, boxShadow: '0 4px 16px rgba(0,0,0,0.35)' }}>
           <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--cyan)', cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
             onClick={() => onChange(selected.length === options.length ? [] : options.map(o => o.value))}>
             {selected.length === options.length ? '取消全選' : '全選'}
