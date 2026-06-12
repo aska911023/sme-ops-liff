@@ -191,7 +191,7 @@ export default function Dashboard() {
 
       <div className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div className="header-title">📊 工作流程總覽</div>
+          <div className="header-title">📊 儀表板</div>
           <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
             {data?.employee_name ? `${data.employee_name}，` : ''}流程、任務與查核清單概況
           </div>

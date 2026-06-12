@@ -230,7 +230,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
           </div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <Block title="💰 申請狀態" buckets={applyBuckets}
           statuses={['申請中', '已核准', '已駁回']}
           amounts={applyAmounts} amountLabel="預估金額（估算匯率）" isActual={false} />
@@ -261,7 +261,7 @@ export function NonExpenseDashboardTab({ lineUserId }) {
       <div style={{ marginBottom: 14 }}>
         <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} />
       </div>
-      <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <Block title="📋 申請狀態" buckets={applyBuckets}
           statuses={['申請中', '已核准', '已駁回']} />
         <Block title="✅ 驗收狀態" buckets={settleBuckets}
