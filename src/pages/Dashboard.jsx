@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import ActivityTimeline from '../components/ActivityTimeline'
+import { ExpenseDashboardTab, NonExpenseDashboardTab } from '../components/ExpenseDashboardTab'
 
 const STATUS = {
   RUNNING: '進行中', COMPLETED: '已完成', PAUSED: '暫停',
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [activityPeriod, setActivityPeriod] = useState('today')
   const [expandedInstanceId, setExpandedInstanceId] = useState(null)
   const [focusTab, setFocusTab] = useState('in_progress')
+  const [mainTab, setMainTab] = useState('workflow') // 'workflow' | 'expense' | 'non_expense'
 
   const load = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
@@ -212,6 +214,38 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {/* Main tab bar */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 4 }}>
+        {[
+          { key: 'workflow',    label: '工作流程' },
+          { key: 'expense',     label: '費用' },
+          { key: 'non_expense', label: '非費用' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setMainTab(t.key)}
+            style={{
+              flex: 1, padding: '7px 4px', borderRadius: 7, border: 'none',
+              background: mainTab === t.key ? 'var(--cyan)' : 'transparent',
+              color: mainTab === t.key ? '#fff' : 'var(--t2)',
+              fontSize: 12, fontWeight: mainTab === t.key ? 700 : 400,
+              cursor: 'pointer', transition: 'all 0.2s',
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {mainTab === 'expense' && (
+        <ExpenseDashboardTab lineUserId={lineProfile?.lineUserId} />
+      )}
+      {mainTab === 'non_expense' && (
+        <NonExpenseDashboardTab lineUserId={lineProfile?.lineUserId} />
+      )}
+
+      {mainTab === 'workflow' && <>
+
       {/* Overall progress */}
       <div className="list-item" style={{ padding: '14px 16px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)', marginBottom: 6 }}>
@@ -323,6 +357,8 @@ export default function Dashboard() {
       <ActivityTimeline activity={activity} period={activityPeriod} onPeriodChange={setActivityPeriod} />
 
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      </>}
+
     </div>
   )
 }
