@@ -218,10 +218,14 @@ export function ExpenseDashboardTab({ lineUserId }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-        <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} />
+      <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
+        <div style={{ flex: 2, minWidth: 0 }}>
+          <DateFilter from={dateFrom} to={dateTo} onChange={(k, v) => k === 'from' ? setDateFrom(v) : setDateTo(v)} />
+        </div>
         {accountOptions.length > 0 && (
-          <MultiSelect options={accountOptions} selected={selAccounts} onChange={setSelAccounts} placeholder="全部科目" />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <MultiSelect options={accountOptions} selected={selAccounts} onChange={setSelAccounts} placeholder="全部科目" />
+          </div>
         )}
       </div>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
