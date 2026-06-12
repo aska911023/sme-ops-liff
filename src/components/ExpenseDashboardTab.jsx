@@ -226,7 +226,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
     const params = { p_line_user_id: lineUserId }
     if (dateFrom) params.p_date_from = dateFrom
     if (dateTo)   params.p_date_to   = dateTo
-    if (selAccounts.length > 0) params.p_account_codes = selAccounts
+    if (selAccounts.length > 0) params.p_account_codes = selAccounts.join(',')
     const { data: resp } = await supabase.rpc('liff_expense_dashboard', params)
     setLoading(false)
     setData(resp)
@@ -302,7 +302,7 @@ export function NonExpenseDashboardTab({ lineUserId }) {
     const params = { p_line_user_id: lineUserId }
     if (dateFrom) params.p_date_from = dateFrom
     if (dateTo)   params.p_date_to   = dateTo
-    if (selTemplates.length > 0) params.p_template_ids = selTemplates
+    if (selTemplates.length > 0) params.p_template_ids = selTemplates.join(',')
     const { data: resp } = await supabase.rpc('liff_expense_dashboard', params)
     setLoading(false)
     setData(resp)
