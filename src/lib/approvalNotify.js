@@ -567,9 +567,8 @@ function rowKv(label, value, color) {
 
 async function fetchAttachmentsFor(type, requestId, rec) {
   if (type === 'expense_request') {
-    const { data } = await supabase.from('expense_request_attachments')
-      .select('id, file_name, storage_path, file_type')
-      .eq('request_id', requestId).order('created_at', { ascending: true })
+    // 走 SECURITY DEFINER RPC（窄唯讀 3 欄），不再 anon 直查整張 expense_request_attachments
+    const { data } = await supabase.rpc('liff_list_request_attachments_for_card', { p_request_id: requestId })
     if (!data) return []
     return data.map(r => {
       const { data: u } = supabase.storage.from('attachments').getPublicUrl(r.storage_path)

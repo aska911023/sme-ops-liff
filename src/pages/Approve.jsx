@@ -1102,14 +1102,12 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
     if (!expanded || !isPending) return
     let cancelled = false
     ;(async () => {
-      const { data: extras } = await supabase
-        .from('approval_extra_steps')
-        .select('id, source_id, insert_before_step, assignee_id, requested_by_id, reason, status')
-        .eq('source_table', 'expense_requests')
-        .eq('source_id', er.id)
-        .eq('status', 'pending')
-        .limit(1)
-      if (!cancelled) setPendingExtra((extras || [])[0] || null)
+      const { data: extra } = await supabase.rpc('liff_get_pending_extra_step', {
+        p_line_user_id: lineProfile?.lineUserId,
+        p_source_table: 'expense_requests',
+        p_source_id: er.id,
+      })
+      if (!cancelled) setPendingExtra(extra || null)
 
       if (extraEmployees.length === 0) {
         // LIFF anon 直接讀 employees 表會被 RLS 擋 → 走 SECURITY DEFINER RPC
@@ -1146,14 +1144,12 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
     setExtraAssignee('')
     setExtraReason('')
     // 重新撈 pending extra
-    const { data: extras } = await supabase
-      .from('approval_extra_steps')
-      .select('id, source_id, insert_before_step, assignee_id, requested_by_id, reason, status')
-      .eq('source_table', 'expense_requests')
-      .eq('source_id', er.id)
-      .eq('status', 'pending')
-      .limit(1)
-    setPendingExtra((extras || [])[0] || null)
+    const { data: extra } = await supabase.rpc('liff_get_pending_extra_step', {
+      p_line_user_id: lineProfile?.lineUserId,
+      p_source_table: 'expense_requests',
+      p_source_id: er.id,
+    })
+    setPendingExtra(extra || null)
   }
 
   const cancelMyExtra = async () => {
@@ -1977,7 +1973,7 @@ function ApproverRoleBadge({ role, stepLabel, isSelf }) {
 }
 
 function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准', extraExpanded = null }) {
-  const { employee: me } = useAuth()
+  const { employee: me, lineProfile } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const isPending = item.status === '待審核' || item.status === '申請中'
   const sourceTable = TYPE_TO_SOURCE_TABLE[type] || null
@@ -1994,26 +1990,23 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
     if (!expanded || !isPending || !sourceTable) return
     let cancelled = false
     ;(async () => {
-      const { data: extras } = await supabase
-        .from('approval_extra_steps')
-        .select('id, source_id, insert_before_step, assignee_id, requested_by_id, reason, status')
-        .eq('source_table', sourceTable)
-        .eq('source_id', item.id)
-        .eq('status', 'pending')
-        .limit(1)
-      if (!cancelled) setPendingExtra((extras || [])[0] || null)
+      const { data: extra } = await supabase.rpc('liff_get_pending_extra_step', {
+        p_line_user_id: lineProfile?.lineUserId,
+        p_source_table: sourceTable,
+        p_source_id: item.id,
+      })
+      if (!cancelled) setPendingExtra(extra || null)
 
       if (extraEmployees.length === 0) {
-        const { data: emps } = await supabase
-          .from('employees')
-          .select('id, name')
-          .eq('status', '在職')
-          .order('name')
-        if (!cancelled) setExtraEmployees(emps || [])
+        // anon 直查 employees 會被 RLS 擋成空 → 走 SECURITY DEFINER RPC（與 ExpenseRequestRow 一致）
+        const { data: emps } = await supabase.rpc('liff_list_employees_in_org', {
+          p_line_user_id: lineProfile?.lineUserId,
+        })
+        if (!cancelled) setExtraEmployees(Array.isArray(emps) ? emps : [])
       }
     })()
     return () => { cancelled = true }
-  }, [expanded, isPending, sourceTable, item.id, extraEmployees.length])
+  }, [expanded, isPending, sourceTable, item.id, extraEmployees.length, lineProfile?.lineUserId])
 
   const isMyExtraRequest = pendingExtra && me && pendingExtra.requested_by_id === me.id
   const isMyExtraAssignment = pendingExtra && me && pendingExtra.assignee_id === me.id
@@ -2032,11 +2025,11 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
     setExtraBusy(false)
     if (error) { alert(`加簽失敗：${error.message}`); return }
     setShowExtraForm(false); setExtraAssignee(''); setExtraReason('')
-    const { data: extras } = await supabase
-      .from('approval_extra_steps')
-      .select('id, source_id, insert_before_step, assignee_id, requested_by_id, reason, status')
-      .eq('source_table', sourceTable).eq('source_id', item.id).eq('status', 'pending').limit(1)
-    setPendingExtra((extras || [])[0] || null)
+    const { data: extra } = await supabase.rpc('liff_get_pending_extra_step', {
+      p_line_user_id: lineProfile?.lineUserId,
+      p_source_table: sourceTable, p_source_id: item.id,
+    })
+    setPendingExtra(extra || null)
   }
 
   const cancelMyExtra = async () => {
