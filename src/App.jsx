@@ -26,6 +26,7 @@ import TransferRequest from './pages/TransferRequest'
 import Approve from './pages/Approve'
 import TaskConfirmations from './pages/TaskConfirmations'
 import ClockCorrection from './pages/ClockCorrection'
+import EarlyLeave from './pages/EarlyLeave'
 import AttendanceHistory from './pages/AttendanceHistory'
 import AttendanceIssues from './pages/AttendanceIssues'
 import MySchedule from './pages/MySchedule'
@@ -207,6 +208,7 @@ export default function App() {
         <Route path="/approve/:tabSlug" element={<Approve />} />
         <Route path="/task-confirmations" element={<TaskConfirmations />} />
         <Route path="/clock-correction" element={<ClockCorrection />} />
+        <Route path="/early-leave" element={<EarlyLeave />} />
         <Route path="/attendance-history" element={<AttendanceHistory />} />
         <Route path="/attendance-issues" element={<AttendanceIssues />} />
         <Route path="/my-schedule" element={<MySchedule />} />

@@ -29,6 +29,7 @@ const MENU_GROUPS = [
       { path: '/clock', icon: '⏰', label: '打卡', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
       { path: '/cover-invitations', icon: '🆘', label: '待認領代班', color: 'var(--orange)', dim: 'rgba(245,158,11,0.15)' },
       { path: '/clock-correction', icon: '🔧', label: '補打卡', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
+      { path: '/early-leave', icon: '🕒', label: '提早下班登記', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
     ],
   },
   {
