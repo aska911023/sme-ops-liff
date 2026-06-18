@@ -255,14 +255,15 @@ export default function Leave() {
         urls.push(data.publicUrl)
       }
     }
-    // ★ 補：URL 寫回 leave_requests.attachments，不然審核人/申請人列表看不到
-    // 舊 bug：liff_insert_leave_request RPC 跟主系統 INSERT 都沒帶 attachments 欄位，
-    //         上傳後 storage 有檔案但 DB attachments 永遠 NULL → 兩端都顯示「無附件」
+    // ★ URL 寫回 leave_requests.attachments，不然審核人/申請人列表看不到。
+    // anon 對 leave_requests 沒 grant，直接 update 會被 RLS 擋 → 走 SECURITY DEFINER RPC
+    // (liff_set_leave_attachments 內驗證「這張單是本人的」才更新)。leaveId 必須是真 id。
     if (urls.length > 0 && leaveId) {
-      const { error: updErr } = await supabase
-        .from('leave_requests')
-        .update({ attachments: urls })
-        .eq('id', leaveId)
+      const { error: updErr } = await supabase.rpc('liff_set_leave_attachments', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_id: leaveId,
+        p_urls: urls,
+      })
       if (updErr) console.warn('attach urls update fail:', updErr)
     }
     return urls
@@ -399,6 +400,7 @@ export default function Leave() {
     }
 
     let error
+    let newId = editingId   // 編輯：用原 id；新增：接住 insert RPC 回傳的真 id（給附件寫回用）
     if (editingId) {
       ;({ error } = await supabase.rpc('liff_update_leave_request', {
         p_line_user_id: lineProfile.lineUserId,
@@ -406,10 +408,12 @@ export default function Leave() {
         p_payload: payload,
       }))
     } else {
-      ;({ error } = await supabase.rpc('liff_insert_leave_request', {
+      const { data: insData, error: insErr } = await supabase.rpc('liff_insert_leave_request', {
         p_line_user_id: lineProfile.lineUserId,
         p_payload: { ...payload, status: '待審核' },
-      }))
+      })
+      error = insErr
+      newId = insData?.id ?? null
     }
 
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
@@ -432,7 +436,7 @@ export default function Leave() {
     // 附件上傳流程走 Supabase Storage（bucket-level RLS，與資料表 RLS 分離）
     if (attachFiles.length > 0) {
       setUploading(true)
-      try { await uploadAttachments(editingId || Date.now()) } catch (e) { /* ignore */ }
+      try { await uploadAttachments(editingId || newId) } catch (e) { /* ignore */ }
       setUploading(false)
     }
 

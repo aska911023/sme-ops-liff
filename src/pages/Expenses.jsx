@@ -104,12 +104,14 @@ export default function Expenses() {
         urls.push(data.publicUrl)
       }
     }
-    // ★ 補：URL 寫回 expenses.attachments（跟 Leave 同個慘案 — 之前 storage 有檔但 DB 沒寫）
+    // ★ URL 寫回 expenses.attachments：anon 對 expenses 沒 grant，走 SECURITY DEFINER RPC
+    // (liff_set_expense_attachments 內驗證本人擁有才更新)。expenseId 必須是真 id。
     if (urls.length > 0 && expenseId) {
-      const { error: updErr } = await supabase
-        .from('expenses')
-        .update({ attachments: urls })
-        .eq('id', expenseId)
+      const { error: updErr } = await supabase.rpc('liff_set_expense_attachments', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_id: expenseId,
+        p_urls: urls,
+      })
       if (updErr) console.warn('attach urls update fail:', updErr)
     }
     return urls
@@ -127,17 +129,18 @@ export default function Expenses() {
       // receipt / business_trip_id / attachments 需要後端擴充，此版先送基礎欄位
     }
 
-    const { error } = await supabase.rpc('liff_upsert_expense', {
+    const { data: upRes, error } = await supabase.rpc('liff_upsert_expense', {
       p_line_user_id: lineProfile.lineUserId,
       p_id: editingId,
       p_payload: payload,
     })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
+    const newId = editingId || upRes?.id || null   // 接住 upsert 回傳的真 id（給附件寫回用）
 
     // 附件上傳維持原流程（Supabase Storage 的 bucket RLS 與資料表 RLS 分離）
     if (attachFiles.length > 0) {
       setUploading(true)
-      await uploadReceipts(editingId || Date.now())
+      await uploadReceipts(editingId || newId)
       setUploading(false)
     }
 
