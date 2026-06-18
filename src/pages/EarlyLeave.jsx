@@ -81,11 +81,11 @@ export default function EarlyLeave() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div className="form-group">
               <label className="form-label">提早離開時間</label>
-              <input className="form-input" type="time" lang="en-GB" value={form.early_from} onChange={e => set('early_from', e.target.value)} />
+              <Time24 value={form.early_from} onChange={v => set('early_from', v)} />
             </div>
             <div className="form-group">
               <label className="form-label">原班表下班</label>
-              <input className="form-input" type="time" lang="en-GB" value={form.early_to} onChange={e => set('early_to', e.target.value)} />
+              <Time24 value={form.early_to} onChange={v => set('early_to', v)} />
             </div>
           </div>
           <div className="form-group">
@@ -119,6 +119,26 @@ export default function EarlyLeave() {
           {r.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>原因：{r.reason}</div>}
         </div>
       ))}
+    </div>
+  )
+}
+
+// 24 小時制時間選擇（時 00–23 + 分 00–59），不用原生 time picker 避免 AM/PM
+const HH = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
+const MM = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0'))
+function Time24({ value, onChange }) {
+  const [hh = '', mm = ''] = (value || '').split(':')
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <select className="form-input" value={hh} onChange={e => onChange(`${e.target.value || '00'}:${mm || '00'}`)}>
+        <option value="">時</option>
+        {HH.map(h => <option key={h} value={h}>{h}</option>)}
+      </select>
+      <span style={{ color: 'var(--t3)' }}>:</span>
+      <select className="form-input" value={mm} onChange={e => onChange(`${hh || '00'}:${e.target.value || '00'}`)}>
+        <option value="">分</option>
+        {MM.map(m => <option key={m} value={m}>{m}</option>)}
+      </select>
     </div>
   )
 }
