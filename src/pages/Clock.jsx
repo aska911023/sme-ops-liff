@@ -113,7 +113,15 @@ export default function ClockPage() {
   const [msg, setMsg] = useState('')
   const [clockMode, setClockMode] = useState('normal')  // normal | outing (2026-05-28 簡化)
 
-  const today = new Date().toISOString().slice(0, 10)
+  // today = 台灣日曆日期（顯示用）
+  const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10)
+  // workDay = 出勤「工作日」：凌晨 6 點前算前一天（夜班跨午夜）。打卡查詢/按鈕判斷用，
+  // 避免跨午夜後 UI 誤顯示「上班」、使用者誤按生出空紀錄。
+  const workDay = (() => {
+    const d = new Date(Date.now() + 8 * 3600 * 1000)
+    if (d.getUTCHours() < 6) d.setUTCDate(d.getUTCDate() - 1)
+    return d.toISOString().slice(0, 10)
+  })()
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000)
@@ -128,7 +136,7 @@ export default function ClockPage() {
     //   (policy: employee = current_employee_name()，LIFF anon 沒 auth → 永遠看不到)
     if (lineUserId) {
       supabase
-        .rpc('liff_get_today_attendance', { p_line_user_id: lineUserId, p_date: today })
+        .rpc('liff_get_today_attendance', { p_line_user_id: lineUserId, p_date: workDay })
         .then(({ data }) => setTodayRecord((data && data[0]) || null))
     }
 
