@@ -11,6 +11,7 @@ export default function Expenses() {
   const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
+  const [accounts, setAccounts] = useState([])  // 會計科目（跟費用申請同源 liff_list_accounts）
   const [trips, setTrips] = useState([]) // for linking
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -28,11 +29,15 @@ export default function Expenses() {
     Promise.all([
       supabase.rpc('liff_list_my_expenses', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_business_trips', { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([e, t]) => {
+      supabase.rpc('liff_list_accounts'),
+    ]).then(([e, t, a]) => {
       setRecords(Array.isArray(e.data) ? e.data : [])
       const activeTrips = (Array.isArray(t.data) ? t.data : [])
         .filter(x => ['已核准', '出差中'].includes(x.status))
       setTrips(activeTrips)
+      const accs = Array.isArray(a.data) ? a.data : []
+      setAccounts(accs)
+      setForm(f => ({ ...f, category: f.category || accs[0]?.name || '' }))
       setLoading(false)
     })
   }
@@ -50,7 +55,7 @@ export default function Expenses() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ category: CATEGORIES[0], amount: '', date: '', description: '', receipt: true, business_trip_id: '' })
+    setForm({ category: accounts[0]?.name || '', amount: '', date: '', description: '', receipt: true, business_trip_id: '' })
     setEditingId(null)
     setShowForm(false)
     setAttachFiles([])
@@ -195,7 +200,10 @@ export default function Expenses() {
             <div className="form-group">
               <label className="form-label">會計科目</label>
               <select className="form-input" value={form.category} onChange={e => set('category', e.target.value)}>
-                {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                <option value="">— 請選擇會計科目 —</option>
+                {(accounts.length > 0
+                  ? accounts.map(a => <option key={a.id ?? a.code} value={a.name}>{a.code} {a.name}</option>)
+                  : CATEGORIES.map(c => <option key={c} value={c}>{c}</option>))}
               </select>
             </div>
             <div className="form-group">
