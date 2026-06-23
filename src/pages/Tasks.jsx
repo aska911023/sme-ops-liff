@@ -402,11 +402,16 @@ export default function Tasks() {
 function FormBindingsBlock({ bindings }) {
   const completed = bindings.filter(b => b.status === '已完成').length
   const navTo = (b) => {
-    if (b.form_id) return
+    // 核銷段是對「已建立的申請」做,form_id 已認領仍要能進去;其餘已認領就不再導
+    const isSettleSeg = b.form_type === 'expense_settle'
+    if (b.form_id && !isSettleSeg) return
     const taskId = new URLSearchParams(window.location.search).get('task')
     const taskQs = taskId ? `&task_id=${taskId}` : ''
     let url = null
-    if (b.form_type === 'expense_request') url = `/expense-request?binding_id=${b.id}`
+    // 費用申請：整單 / 申請段 都走建立費用申請頁
+    if (b.form_type === 'expense_request' || b.form_type === 'expense_apply') url = `/expense-request?binding_id=${b.id}`
+    // 費用核銷(驗收)段：去費用申請清單,點該筆已核准的單做核銷
+    else if (b.form_type === 'expense_settle') url = `/expense-request`
     else if (b.form_type === 'expense')    url = `/expenses?binding_id=${b.id}`
     else if (b.form_type === 'form_submission' && b.form_template_id) {
       url = `/forms/custom/${b.form_template_id}?binding_id=${b.id}${taskQs}`
