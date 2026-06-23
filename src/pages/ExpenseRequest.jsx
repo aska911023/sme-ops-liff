@@ -26,6 +26,7 @@ export default function ExpenseRequest() {
   const [searchParams] = useSearchParams()
   const [requests, setRequests] = useState([])
   const [accounts, setAccounts] = useState([])
+  const [currencies, setCurrencies] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('list') // list / new / settle / detail
   const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD' })
@@ -51,9 +52,11 @@ export default function ExpenseRequest() {
     Promise.all([
       supabase.rpc('liff_list_expense_requests', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_accounts'),
-    ]).then(([r, a]) => {
+      supabase.rpc('list_currencies'),
+    ]).then(([r, a, c]) => {
       setRequests(Array.isArray(r.data) ? r.data : [])
       setAccounts(Array.isArray(a.data) ? a.data : [])
+      setCurrencies(Array.isArray(c.data) ? c.data : [])
       setLoading(false)
     })
   }
@@ -373,13 +376,10 @@ export default function ExpenseRequest() {
               <div className="form-group">
                 <label className="form-label">幣別</label>
                 <select className="form-input" value={form.currency} onChange={e => set('currency', e.target.value)}>
-                  <option value="TWD">TWD — 台幣</option>
-                  <option value="USD">USD — 美元</option>
-                  <option value="JPY">JPY — 日幣</option>
-                  <option value="CNY">CNY — 人民幣</option>
-                  <option value="EUR">EUR — 歐元</option>
-                  <option value="NZD">NZD — 紐西蘭幣</option>
-                  <option value="AUD">AUD — 澳幣</option>
+                  {(currencies && currencies.length > 0
+                    ? currencies.map(c => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)
+                    : [['TWD','台幣'],['USD','美元'],['JPY','日幣'],['CNY','人民幣'],['EUR','歐元'],['NZD','紐西蘭幣'],['AUD','澳幣']]
+                        .map(([code, name]) => <option key={code} value={code}>{code} — {name}</option>))}
                 </select>
               </div>
 
