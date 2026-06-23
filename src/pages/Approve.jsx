@@ -16,7 +16,7 @@ import { notifyShiftSwapEvent, notifyOffRequestEvent } from '../lib/approvalNoti
 //   現在統一用 fmtCurrency(amount, currency) → 自動換符號，沒對應就 fallback ISO code
 const CURRENCY_SYMBOLS = {
   TWD: 'NT$', USD: '$', JPY: '¥', CNY: '¥', EUR: '€', GBP: '£',
-  HKD: 'HK$', SGD: 'S$', AUD: 'A$', CAD: 'C$', KRW: '₩', THB: '฿',
+  HKD: 'HK$', SGD: 'S$', AUD: 'A$', NZD: 'NZ$', CAD: 'C$', KRW: '₩', THB: '฿',
 }
 const fmtCurrency = (amount, currency) => {
   const cur = currency || 'TWD'

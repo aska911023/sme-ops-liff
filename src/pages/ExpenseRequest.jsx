@@ -16,7 +16,7 @@ const STATUS_COLORS = {
   '已駁回': 'var(--red)',
 }
 
-const CURRENCY_PREFIX = { TWD: 'NT$' }
+const CURRENCY_PREFIX = { TWD: 'NT$', USD: 'US$', JPY: '¥', CNY: '¥', EUR: '€', NZD: 'NZ$', AUD: 'A$' }
 const fmt = (n, currency = 'TWD') =>
   n != null ? `${CURRENCY_PREFIX[currency] ?? currency} ${Number(n).toLocaleString()}` : '-'
 
@@ -378,6 +378,8 @@ export default function ExpenseRequest() {
                   <option value="JPY">JPY — 日幣</option>
                   <option value="CNY">CNY — 人民幣</option>
                   <option value="EUR">EUR — 歐元</option>
+                  <option value="NZD">NZD — 紐西蘭幣</option>
+                  <option value="AUD">AUD — 澳幣</option>
                 </select>
               </div>
 
