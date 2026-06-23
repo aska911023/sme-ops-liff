@@ -16,7 +16,7 @@ const MENU_GROUPS = [
     title: '各類申請',
     items: [
       { path: '/expense-request', icon: '📝', label: '申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
-      { path: '/expenses', icon: '🧾', label: '報帳', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
+      { path: '/expenses', icon: '🧾', label: '經常性費用申請', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
       { path: '/overtime', icon: '🕐', label: '加班申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
       { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)' },
       { path: '/off-request', icon: '🗓️', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
