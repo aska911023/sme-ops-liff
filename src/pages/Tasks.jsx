@@ -308,7 +308,7 @@ export default function Tasks() {
 
                     {/* Form Bindings — 流程綁定的必填表單 */}
                     {Array.isArray(detail.form_bindings) && detail.form_bindings.length > 0 && (
-                      <FormBindingsBlock bindings={detail.form_bindings} />
+                      <FormBindingsBlock bindings={detail.form_bindings} viewerEmpId={detail.viewer_emp_id} />
                     )}
 
                     {/* Shared Checklists */}
@@ -399,9 +399,14 @@ export default function Tasks() {
   )
 }
 
-function FormBindingsBlock({ bindings }) {
+function FormBindingsBlock({ bindings, viewerEmpId }) {
   const completed = bindings.filter(b => b.status === '已完成').length
+  // 他人填：只有被指派人(b.assignee_id === viewerEmpId)能填；其他人唯讀
+  const isOther = (b) => b.fill_mode === 'other'
+  const assignedToMe = (b) => isOther(b) && viewerEmpId != null && b.assignee_id === viewerEmpId
   const navTo = (b) => {
+    // 他人填且不是被指派人 → 不可進入
+    if (isOther(b) && !assignedToMe(b)) return
     // 核銷段是對「已建立的申請」做,form_id 已認領仍要能進去;其餘已認領就不再導
     const isSettleSeg = b.form_type === 'expense_settle'
     if (b.form_id && !isSettleSeg) return
@@ -440,11 +445,16 @@ function FormBindingsBlock({ bindings }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {bindings.map(b => {
           const s = STATUS_STYLE[b.status] || STATUS_STYLE['未填']
+          const other = isOther(b)
+          const mine = assignedToMe(b)
+          const otherReadOnly = other && !mine          // 別人被指派 → 我唯讀
+          const canClick = !b.form_id && !otherReadOnly  // 已認領或非我可填 → 不可點
           return (
-            <div key={b.id} onClick={() => navTo(b)}
+            <div key={b.id} onClick={() => canClick && navTo(b)}
               style={{
                 padding: '8px 10px', borderRadius: 6, background: 'var(--bg)',
-                cursor: b.form_id ? 'default' : 'pointer',
+                cursor: canClick ? 'pointer' : 'default',
+                opacity: otherReadOnly ? 0.7 : 1,
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                 border: '1px solid var(--border)',
               }}>
@@ -457,8 +467,14 @@ function FormBindingsBlock({ bindings }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: s.bg, color: s.color }}>{b.status}</span>
-                {!b.form_id && (
+                {!b.form_id && mine && (
+                  <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 600 }}>請你填寫 →</span>
+                )}
+                {!b.form_id && !other && (
                   <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 600 }}>填寫 →</span>
+                )}
+                {!b.form_id && otherReadOnly && (
+                  <span style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 600 }}>指派他人填寫</span>
                 )}
               </div>
             </div>
