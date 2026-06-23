@@ -534,7 +534,7 @@ function rowsForType(type, rec) {
   } else if (type === 'trip') {
     push('目的地', rec.destination); push('期間', fmtRange(rec.start_date, rec.end_date)); push('預算', fmtMoney(rec.budget))
   } else if (type === 'expense') {
-    push('類別', rec.category); push('金額', fmtMoney(rec.amount)); push('日期', fmtDate(rec.date))
+    push('會計科目', rec.category); push('金額', fmtMoney(rec.amount)); push('日期', fmtDate(rec.date))
     if (rec.receipt) push('收據', '✓ 已附')
   } else if (type === 'expense_request') {
     push('用途', rec.title); push('預估金額', fmtMoney(rec.estimated_amount))

@@ -173,7 +173,7 @@ export default function Expenses() {
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
-        <div className="header-title">🧾 報帳申請</div>
+        <div className="header-title">🧾 經常性費用申請</div>
         <button className="btn btn-primary btn-sm" onClick={() => { if (showForm) resetForm(); else { setEditingId(null); setShowForm(true) } }}>
           <Plus size={14} /> {showForm ? '取消' : '新增'}
         </button>
@@ -193,7 +193,7 @@ export default function Expenses() {
           )}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div className="form-group">
-              <label className="form-label">類別</label>
+              <label className="form-label">會計科目</label>
               <select className="form-input" value={form.category} onChange={e => set('category', e.target.value)}>
                 {CATEGORIES.map(c => <option key={c}>{c}</option>)}
               </select>

@@ -2079,7 +2079,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   if (item.amount)       detailFields.push(['金額', fmtCurrency(item.amount, item.currency)])
   if (item.estimated_amount) detailFields.push(['預估金額', fmtCurrency(item.estimated_amount, item.currency)])
   if (item.account_code) detailFields.push(['會計科目', `${item.account_code} ${item.account_name || ''}`])
-  if (item.category)     detailFields.push(['類別', item.category])
+  if (item.category)     detailFields.push(['會計科目', item.category])
   if (item.correction_time) detailFields.push(['補卡時間', item.correction_time])
   if (item.purpose)      detailFields.push(['出差目的', item.purpose])
   if (item.reason)       detailFields.push(['原因', item.reason])
