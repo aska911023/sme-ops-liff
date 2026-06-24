@@ -308,7 +308,7 @@ export default function Tasks() {
 
                     {/* Form Bindings — 流程綁定的必填表單 */}
                     {Array.isArray(detail.form_bindings) && detail.form_bindings.length > 0 && (
-                      <FormBindingsBlock bindings={detail.form_bindings} viewerEmpId={detail.viewer_emp_id} />
+                      <FormBindingsBlock bindings={detail.form_bindings} viewerEmpId={detail.viewer_emp_id} lineUserId={lineProfile?.lineUserId} />
                     )}
 
                     {/* Shared Checklists */}
@@ -399,24 +399,43 @@ export default function Tasks() {
   )
 }
 
-function FormBindingsBlock({ bindings, viewerEmpId }) {
+function FormBindingsBlock({ bindings, viewerEmpId, lineUserId }) {
   const completed = bindings.filter(b => b.status === '已完成').length
+  const [picker, setPicker] = useState(null)  // { binding, loading, candidates } 核銷段挑單
   // 他人填：只有被指派人(b.assignee_id === viewerEmpId)能填；其他人唯讀
   const isOther = (b) => b.fill_mode === 'other'
   const assignedToMe = (b) => isOther(b) && viewerEmpId != null && b.assignee_id === viewerEmpId
+  const canAct = (b) => !(isOther(b) && !assignedToMe(b))  // 非「別人被指派」才可操作
+  const SETTLEABLE = ['已核准', '待核銷', '核銷已退回']
+
+  // 核銷段:未綁單→開挑單;已綁單→去核銷
+  const openSettlePicker = async (b) => {
+    setPicker({ binding: b, loading: true, candidates: [] })
+    const { data } = await supabase.rpc('liff_list_settle_candidates', { p_line_user_id: lineUserId, p_binding_id: b.id })
+    if (data?.ok) setPicker({ binding: b, loading: false, candidates: data.candidates || [] })
+    else { alert('載入待驗收單失敗：' + (data?.error || '')); setPicker(null) }
+  }
+  const pickSettle = async (req) => {
+    const b = picker.binding
+    const { data } = await supabase.rpc('liff_pick_settle_request', { p_line_user_id: lineUserId, p_binding_id: b.id, p_request_id: req.id })
+    if (data?.ok) { window.location.href = `/expense-request?settle_id=${req.id}` }
+    else alert('選定失敗：' + (data?.error || ''))
+  }
+
   const navTo = (b) => {
-    // 他人填且不是被指派人 → 不可進入
-    if (isOther(b) && !assignedToMe(b)) return
-    // 核銷段是對「已建立的申請」做,form_id 已認領仍要能進去;其餘已認領就不再導
+    if (!canAct(b)) return
     const isSettleSeg = b.form_type === 'expense_settle'
-    if (b.form_id && !isSettleSeg) return
+    // 核銷段:綁了單→去核銷該單;沒綁→挑單
+    if (isSettleSeg) {
+      if (b.form_id) window.location.href = `/expense-request?settle_id=${b.form_id}`
+      else openSettlePicker(b)
+      return
+    }
+    if (b.form_id) return  // 其他型別已認領就不再導
     const taskId = new URLSearchParams(window.location.search).get('task')
     const taskQs = taskId ? `&task_id=${taskId}` : ''
     let url = null
-    // 費用申請：整單 / 申請段 都走建立費用申請頁
     if (b.form_type === 'expense_request' || b.form_type === 'expense_apply') url = `/expense-request?binding_id=${b.id}`
-    // 費用核銷(驗收)段：去費用申請清單,點該筆已核准的單做核銷
-    else if (b.form_type === 'expense_settle') url = `/expense-request`
     else if (b.form_type === 'expense')    url = `/expenses?binding_id=${b.id}`
     else if (b.form_type === 'form_submission' && b.form_template_id) {
       url = `/forms/custom/${b.form_template_id}?binding_id=${b.id}${taskQs}`
@@ -424,11 +443,8 @@ function FormBindingsBlock({ bindings, viewerEmpId }) {
     else if (b.form_type === 'store_audit') {
       url = `/store-audits/new?binding_id=${b.id}${taskQs}`
     }
-    if (url) {
-      window.location.href = url
-    } else {
-      alert(`「${b.form_label}」無法在 LIFF 填寫，請至電腦版 SME Ops 系統`)
-    }
+    if (url) window.location.href = url
+    else alert(`「${b.form_label}」無法在 LIFF 填寫，請至電腦版 SME Ops 系統`)
   }
   const STATUS_STYLE = {
     '未填':   { bg: 'rgba(148,163,184,0.2)',  color: 'var(--t3)',     icon: '⚪' },
@@ -448,7 +464,9 @@ function FormBindingsBlock({ bindings, viewerEmpId }) {
           const other = isOther(b)
           const mine = assignedToMe(b)
           const otherReadOnly = other && !mine          // 別人被指派 → 我唯讀
-          const canClick = !b.form_id && !otherReadOnly  // 已認領或非我可填 → 不可點
+          const isSettle = b.form_type === 'expense_settle'
+          // 核銷段:可操作且未完成就能點(沒綁→挑單、綁了→去核銷);其餘:未認領才可點
+          const canClick = isSettle ? (canAct(b) && b.status !== '已完成') : (!b.form_id && !otherReadOnly)
           return (
             <div key={b.id} onClick={() => canClick && navTo(b)}
               style={{
@@ -467,13 +485,16 @@ function FormBindingsBlock({ bindings, viewerEmpId }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ padding: '2px 8px', borderRadius: 10, fontSize: 10, fontWeight: 700, background: s.bg, color: s.color }}>{b.status}</span>
-                {!b.form_id && mine && (
+                {isSettle && canClick && (
+                  <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 600 }}>{b.form_id ? '去核銷 →' : '選擇要核銷的單 →'}</span>
+                )}
+                {!isSettle && !b.form_id && mine && (
                   <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 600 }}>請你填寫 →</span>
                 )}
-                {!b.form_id && !other && (
+                {!isSettle && !b.form_id && !other && (
                   <span style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 600 }}>填寫 →</span>
                 )}
-                {!b.form_id && otherReadOnly && (
+                {!isSettle && !b.form_id && otherReadOnly && (
                   <span style={{ fontSize: 11, color: 'var(--t3)', fontWeight: 600 }}>指派他人填寫</span>
                 )}
               </div>
@@ -481,6 +502,41 @@ function FormBindingsBlock({ bindings, viewerEmpId }) {
           )
         })}
       </div>
+
+      {/* 核銷段挑單 overlay */}
+      {picker && (
+        <div onClick={() => setPicker(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 480, maxHeight: '80vh', overflowY: 'auto', background: 'var(--card)', borderRadius: '16px 16px 0 0', padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--t1)' }}>選擇要核銷的費用申請單</span>
+              <button onClick={() => setPicker(null)} style={{ background: 'none', border: 'none', color: 'var(--t3)', fontSize: 20, cursor: 'pointer' }}>✕</button>
+            </div>
+            {picker.loading ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--t3)' }}>載入中…</div>
+            ) : picker.candidates.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--t3)', fontSize: 13 }}>
+                目前沒有可核銷的費用申請單<br />（需「已核准 / 待核銷」且未被其他驗收步驟認領）
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {picker.candidates.map(r => (
+                  <button key={r.id} onClick={() => pickSettle(r)}
+                    style={{ textAlign: 'left', padding: '12px', borderRadius: 10, background: 'var(--bg)', border: '1px solid var(--border)', cursor: 'pointer',
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--t1)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>#{r.id} {r.title}</div>
+                      <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>{r.employee} · {r.status}</div>
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--cyan)', whiteSpace: 'nowrap' }}>{r.currency || 'TWD'} {Number(r.estimated_amount || 0).toLocaleString()}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

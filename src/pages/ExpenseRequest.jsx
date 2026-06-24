@@ -23,7 +23,7 @@ const fmt = (n, currency = 'TWD') =>
 export default function ExpenseRequest() {
   const { employee, lineProfile } = useAuth()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [requests, setRequests] = useState([])
   const [accounts, setAccounts] = useState([])
   const [currencies, setCurrencies] = useState([])
@@ -229,6 +229,17 @@ export default function ExpenseRequest() {
     setSettleFiles([])
     setTab('settle')
   }
+
+  // 從任務核銷段挑單跳過來 ?settle_id=N → 自動開該單的核銷
+  useEffect(() => {
+    const sid = searchParams.get('settle_id')
+    if (!sid || !requests.length) return
+    const req = requests.find(r => r.id === Number(sid))
+    if (req) {
+      openSettle(req)
+      setSearchParams(sp => { const x = new URLSearchParams(sp); x.delete('settle_id'); return x }, { replace: true })
+    }
+  }, [requests, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // File select handler
   const handleFileSelect = (e, setter) => {
