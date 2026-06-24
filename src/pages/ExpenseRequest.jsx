@@ -685,8 +685,9 @@ export default function ExpenseRequest() {
             </div>
           )}
 
-          {/* Action button for settlement（非費用不需核銷） */}
-          {detail.status === '已核准' && detail.is_expense !== false && (
+          {/* Action button for settlement（非費用不需核銷）— 有核銷人只給核銷人，沒核銷人才回退申請人 */}
+          {(detail.status === '已核准' || detail.status === '核銷已退回') && detail.is_expense !== false
+            && (detail.settle_assignee_id === employee?.id || (!detail.settle_assignee_id && detail.employee_id === employee?.id)) && (
             <button className="btn btn-primary" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12, marginTop: 14 }}
               onClick={() => openSettle(detail)}>
               <Send size={14} /> 提交核銷
