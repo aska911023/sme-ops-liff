@@ -2341,7 +2341,7 @@ function EmployeePicker({ value, onChange, options, placeholder }) {
 // ════════════════════════════════════════════════════════════════════════════
 const SIGNED_TYPE_LABEL = {
   leave: '請假', overtime: '加班', trip: '出差', correction: '補打卡',
-  expense: '報帳', expense_request: '費用申請',
+  expense: '報帳', expense_request: '非經常性費用申請',
   resignation: '離職', loa: '留停', transfer: '異動', headcount: '人力需求',
 }
 

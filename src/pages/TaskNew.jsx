@@ -20,7 +20,7 @@ const APPROVAL_MODES = [
 ]
 const FORM_TYPES = [
   { v: 'form_submission',  l: '自建表單' },
-  { v: 'expense_request', l: '費用申請' },
+  { v: 'expense_request', l: '非經常性費用申請' },
   { v: 'expense',         l: '核銷' },
 ]
 

@@ -178,7 +178,7 @@ export default function Expenses() {
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
       <div className="header">
-        <div className="header-title">🧾 經常性費用申請</div>
+        <div className="header-title">🧾 經常性費用報銷</div>
         <button className="btn btn-primary btn-sm" onClick={() => { if (showForm) resetForm(); else { setEditingId(null); setShowForm(true) } }}>
           <Plus size={14} /> {showForm ? '取消' : '新增'}
         </button>
