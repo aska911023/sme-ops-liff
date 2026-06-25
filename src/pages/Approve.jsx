@@ -56,8 +56,11 @@ const GROUPS = {
     color: 'green',
     tabs: [
       { key: 'expense',         label: '報帳', pendingStatus: '待審核' },
-      { key: 'expense_request', label: '申請', pendingStatus: '申請中' },
-      { key: 'expense_settle',  label: '核銷', pendingStatus: '待核銷' },
+      { key: 'expense_request', label: '費用申請', pendingStatus: '申請中' },
+      { key: 'expense_settle',  label: '費用核銷', pendingStatus: '待核銷' },
+      // 叫貨單跟費用同表(expense_requests)，doc_type='order' 才收；走同一支簽核 RPC
+      { key: 'order_request',   label: '叫貨申請', pendingStatus: '申請中' },
+      { key: 'order_settle',    label: '叫貨驗收', pendingStatus: '待核銷' },
     ],
   },
   schedule: {
@@ -123,6 +126,7 @@ function PendingApprovalsView() {
   const TAB_TO_SLUG = {
     leave: 'leave', overtime: 'overtime', trip: 'trip', correction: 'correction',
     expense: 'expense', expense_request: 'expense-request', expense_settle: 'expense-settle',
+    order_request: 'order-request', order_settle: 'order-settle',
     off_request: 'off', shift_swap_peer: 'swap-peer', shift_swap_manager: 'swap-manager',
     task_confirmation: 'task',
     // HR 異動 3 表 + 人力需求
@@ -162,6 +166,7 @@ function PendingApprovalsView() {
   const [data, setData] = useState({
     leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [],
     expense_settles: [],
+    order_requests: [], order_settles: [],
     resignation_requests: [], leave_of_absence_requests: [], personnel_transfer_requests: [],
     headcount_requests: [],
     form_submissions: [],
@@ -207,10 +212,23 @@ function PendingApprovalsView() {
       })
       for (const row of (totals || [])) erTotalMap[row.id] = row.total_steps
     }
+    // 申請段 expense_requests 沒帶 doc_type（pending RPC 用明確欄位清單），
+    // 用 additive 小 RPC 補 doc_type，再把費用 / 叫貨拆開（驗收段 to_jsonb 本來就有 doc_type）
+    let erDocMap = {}
+    if (erIds.length) {
+      const { data: dts } = await supabase.rpc('liff_doc_types_for_ids', { p_ids: erIds })
+      for (const row of (dts || [])) erDocMap[row.id] = row.doc_type
+    }
     const erWithSnap = (rpc?.expense_requests || []).map(item => ({
       ...item,
       chain_total_steps_snap: erTotalMap[item.id] ?? null,
+      doc_type: erDocMap[item.id] || 'expense',
     }))
+    const erExpense = erWithSnap.filter(e => (e.doc_type || 'expense') !== 'order')
+    const erOrder   = erWithSnap.filter(e => e.doc_type === 'order')
+    const settleAll = rpc?.expense_settles || []
+    const settleExpense = settleAll.filter(e => (e.doc_type || 'expense') !== 'order')
+    const settleOrder   = settleAll.filter(e => e.doc_type === 'order')
 
     setData({
       leaves:                  rpc?.leaves                  || [],
@@ -218,8 +236,10 @@ function PendingApprovalsView() {
       trips:                   rpc?.trips                   || [],
       expenses:                rpc?.expenses                || [],
       corrections:             rpc?.corrections             || [],
-      expense_requests:        erWithSnap,
-      expense_settles:         rpc?.expense_settles         || [],
+      expense_requests:        erExpense,
+      expense_settles:         settleExpense,
+      order_requests:          erOrder,
+      order_settles:           settleOrder,
       // HR 異動 3 表（2026-05-17 LIFF 跟 Web 對齊後新增）
       resignation_requests:        rpc?.resignation_requests        || [],
       leave_of_absence_requests:   rpc?.leave_of_absence_requests   || [],
@@ -282,6 +302,7 @@ function PendingApprovalsView() {
   function mapKey(k) {
     return ({ leave: 'leaves', overtime: 'overtimes', trip: 'trips', correction: 'corrections',
               expense: 'expenses', expense_request: 'expense_requests', expense_settle: 'expense_settles',
+              order_request: 'order_requests', order_settle: 'order_settles',
               shift_swap_peer: 'shift_swaps_for_peer', shift_swap_manager: 'shift_swaps_for_manager',
               off_request: 'off_requests',
               task_confirmation: 'task_confirmations',
@@ -474,6 +495,8 @@ function PendingApprovalsView() {
     expense:             data.expenses.filter(e => e.status === '待審核').length,
     expense_request:     data.expense_requests.filter(e => e.status === '申請中').length,
     expense_settle:      data.expense_settles.filter(e => e.status === '待核銷').length,
+    order_request:       data.order_requests.filter(e => e.status === '申請中').length,
+    order_settle:        data.order_settles.filter(e => e.status === '待核銷').length,
     shift_swap_peer:     data.shift_swaps_for_peer.length,
     shift_swap_manager:  data.shift_swaps_for_manager.length,
     off_request:         data.off_requests.length,
@@ -506,7 +529,7 @@ function PendingApprovalsView() {
   }
   const tabEnabled = (k) =>
     ['leave','overtime','trip','correction'].includes(k) ? data.can.hr :
-    ['expense','expense_request','expense_settle'].includes(k) ? data.can.finance :
+    ['expense','expense_request','expense_settle','order_request','order_settle'].includes(k) ? data.can.finance :
     ['shift_swap_peer','shift_swap_manager','off_request'].includes(k) ? true :
     ['task_confirmation'].includes(k) ? true :
     ['resignation','loa','transfer','headcount','form_submission'].includes(k) ? true : false
@@ -859,6 +882,19 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
       <ExpenseSettleRow key={er.id} er={er} processing={processing} handle={handle} statusBadge={statusBadge} />
     ))
   }
+  // 叫貨：跟費用同元件（handle 走 expense_request/expense_settle，RPC 認 id），只差標題標叫貨
+  if (tab === 'order_request') {
+    if (data.order_requests.length === 0) return empty('沒有等你審的叫貨申請單')
+    return data.order_requests.map(er => (
+      <ExpenseRequestRow key={er.id} er={er} processing={processing} handle={handle} statusBadge={statusBadge} />
+    ))
+  }
+  if (tab === 'order_settle') {
+    if (data.order_settles.length === 0) return empty('沒有等你驗收的叫貨單')
+    return data.order_settles.map(er => (
+      <ExpenseSettleRow key={er.id} er={er} processing={processing} handle={handle} statusBadge={statusBadge} />
+    ))
+  }
   // ─── HR 異動 3 表（共用通用 Row 元件） ──────────────────────────────
   if (tab === 'resignation') {
     if (data.resignation_requests.length === 0) return empty('沒有等你審的離職申請')
@@ -1207,6 +1243,9 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
         </div>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>
           {er.title}
+          {er.doc_type === 'order' && (
+            <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(99,102,241,0.15)', color: '#6366f1', fontWeight: 700 }}>🛒 叫貨</span>
+          )}
           {isNonExpense && (
             <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(168,85,247,0.15)', color: 'var(--purple)', fontWeight: 700 }}>非費用</span>
           )}
@@ -1543,15 +1582,18 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <span style={{ fontSize: 15, fontWeight: 800 }}>{er.employee}</span>
-            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
-              background: 'var(--cyan-dim)', color: 'var(--cyan)', fontWeight: 700 }}>🧾 核銷</span>
+            {er.doc_type === 'order'
+              ? <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                  background: 'rgba(22,163,74,0.15)', color: 'var(--green)', fontWeight: 700 }}>📦 驗收</span>
+              : <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4,
+                  background: 'var(--cyan-dim)', color: 'var(--cyan)', fontWeight: 700 }}>🧾 核銷</span>}
           </div>
           <span className={`badge ${statusBadge(er.status)}`}>{er.status}</span>
         </div>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{er.title}</div>
         <div style={{ display: 'flex', gap: 12, fontSize: 13, marginBottom: 4 }}>
           <span style={{ color: 'var(--cyan)', fontWeight: 700 }}>
-            實際 {fmtCurrency(er.actual_amount, er.currency)}
+            {er.doc_type === 'order' ? '實收' : '實際'} {fmtCurrency(er.actual_amount, er.currency)}
           </span>
           <span style={{ color: 'var(--t3)' }}>
             (申請 {Number(er.estimated_amount || 0).toLocaleString()})
