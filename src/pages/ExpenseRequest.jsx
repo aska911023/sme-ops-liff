@@ -390,7 +390,7 @@ export default function ExpenseRequest() {
                   <input className="form-input" value={form.supplier} onChange={e => set('supplier', e.target.value)} placeholder="選填" />
                 </div>
                 <div className="form-group">
-                  <label className="form-label">門市</label>
+                  <label className="form-label">申請單位</label>
                   <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)}
                     placeholder={employee.store || '選填'} />
                 </div>
