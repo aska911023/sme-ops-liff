@@ -79,9 +79,8 @@ export default function ExpenseRequest() {
 
   // Upload files to Supabase Storage + 透過 RPC 寫 attachment row
   const uploadFiles = async (requestId, fileList, stage) => {
-    // ★ 上限：每個 request 每個 stage 最多 3 個附件（對齊 3 個 slot UI）
-    //   之前沒 check 已有數量 → 編輯重送會累積到 4+ 個
-    const MAX_ATTACHMENTS_PER_STAGE = 3
+    // ★ 上限：每個 request 每個 stage 最多 20 個附件
+    const MAX_ATTACHMENTS_PER_STAGE = 20
     const { data: existingList } = await supabase.rpc('liff_list_expense_request_attachments', {
       p_line_user_id: lineProfile.lineUserId,
       p_request_id: requestId,
@@ -465,78 +464,47 @@ export default function ExpenseRequest() {
               placeholder={form.is_expense ? '用途、規格...' : '請說明事由'} style={{ minHeight: 50, resize: 'vertical' }} />
           </div>
 
-          {/* File Upload — 3 個紅虛線 slot（對齊主系統） */}
+          {/* File Upload — 動態多檔（最多 20）*/}
           <div className="form-group">
-            <label className="form-label">附件{form.is_expense ? '（訂購單、報價單）' : ''}</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-              {[0, 1, 2].map(idx => {
-                const f = files[idx]
-                return (
-                  <label key={idx} style={{
-                    position: 'relative',
-                    border: '2px dashed var(--red)',
-                    borderRadius: 8,
-                    padding: 8,
-                    minHeight: 76,
-                    textAlign: 'center',
-                    cursor: 'pointer',
+            <label className="form-label">附件{form.is_expense ? '（訂購單、報價單）' : ''} · {(files || []).filter(Boolean).length}/20</label>
+            {(files || []).filter(Boolean).length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginBottom: 6 }}>
+                {(files || []).filter(Boolean).map((f, i) => (
+                  <div key={i} style={{
+                    position: 'relative', border: '1px solid var(--red)', background: 'rgba(248,113,113,0.08)',
+                    borderRadius: 8, padding: 8, minHeight: 70, textAlign: 'center',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4,
-                    background: f ? 'rgba(248,113,113,0.08)' : 'transparent',
                   }}>
-                    <input type="file"
-                      accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv"
-                      style={{ display: 'none' }}
-                      onChange={e => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        setFiles(prev => {
-                          const next = [...prev]
-                          next[idx] = {
-                            file,
-                            preview: file.type.startsWith('image') ? URL.createObjectURL(file) : null,
-                          }
-                          return next
-                        })
-                        e.target.value = ''
-                      }}
-                    />
-                    {f ? (
-                      <>
-                        {f.preview
-                          ? <Image size={18} style={{ color: 'var(--red)' }} />
-                          : <FileText size={18} style={{ color: 'var(--red)' }} />}
-                        <div style={{ fontSize: 10, color: 'var(--t1)', wordBreak: 'break-all', lineHeight: 1.3 }}>
-                          {f.file.name}
-                        </div>
-                        <button type="button"
-                          onClick={(e) => {
-                            e.preventDefault(); e.stopPropagation()
-                            if (f.preview) URL.revokeObjectURL(f.preview)
-                            setFiles(prev => prev.filter((_, j) => j !== idx))
-                          }}
-                          style={{
-                            position: 'absolute', top: 2, right: 2,
-                            background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%',
-                            color: '#fff', width: 18, height: 18, padding: 0, cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          }}>
-                          <X size={10} />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={18} style={{ color: 'var(--red)', opacity: 0.55 }} />
-                        <div style={{ fontSize: 10, color: 'var(--t3)' }}>點此上傳</div>
-                      </>
-                    )}
-                  </label>
-                )
-              })}
-            </div>
+                    {f.preview ? <Image size={18} style={{ color: 'var(--red)' }} /> : <FileText size={18} style={{ color: 'var(--red)' }} />}
+                    <div style={{ fontSize: 10, color: 'var(--t1)', wordBreak: 'break-all', lineHeight: 1.3 }}>{f.file.name}</div>
+                    <button type="button"
+                      onClick={() => { if (f.preview) URL.revokeObjectURL(f.preview); setFiles(prev => prev.filter(Boolean).filter((_, j) => j !== i)) }}
+                      style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', color: '#fff', width: 18, height: 18, padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <X size={10} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {(files || []).filter(Boolean).length < 20 && (
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, border: '2px dashed var(--red)', borderRadius: 8, padding: 10, cursor: 'pointer', color: 'var(--red)', fontSize: 13, fontWeight: 600 }}>
+                <input type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style={{ display: 'none' }}
+                  onChange={e => {
+                    const picked = Array.from(e.target.files || [])
+                    e.target.value = ''
+                    if (!picked.length) return
+                    setFiles(prev => {
+                      const cur = (prev || []).filter(Boolean)
+                      const add = picked.map(file => ({ file, preview: file.type.startsWith('image') ? URL.createObjectURL(file) : null }))
+                      return [...cur, ...add].slice(0, 20)
+                    })
+                  }} />
+                <Upload size={16} /> 新增附件（可多選）
+              </label>
+            )}
             <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 6, lineHeight: 1.5 }}>
-              支援格式：JPG / PNG / GIF / WebP / PDF / Excel / CSV
-              <br />
-              單檔最大 10MB · 最多 3 個附件
+              支援格式：JPG / PNG / GIF / WebP / PDF / Excel / CSV<br />
+              單檔最大 10MB · 最多 20 個附件
             </div>
           </div>
 
