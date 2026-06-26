@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { ChevronLeft, Plus, Upload, Image, FileText, X, Eye, Send } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
@@ -27,7 +27,7 @@ export default function ExpenseRequest() {
   const [requests, setRequests] = useState([])
   const [accounts, setAccounts] = useState([])
   const [currencies, setCurrencies] = useState([])
-  const [departments, setDepartments] = useState([])  // 核銷(驗收)單位下拉
+  const [departments, setDepartments] = useState([])  // 驗收單位下拉
   const [stores, setStores] = useState([])             // 營運部→門市下拉
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('list') // list / new / settle / detail
@@ -121,7 +121,7 @@ export default function ExpenseRequest() {
     const opsDept = departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部'
     if (form.is_expense) {
       if (!form.account_code || !form.title || !total) return
-      if (!form.settle_department_id) { alert('請選擇核銷(驗收)單位'); return }
+      if (!form.settle_department_id) { alert('請選擇驗收單位'); return }
       if (opsDept && !form.settle_store_id) { alert('營運部請選擇門市（或總部）'); return }
     } else {
       if (!form.title) return
@@ -142,7 +142,7 @@ export default function ExpenseRequest() {
         store: form.is_expense ? (form.store || null) : null,
         supplier: form.is_expense ? (form.supplier || null) : null,
         items: form.is_expense ? validItems : null,
-        // 核銷(驗收)單位:營運部選總部(__HQ__)→門市存 null、部門維持營運部 → trigger 解析營運部經理
+        // 驗收單位:營運部選總部(__HQ__)→門市存 null、部門維持營運部 → trigger 解析營運部經理
         settle_department_id: form.is_expense ? (form.settle_department_id || null) : null,
         settle_store_id: form.is_expense && form.settle_store_id && form.settle_store_id !== '__HQ__' ? form.settle_store_id : null,
       },
@@ -405,9 +405,9 @@ export default function ExpenseRequest() {
                 </select>
               </div>
 
-              {/* 核銷(驗收)單位:選部門→部門主管;營運部→門市(店長)或總部(營運部經理) */}
+              {/* 驗收單位:選部門→部門主管;營運部→門市(店長)或總部(營運部經理) */}
               <div className="form-group">
-                <label className="form-label">核銷(驗收)單位 *</label>
+                <label className="form-label">驗收單位 *</label>
                 <select className="form-input" value={form.settle_department_id}
                   onChange={e => setForm(f => ({ ...f, settle_department_id: e.target.value, settle_store_id: '' }))}>
                   <option value="">— 請選擇部門 —</option>
