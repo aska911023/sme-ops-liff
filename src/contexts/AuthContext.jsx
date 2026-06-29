@@ -6,7 +6,7 @@ export const useAuth = () => useContext(AuthContext)
 
 // localStorage 快取：重開 LIFF 時先用快取秀畫面，背景再驗證更新
 // 避免每次都要等 liff.init() (1-3s) + getProfile + RPC 才能渲染
-const CACHE_KEY = 'liff:auth:v1'
+const CACHE_KEY = 'liff:auth:v2'
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000  // 24 小時
 
 function readCache() {
