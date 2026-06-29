@@ -64,15 +64,14 @@ const MANAGER_MENUS = [
   { path: '/approve', icon: '✅', label: '簽核中心', color: 'var(--green)', dim: 'var(--green-dim)' },
 ]
 
-const STORE_AUDIT_MENU = { path: '/store-audits', icon: '🔍', label: '門市稽核', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' }
-
 export default function HRHub() {
   const { employee } = useAuth()
   // UI 閘門：5 角色制下 super_admin/admin/manager 都看得到審核中心
   // （真正的權限由 liff_approve_request RPC 依 role_permissions 把關）
   const canApprove = ['super_admin', 'admin', 'manager'].includes(employee?.role)
-  // 門市稽核下放門市機：store_staff 也能開單稽核
-  const canAudit = ['super_admin', 'admin', 'manager', 'store_staff'].includes(employee?.role)
+  // 門市稽核：由 liff.store_audit 權限碼控制（liff_get_employee_by_line_user 回傳），
+  // 預設 admin+；可在主系統 系統設定→員工權限 逐人開關
+  const canAudit = !!employee?.can_store_audit
 
   return (
     <div className="page">
@@ -96,9 +95,9 @@ export default function HRHub() {
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--orange)', marginBottom: 10 }}>門市功能</div>
           <div className="menu-grid" style={{ marginBottom: 20 }}>
-            <Link to={STORE_AUDIT_MENU.path} className="menu-item">
-              <div className="menu-icon" style={{ background: STORE_AUDIT_MENU.dim, border: `1.5px solid ${STORE_AUDIT_MENU.color}25` }}>{STORE_AUDIT_MENU.icon}</div>
-              <div className="menu-label">{STORE_AUDIT_MENU.label}</div>
+            <Link to="/store-audits" className="menu-item">
+              <div className="menu-icon" style={{ background: 'rgba(251,146,60,0.15)', border: '1.5px solid rgba(251,146,60,0.25)' }}>🔍</div>
+              <div className="menu-label">門市稽核</div>
             </Link>
           </div>
         </>
