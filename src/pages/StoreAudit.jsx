@@ -94,6 +94,7 @@ export default function StoreAudit() {
       p_item_id: itemId,
       p_passed: patch.passed ?? null,
       p_responsible_employee_id: patch.responsible_employee_id ?? null,
+      p_remark: patch.remark ?? null,
     })
   }
 
@@ -343,6 +344,7 @@ export default function StoreAudit() {
 // ─── 評核項目單列（草稿可編輯）───
 function ItemRow({ item, canEdit, employees, onChange }) {
   const failed = item.passed === false
+  const showRemark = item.category_code === '五' && item.item_no === 6
   return (
     <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: failed ? 'rgba(239,68,68,0.05)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
@@ -385,6 +387,24 @@ function ItemRow({ item, canEdit, employees, onChange }) {
       )}
       {failed && !canEdit && item.responsible_employee_name && (
         <div style={{ fontSize: 10, color: 'var(--t3)', marginLeft: 24, marginTop: 2 }}>責任人：{item.responsible_employee_name}</div>
+      )}
+      {showRemark && (
+        <div style={{ marginTop: 8, marginLeft: 24 }}>
+          <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>備註（現場數量 / 差異說明）</div>
+          {canEdit ? (
+            <textarea
+              value={item.remark || ''}
+              onChange={e => onChange({ remark: e.target.value })}
+              placeholder="例：商品A 盤點11支，系統顯示10支"
+              rows={2}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, resize: 'vertical' }}
+            />
+          ) : (
+            item.remark
+              ? <div style={{ fontSize: 12, color: 'var(--t2)', whiteSpace: 'pre-wrap', padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{item.remark}</div>
+              : <div style={{ fontSize: 12, color: 'var(--t3)' }}>—</div>
+          )}
+        </div>
       )}
     </div>
   )
