@@ -14,7 +14,18 @@ export default function StoreAuditNew() {
   const bindingId = searchParams.get('binding_id')
     ? Number(searchParams.get('binding_id')) : null
   const taskId = searchParams.get('task_id')
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
+
+  if (employee && !employee.can_store_audit) {
+    return (
+      <div className="page" style={{ textAlign: 'center', paddingTop: 60 }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>沒有存取權限</div>
+        <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 24 }}>請聯繫管理員開通門市稽核權限</div>
+        <button onClick={() => navigate(-1)} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', cursor: 'pointer' }}>返回</button>
+      </div>
+    )
+  }
   const [stores, setStores] = useState([])
   const [boundChainId, setBoundChainId] = useState(null)
   const [storeId, setStoreId] = useState('')
