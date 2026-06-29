@@ -54,14 +54,18 @@ export default function StoreAudit() {
       .then(({ data }) => setEmployees(data?.list || []))
   }, [lineProfile?.lineUserId])
 
+  const CATEGORY_ORDER = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 }
   const grouped = useMemo(() => {
     if (!data?.items) return {}
-    return data.items.reduce((acc, item) => {
+    const map = data.items.reduce((acc, item) => {
       const k = item.category_code
       if (!acc[k]) acc[k] = { name: item.category_name, items: [] }
       acc[k].items.push(item)
       return acc
     }, {})
+    return Object.fromEntries(
+      Object.entries(map).sort(([a], [b]) => (CATEGORY_ORDER[a] || 99) - (CATEGORY_ORDER[b] || 99))
+    )
   }, [data])
 
   const stats = useMemo(() => {
