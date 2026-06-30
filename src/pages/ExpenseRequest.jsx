@@ -40,6 +40,7 @@ export default function ExpenseRequest() {
   const [submitting, setSubmitting] = useState(false)
   const [detail, setDetail] = useState(null)
   const [detailAtts, setDetailAtts] = useState([])
+  const [editingAtts, setEditingAtts] = useState([])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const updateItem = (i, k, v) => setLineItems(items => {
@@ -123,7 +124,7 @@ export default function ExpenseRequest() {
     setRequests(prev => prev.filter(r => r.id !== req.id))
   }
 
-  const handleEdit = (r) => {
+  const handleEdit = async (r) => {
     setForm({
       account_code: r.account_code || '',
       title: r.title || '',
@@ -133,13 +134,27 @@ export default function ExpenseRequest() {
       supplier: r.supplier || '',
       is_expense: r.is_expense !== false,
       currency: r.currency || 'TWD',
-      settle_department_id: '',
-      settle_store_id: '',
+      settle_department_id: r.settle_department_id ? String(r.settle_department_id) : '',
+      settle_store_id: r.settle_store_id ? String(r.settle_store_id) : '',
     })
     setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
+    setFiles([])
     setEditingId(r.id)
+    const { data } = await supabase.rpc('liff_list_expense_request_attachments', {
+      p_line_user_id: lineProfile.lineUserId, p_request_id: r.id,
+    })
+    setEditingAtts(Array.isArray(data) ? data.filter(a => a.stage === 'request') : [])
     setTab('new')
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const handleDeleteAtt = async (att) => {
+    if (!confirm(`確定刪除附件「${att.file_name}」？`)) return
+    const { error } = await supabase.rpc('liff_delete_expense_request_attachment', {
+      p_line_user_id: lineProfile.lineUserId, p_id: att.id,
+    })
+    if (error) { alert('刪除失敗: ' + error.message); return }
+    setEditingAtts(prev => prev.filter(a => a.id !== att.id))
   }
 
   // Submit new / update request
@@ -149,6 +164,7 @@ export default function ExpenseRequest() {
 
     // ── 編輯模式 ──
     if (editingId) {
+      const opsDeptEdit = departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部'
       const { error } = await supabase.rpc('liff_update_expense_request', {
         p_line_user_id: lineProfile.lineUserId,
         p_id: editingId,
@@ -158,16 +174,24 @@ export default function ExpenseRequest() {
           estimated_amount: form.estimated_amount ? Number(form.estimated_amount) : null,
           account_code: form.account_code || null,
           store: form.store || null,
+          supplier: form.supplier || null,
+          settle_department_id: form.settle_department_id || null,
+          settle_store_id: form.settle_store_id && form.settle_store_id !== '__HQ__'
+            ? form.settle_store_id
+            : (opsDeptEdit && form.settle_store_id === '__HQ__' ? '__CLEAR__' : null),
           notes: null,
         },
       })
-      setSubmitting(false)
-      if (error) { alert(`更新失敗：${error.message}`); return }
+      if (error) { alert(`更新失敗：${error.message}`); setSubmitting(false); return }
+      const filesToUpload = files.filter(Boolean)
+      if (filesToUpload.length > 0) await uploadFiles(editingId, filesToUpload, 'request')
       reload()
       setEditingId(null)
+      setEditingAtts([])
       setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
       setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
       setFiles([])
+      setSubmitting(false)
       setTab('list')
       return
     }
@@ -369,8 +393,9 @@ export default function ExpenseRequest() {
         <div className="card" style={{ padding: 16, borderColor: 'rgba(34,211,238,0.25)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>✏️ 編輯申請</div>
-            <button onClick={() => { setEditingId(null); setTab('list') }} style={{ fontSize: 12, color: 'var(--t3)', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>取消</button>
+            <button onClick={() => { setEditingId(null); setEditingAtts([]); setFiles([]); setTab('list') }} style={{ fontSize: 12, color: 'var(--t3)', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>取消</button>
           </div>
+
           {form.is_expense && (
             <div className="form-group">
               <label className="form-label">會計科目</label>
@@ -380,26 +405,108 @@ export default function ExpenseRequest() {
               </select>
             </div>
           )}
+
           <div className="form-group">
             <label className="form-label">項目名稱 *</label>
             <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)} />
           </div>
+
           {form.is_expense && (
-            <div className="form-group">
-              <label className="form-label">金額</label>
-              <input className="form-input" type="number" value={form.estimated_amount} onChange={e => set('estimated_amount', e.target.value)} />
-            </div>
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group">
+                  <label className="form-label">金額（{form.currency}）</label>
+                  <input className="form-input" type="number" value={form.estimated_amount} onChange={e => set('estimated_amount', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">供應商</label>
+                  <input className="form-input" value={form.supplier} onChange={e => set('supplier', e.target.value)} placeholder="選填" />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">申請單位</label>
+                <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)} />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">驗收單位</label>
+                <select className="form-input" value={form.settle_department_id}
+                  onChange={e => setForm(f => ({ ...f, settle_department_id: e.target.value, settle_store_id: '' }))}>
+                  <option value="">— 請選擇部門 —</option>
+                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+                {departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部' && (
+                  <select className="form-input" style={{ marginTop: 6 }} value={form.settle_store_id}
+                    onChange={e => set('settle_store_id', e.target.value)}>
+                    <option value="">— 請選擇門市 —</option>
+                    <option value="__HQ__">總部（營運部經理）</option>
+                    {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                )}
+              </div>
+            </>
           )}
+
           <div className="form-group">
             <label className="form-label">說明</label>
             <textarea className="form-input" value={form.description} onChange={e => set('description', e.target.value)} style={{ minHeight: 50 }} />
           </div>
-          {form.is_expense && (
+
+          {/* 現有附件 */}
+          {editingAtts.length > 0 && (
             <div className="form-group">
-              <label className="form-label">申請單位</label>
-              <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)} />
+              <label className="form-label">現有附件</label>
+              {editingAtts.map(att => (
+                <div key={att.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
+                  {att.file_type?.startsWith('image') ? <Image size={14} color="var(--blue)" /> : <FileText size={14} color="var(--orange)" />}
+                  <span style={{ flex: 1, color: 'var(--t2)', wordBreak: 'break-all' }}>{att.file_name}</span>
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--cyan)', padding: 4 }}
+                    onClick={() => viewFile(att)}>
+                    <Eye size={14} />
+                  </button>
+                  <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: 4 }}
+                    onClick={() => handleDeleteAtt(att)}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
+
+          {/* 新增附件 */}
+          <div className="form-group">
+            <label className="form-label">新增附件 · {(files || []).filter(Boolean).length}/20</label>
+            {(files || []).filter(Boolean).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                {(files || []).filter(Boolean).map((f, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                    {f.preview ? <Image size={14} color="var(--blue)" /> : <FileText size={14} color="var(--orange)" />}
+                    <span style={{ flex: 1, color: 'var(--t2)', wordBreak: 'break-all' }}>{f.file.name}</span>
+                    <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red)', padding: 0 }}
+                      onClick={() => { if (f.preview) URL.revokeObjectURL(f.preview); setFiles(prev => prev.filter(Boolean).filter((_, j) => j !== i)) }}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, border: '2px dashed var(--border)', borderRadius: 8, padding: '8px 12px', cursor: 'pointer', color: 'var(--t2)', fontSize: 13 }}>
+              <input type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv" style={{ display: 'none' }}
+                onChange={e => {
+                  const picked = Array.from(e.target.files || [])
+                  e.target.value = ''
+                  if (!picked.length) return
+                  setFiles(prev => {
+                    const cur = (prev || []).filter(Boolean)
+                    const add = picked.map(file => ({ file, preview: file.type.startsWith('image') ? URL.createObjectURL(file) : null }))
+                    return [...cur, ...add].slice(0, 20)
+                  })
+                }} />
+              <Upload size={14} /> 上傳附件
+            </label>
+          </div>
+
           <button className="btn btn-primary" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12 }}
             onClick={handleSubmit} disabled={submitting}>
             {submitting ? '更新中...' : '更新申請'}
