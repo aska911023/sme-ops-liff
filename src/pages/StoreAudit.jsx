@@ -445,7 +445,7 @@ function ItemRow({ item, canEdit, employees, auditId, onChange }) {
               {canEdit && attachments.length < 15 && (
                 <label style={{ fontSize: 12, color: '#38bdf8', cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.5 : 1 }}>
                   {uploading ? '上傳中…' : '＋ 新增'}
-                  <input type="file" multiple accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
+                  <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
                 </label>
               )}
             </div>
@@ -466,7 +466,7 @@ function ItemRow({ item, canEdit, employees, auditId, onChange }) {
             ) : canEdit ? (
               <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 52, border: '1px dashed var(--border)', borderRadius: 8, cursor: uploading ? 'default' : 'pointer', fontSize: 12, color: 'var(--t3)' }}>
                 <Paperclip size={14} /> {uploading ? '上傳中…' : '點此拍照或選圖（最多 15 張）'}
-                <input type="file" multiple accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
+                <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
               </label>
             ) : (
               <div style={{ fontSize: 12, color: 'var(--t3)' }}>—</div>
