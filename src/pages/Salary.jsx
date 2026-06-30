@@ -14,6 +14,7 @@ export default function Salary() {
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(SS_KEY) === '1')
   const [gateLoading, setGateLoading] = useState(true)
   const [hasPin, setHasPin] = useState(false)
+  const [usingDefault, setUsingDefault] = useState(false)
   const [pin, setPin] = useState('')
   const [pin2, setPin2] = useState('')          // 設定時的確認欄
   const [pinErr, setPinErr] = useState('')
@@ -34,6 +35,7 @@ export default function Salary() {
     supabase.rpc('liff_card_my_salary_brief', { p_line_user_id: lineProfile.lineUserId })
       .then(({ data }) => {
         setHasPin(!!data?.has_pin)
+        setUsingDefault(!!data?.using_default_pin)
         setGateLoading(false)
       })
   }, [lineProfile, unlocked])
@@ -110,11 +112,16 @@ export default function Salary() {
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>
               {hasPin ? '輸入薪資密碼' : '設定薪資密碼'}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 20, lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: usingDefault ? 8 : 20, lineHeight: 1.6 }}>
               {hasPin
                 ? '薪資為個人機密，請輸入你的 4~6 位密碼解鎖。'
                 : '第一次查看，請設定一組 4~6 位數字密碼，之後每次查薪資都要輸入。'}
             </div>
+            {usingDefault && (
+              <div style={{ fontSize: 12, color: 'var(--cyan)', background: 'rgba(34,211,238,0.08)', borderRadius: 8, padding: '6px 12px', marginBottom: 20 }}>
+                預設密碼為身分證末 4 碼
+              </div>
+            )}
 
             <input
               type="password" inputMode="numeric" maxLength={6} value={pin}
@@ -144,6 +151,26 @@ export default function Salary() {
             >
               {pinBusy ? '處理中…' : (hasPin ? '解鎖' : '設定並解鎖')}
             </button>
+            {hasPin && !usingDefault && (
+              <button
+                style={{ marginTop: 12, background: 'none', border: 'none', color: 'var(--t3)', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' }}
+                disabled={pinBusy}
+                onClick={async () => {
+                  if (!window.confirm('重設後將改用身分證末 4 碼作為密碼，確定嗎？')) return
+                  setPinBusy(true)
+                  const { data } = await supabase.rpc('liff_reset_my_salary_pin', { p_line_user_id: lineProfile.lineUserId })
+                  setPinBusy(false)
+                  if (data?.ok) {
+                    setUsingDefault(true)
+                    setPinErr('已重設！請使用身分證末 4 碼解鎖。')
+                  } else {
+                    setPinErr(data?.error === 'NO_DEFAULT_PIN' ? '員工資料尚未填身分證號，請聯絡管理員' : '重設失敗，請再試')
+                  }
+                }}
+              >
+                忘記密碼？重設為預設（身分證末 4 碼）
+              </button>
+            )}
           </div>
         )}
       </div>
