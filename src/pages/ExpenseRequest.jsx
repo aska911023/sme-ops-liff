@@ -31,6 +31,7 @@ export default function ExpenseRequest() {
   const [stores, setStores] = useState([])             // 營運部→門市下拉
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('list') // list / new / settle / detail
+  const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
   const [lineItems, setLineItems] = useState([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
   const [settleForm, setSettleForm] = useState({ actual_amount: '', notes: '' })
@@ -122,20 +123,64 @@ export default function ExpenseRequest() {
     setRequests(prev => prev.filter(r => r.id !== req.id))
   }
 
-  // Submit new request
+  const handleEdit = (r) => {
+    setForm({
+      account_code: r.account_code || '',
+      title: r.title || '',
+      description: r.description || '',
+      estimated_amount: r.estimated_amount || '',
+      store: r.store || '',
+      supplier: r.supplier || '',
+      is_expense: r.is_expense !== false,
+      currency: r.currency || 'TWD',
+      settle_department_id: '',
+      settle_store_id: '',
+    })
+    setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
+    setEditingId(r.id)
+    setTab('new')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // Submit new / update request
   const handleSubmit = async () => {
+    if (!form.title) { alert('請填寫主旨'); return }
+    setSubmitting(true)
+
+    // ── 編輯模式 ──
+    if (editingId) {
+      const { error } = await supabase.rpc('liff_update_expense_request', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_id: editingId,
+        p_payload: {
+          title: form.title,
+          description: form.description || null,
+          estimated_amount: form.estimated_amount ? Number(form.estimated_amount) : null,
+          account_code: form.account_code || null,
+          store: form.store || null,
+          notes: null,
+        },
+      })
+      setSubmitting(false)
+      if (error) { alert(`更新失敗：${error.message}`); return }
+      reload()
+      setEditingId(null)
+      setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
+      setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
+      setFiles([])
+      setTab('list')
+      return
+    }
+
+    // ── 新增模式 ──
     const validItems = lineItems.filter(li => li.name && li.qty > 0)
     const total = validItems.length > 0 ? validItems.reduce((s, li) => s + (li.subtotal || 0), 0) : Number(form.estimated_amount)
-    // 非費用：只要主旨；費用：要主旨 + 科目 + 金額
     const opsDept = departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部'
     if (form.is_expense) {
-      if (!form.account_code || !form.title || !total) return
-      if (!form.settle_department_id) { alert('請選擇驗收單位'); return }
-      if (opsDept && !form.settle_store_id) { alert('營運部請選擇門市（或總部）'); return }
-    } else {
-      if (!form.title) return
+      if (!form.account_code || !total) { alert('請填寫科目與金額'); setSubmitting(false); return }
+      if (!form.settle_department_id) { alert('請選擇驗收單位'); setSubmitting(false); return }
+      if (opsDept && !form.settle_store_id) { alert('營運部請選擇門市（或總部）'); setSubmitting(false); return }
     }
-    setSubmitting(true)
     const acc = form.is_expense ? accounts.find(a => a.code === form.account_code) : null
     const bindingIdParam = searchParams.get('binding_id')
     const { data, error } = await supabase.rpc('liff_insert_expense_request', {
@@ -151,7 +196,6 @@ export default function ExpenseRequest() {
         store: form.is_expense ? (form.store || null) : null,
         supplier: form.is_expense ? (form.supplier || null) : null,
         items: form.is_expense ? validItems : null,
-        // 驗收單位:營運部選總部(__HQ__)→門市存 null、部門維持營運部 → trigger 解析營運部經理
         settle_department_id: form.is_expense ? (form.settle_department_id || null) : null,
         settle_store_id: form.is_expense && form.settle_store_id && form.settle_store_id !== '__HQ__' ? form.settle_store_id : null,
       },
@@ -159,33 +203,11 @@ export default function ExpenseRequest() {
     })
 
     setSubmitting(false)
+    if (error) { alert(`提交失敗：${error.message || '未知錯誤'}`); return }
 
-    // RPC 出錯（例：沒設定符合金額的簽核鏈）→ 跳 alert，不要沉默
-    if (error) {
-      alert(`提交失敗：${error.message || '未知錯誤'}`)
-      return
-    }
-
-    // 3-slot 可能有 gap（slot 1 沒填但 0 跟 2 有），先 filter
     const filesToUpload = files.filter(Boolean)
-    if (data?.id && filesToUpload.length > 0) {
-      await uploadFiles(data.id, filesToUpload, 'request')
-    }
-
-    // 任務綁定：binding_id 已在上面 RPC 一併寫入（p_binding_id 參數）
-    // 舊版用 INSERT 後再 UPDATE 但 anon RLS 擋著，現在改走 RPC 一次寫
-
-    // ★ 2026-05-08：client-side notifyNewSubmission 已拔除
-    // expense_request 簽核 LINE 通知由主系統 DB trigger 統一處理：
-    //   - AFTER INSERT expense_requests → 推第 0 關 approvers
-    //   - AFTER UPDATE current_step ↑   → 推下一關 approvers
-    //   - AFTER UPDATE status 終態      → 推申請人結果
-    // (見 sme-ops-system migration 20260508110000)
-
-    // 申請人是組織頂端 → RPC 已自動核准，跟使用者講
-    if (data?.auto_approved) {
-      alert('✅ 已自動核准（無更上層簽核者）')
-    }
+    if (data?.id && filesToUpload.length > 0) await uploadFiles(data.id, filesToUpload, 'request')
+    if (data?.auto_approved) alert('✅ 已自動核准（無更上層簽核者）')
 
     reload()
     setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
@@ -309,9 +331,16 @@ export default function ExpenseRequest() {
                     background: `color-mix(in srgb, ${STATUS_COLORS[r.status] || 'var(--t3)'} 15%, transparent)`,
                   }}>{r.status}</span>
                   {r.status === '申請中' && (
-                    <button onClick={e => { e.stopPropagation(); handleWithdraw(r) }} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Trash2 size={11} /> 撤回
-                    </button>
+                    <>
+                      {(r.current_step === 0 || r.current_step == null) && (
+                        <button onClick={e => { e.stopPropagation(); handleEdit(r) }} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}>
+                          編輯
+                        </button>
+                      )}
+                      <button onClick={e => { e.stopPropagation(); handleWithdraw(r) }} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <Trash2 size={11} /> 撤回
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -336,7 +365,49 @@ export default function ExpenseRequest() {
       )}
 
       {/* ─── NEW REQUEST FORM ─── */}
-      {tab === 'new' && (
+      {tab === 'new' && editingId && (
+        <div className="card" style={{ padding: 16, borderColor: 'rgba(34,211,238,0.25)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>✏️ 編輯申請</div>
+            <button onClick={() => { setEditingId(null); setTab('list') }} style={{ fontSize: 12, color: 'var(--t3)', background: 'var(--glass)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>取消</button>
+          </div>
+          {form.is_expense && (
+            <div className="form-group">
+              <label className="form-label">會計科目</label>
+              <select className="form-input" value={form.account_code} onChange={e => set('account_code', e.target.value)}>
+                <option value="">請選擇</option>
+                {accounts.filter(a => a.type === '費用').map(a => <option key={a.code} value={a.code}>{a.code} {a.name}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="form-group">
+            <label className="form-label">項目名稱 *</label>
+            <input className="form-input" value={form.title} onChange={e => set('title', e.target.value)} />
+          </div>
+          {form.is_expense && (
+            <div className="form-group">
+              <label className="form-label">金額</label>
+              <input className="form-input" type="number" value={form.estimated_amount} onChange={e => set('estimated_amount', e.target.value)} />
+            </div>
+          )}
+          <div className="form-group">
+            <label className="form-label">說明</label>
+            <textarea className="form-input" value={form.description} onChange={e => set('description', e.target.value)} style={{ minHeight: 50 }} />
+          </div>
+          {form.is_expense && (
+            <div className="form-group">
+              <label className="form-label">申請單位</label>
+              <input className="form-input" value={form.store} onChange={e => set('store', e.target.value)} />
+            </div>
+          )}
+          <button className="btn btn-primary" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12 }}
+            onClick={handleSubmit} disabled={submitting}>
+            {submitting ? '更新中...' : '更新申請'}
+          </button>
+        </div>
+      )}
+
+      {tab === 'new' && !editingId && (
         <div className="card" style={{ padding: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>新增申請（事項 / 採購 / 預算）</div>
 
