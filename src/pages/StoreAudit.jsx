@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ChevronLeft, Check, X, ClipboardCheck, AlertCircle, Edit3, Send } from 'lucide-react'
+import { ChevronLeft, Check, X, ClipboardCheck, AlertCircle, Edit3, Send, Paperclip } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -95,6 +95,7 @@ export default function StoreAudit() {
       p_passed: patch.passed ?? null,
       p_responsible_employee_id: patch.responsible_employee_id ?? null,
       p_remark: patch.remark ?? null,
+      p_attachments: patch.attachments !== undefined ? patch.attachments : null,
     })
   }
 
@@ -281,7 +282,7 @@ export default function StoreAudit() {
         <Section key={code} title={`${code}、${group.name}`}
           subtitle={`${group.items.length} 項 · 不合格 ${group.items.filter(i => i.passed === false).length}`}>
           {group.items.map(item => (
-            <ItemRow key={item.id} item={item} canEdit={canEdit} employees={employees} onChange={p => updateItem(item.id, p)} />
+            <ItemRow key={item.id} item={item} canEdit={canEdit} employees={employees} auditId={Number(id)} onChange={p => updateItem(item.id, p)} />
           ))}
         </Section>
       ))}
@@ -342,9 +343,37 @@ export default function StoreAudit() {
 }
 
 // ─── 評核項目單列（草稿可編輯）───
-function ItemRow({ item, canEdit, employees, onChange }) {
+function ItemRow({ item, canEdit, employees, auditId, onChange }) {
+  const [uploading, setUploading] = useState(false)
   const failed = item.passed === false
   const showRemark = item.category_code === '五' && item.item_no === 6
+  const attachments = Array.isArray(item.attachments) ? item.attachments : []
+
+  const handleFiles = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    const remaining = 15 - attachments.length
+    if (remaining <= 0) { alert('最多 15 張附件'); e.target.value = ''; return }
+    setUploading(true)
+    try {
+      const urls = await Promise.all(files.slice(0, remaining).map(async (file) => {
+        const ext = file.name.split('.').pop() || 'jpg'
+        const path = `${auditId}/${item.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+        const { error } = await supabase.storage.from('audit-photos').upload(path, file, { upsert: false })
+        if (error) throw error
+        return supabase.storage.from('audit-photos').getPublicUrl(path).data.publicUrl
+      }))
+      onChange({ attachments: [...attachments, ...urls] })
+    } catch (err) {
+      alert('上傳失敗：' + err.message)
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const removeAttachment = (url) => onChange({ attachments: attachments.filter(u => u !== url) })
+
   return (
     <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: failed ? 'rgba(239,68,68,0.05)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
@@ -390,6 +419,7 @@ function ItemRow({ item, canEdit, employees, onChange }) {
       )}
       {showRemark && (
         <div style={{ marginTop: 8, marginLeft: 24 }}>
+          {/* 備註 */}
           <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>備註（現場數量 / 差異說明）</div>
           {canEdit ? (
             <textarea
@@ -404,6 +434,44 @@ function ItemRow({ item, canEdit, employees, onChange }) {
               ? <div style={{ fontSize: 12, color: 'var(--t2)', whiteSpace: 'pre-wrap', padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{item.remark}</div>
               : <div style={{ fontSize: 12, color: 'var(--t3)' }}>—</div>
           )}
+
+          {/* 附件照片 */}
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--t3)' }}>
+                <Paperclip size={11} style={{ verticalAlign: 'middle', marginRight: 3 }} />
+                附件照片（{attachments.length}/15）
+              </span>
+              {canEdit && attachments.length < 15 && (
+                <label style={{ fontSize: 12, color: '#38bdf8', cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.5 : 1 }}>
+                  {uploading ? '上傳中…' : '＋ 新增'}
+                  <input type="file" multiple accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
+                </label>
+              )}
+            </div>
+            {attachments.length > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+                {attachments.map((url, i) => (
+                  <div key={url} style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', background: 'var(--glass)' }}>
+                    <img src={url} alt={`附件 ${i + 1}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      onClick={() => window.open(url, '_blank')} />
+                    {canEdit && (
+                      <button onClick={() => removeAttachment(url)}
+                        style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 14, lineHeight: '20px', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : canEdit ? (
+              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 52, border: '1px dashed var(--border)', borderRadius: 8, cursor: uploading ? 'default' : 'pointer', fontSize: 12, color: 'var(--t3)' }}>
+                <Paperclip size={14} /> {uploading ? '上傳中…' : '點此拍照或選圖（最多 15 張）'}
+                <input type="file" multiple accept="image/*" capture="environment" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
+              </label>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--t3)' }}>—</div>
+            )}
+          </div>
         </div>
       )}
     </div>
