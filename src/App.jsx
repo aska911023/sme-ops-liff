@@ -47,6 +47,9 @@ import RejectReasonPopup from './pages/RejectReasonPopup'
 import StoreAudit from './pages/StoreAudit'
 import StoreAudits from './pages/StoreAudits'
 import StoreAuditNew from './pages/StoreAuditNew'
+import Resignation from './pages/Resignation'
+import PersonnelTransfer from './pages/PersonnelTransfer'
+import StoreRepair from './pages/StoreRepair'
 
 // CRM pages
 import NewCustomer from './pages/NewCustomer'
@@ -90,7 +93,7 @@ function TabBar() {
   const { pathname } = useLocation()
 
   const tabs = [
-    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/leave-of-absence', '/overtime', '/approve', '/task-confirmations', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance'] },
+    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/leave-of-absence', '/overtime', '/approve', '/task-confirmations', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance', '/resignation', '/personnel-transfer', '/store-repair'] },
     { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer'] },
     { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
     { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
@@ -229,6 +232,9 @@ export default function App() {
         <Route path="/store-audit/:id" element={<StoreAudit />} />
         <Route path="/store-audits" element={<StoreAudits />} />
         <Route path="/store-audits/new" element={<StoreAuditNew />} />
+        <Route path="/resignation" element={<Resignation />} />
+        <Route path="/personnel-transfer" element={<PersonnelTransfer />} />
+        <Route path="/store-repair" element={<StoreRepair />} />
 
         {/* CRM Hub + pages */}
         <Route path="/crm" element={<CRMHub />} />

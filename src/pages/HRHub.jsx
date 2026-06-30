@@ -22,6 +22,9 @@ const MENU_GROUPS = [
       { path: '/off-request', icon: '🗓️', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
       { path: '/leave-of-absence', icon: '⏸️', label: '留職停薪', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
       { path: '/transfer-request', icon: '📦', label: '商品調撥', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
+      { path: '/resignation', icon: '🚪', label: '離職申請', color: 'var(--red)', dim: 'rgba(248,113,113,0.15)' },
+      { path: '/personnel-transfer', icon: '🔀', label: '人事異動', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
+      { path: '/store-repair', icon: '🔧', label: '門市報修', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
     ],
   },
   {

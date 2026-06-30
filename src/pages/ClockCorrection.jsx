@@ -71,20 +71,25 @@ export default function ClockCorrection() {
     if (!form.date || !form.reason) { alert('請填寫日期和原因'); return }
     if (!form.correction_time) { alert('請填寫補正的時間'); return }
     if (!form.store) { alert('請選擇補打卡門市'); return }
-    if (editingId) { alert('目前不支援編輯；請刪除後重新申請'); return }
     setSubmitting(true)
 
-    const { error } = await supabase.rpc('liff_insert_clock_correction', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_payload: {
-        date: form.date,
-        type: form.type,
-        correction_time: form.correction_time,
-        reason: form.reason,
-        store: form.store,
-        clock_mode: form.clock_mode,
-      },
-    })
+    const { error } = editingId
+      ? await supabase.rpc('liff_update_clock_correction', {
+          p_line_user_id: lineProfile.lineUserId,
+          p_id: editingId,
+          p_payload: { type: form.type, correction_time: form.correction_time, reason: form.reason },
+        })
+      : await supabase.rpc('liff_insert_clock_correction', {
+          p_line_user_id: lineProfile.lineUserId,
+          p_payload: {
+            date: form.date,
+            type: form.type,
+            correction_time: form.correction_time,
+            reason: form.reason,
+            store: form.store,
+            clock_mode: form.clock_mode,
+          },
+        })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
 
     // ★ 2026-05-08：client-side notifyNewSubmission 已拔除，由主系統 DB trigger 推送

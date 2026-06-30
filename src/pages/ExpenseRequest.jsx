@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from 'react'
-import { ChevronLeft, Plus, Upload, Image, FileText, X, Eye, Send } from 'lucide-react'
+import { ChevronLeft, Plus, Upload, Image, FileText, X, Eye, Send, Trash2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -111,6 +111,15 @@ export default function ExpenseRequest() {
         })
       }
     }
+  }
+
+  const handleWithdraw = async (req) => {
+    if (!confirm(`確定要撤回「${req.title}」嗎？`)) return
+    const { error } = await supabase.rpc('liff_delete_expense_request', {
+      p_line_user_id: lineProfile.lineUserId, p_id: req.id,
+    })
+    if (error) { alert('撤回失敗: ' + error.message); return }
+    setRequests(prev => prev.filter(r => r.id !== req.id))
   }
 
   // Submit new request
@@ -293,11 +302,18 @@ export default function ExpenseRequest() {
                   )}
                   {r.title}
                 </div>
-                <span style={{
-                  padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
-                  color: STATUS_COLORS[r.status] || 'var(--t3)',
-                  background: `color-mix(in srgb, ${STATUS_COLORS[r.status] || 'var(--t3)'} 15%, transparent)`,
-                }}>{r.status}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                    color: STATUS_COLORS[r.status] || 'var(--t3)',
+                    background: `color-mix(in srgb, ${STATUS_COLORS[r.status] || 'var(--t3)'} 15%, transparent)`,
+                  }}>{r.status}</span>
+                  {r.status === '申請中' && (
+                    <button onClick={e => { e.stopPropagation(); handleWithdraw(r) }} style={{ padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <Trash2 size={11} /> 撤回
+                    </button>
+                  )}
+                </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)' }}>
                 <span>{r.is_expense === false ? '—' : `${r.account_code || ''} ${r.account_name || ''}`}</span>
