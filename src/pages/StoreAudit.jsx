@@ -69,13 +69,15 @@ export default function StoreAudit() {
   }, [data])
 
   const stats = useMemo(() => {
-    if (!data?.items) return { passed: 0, failed: 0, pending: 0, deducted: 0, total: 0 }
+    if (!data?.items) return { passed: 0, failed: 0, partial: 0, pending: 0, deducted: 0, total: 0 }
     const passed = data.items.filter(i => i.passed === true).length
     const failed = data.items.filter(i => i.passed === false).length
-    const pending = data.items.filter(i => i.passed === null).length
+    // △（partial）：不扣分、不算未評核
+    const partial = data.items.filter(i => i.partial === true).length
+    const pending = data.items.filter(i => i.passed === null && !i.partial).length
     const deducted = data.items.filter(i => i.passed === false).reduce((s, i) => s + (i.deduct_score || 0), 0)
     const total = data.items.reduce((s, i) => s + (i.deduct_score || 0), 0)
-    return { passed, failed, pending, deducted, total }
+    return { passed, failed, partial, pending, deducted, total }
   }, [data])
 
   const a = data?.audit
@@ -96,6 +98,8 @@ export default function StoreAudit() {
       p_responsible_employee_id: patch.responsible_employee_id ?? null,
       p_remark: patch.remark ?? null,
       p_attachments: patch.attachments !== undefined ? patch.attachments : null,
+      // △ 三態互斥：patch.partial 若沒傳(undefined)→null；true/false 傳到 RPC 三選一分支
+      p_partial: patch.partial !== undefined ? patch.partial : null,
     })
   }
 
@@ -213,6 +217,7 @@ export default function StoreAudit() {
       {/* 統計 */}
       <div style={{ margin: '12px 0', padding: 12, background: 'var(--glass)', borderRadius: 10, display: 'flex', justifyContent: 'space-around', textAlign: 'center', fontSize: 12 }}>
         <Stat label="合格" value={stats.passed} color="#22c55e" />
+        {stats.partial > 0 && <Stat label="△" value={stats.partial} color="#a855f7" />}
         <Stat label="不合格" value={stats.failed} color="#ef4444" />
         {stats.pending > 0 && <Stat label="未評核" value={stats.pending} color="#f59e0b" />}
         <Stat label="扣分" value={`${stats.deducted}/${stats.total}`} color={stats.deducted > 0 ? '#ef4444' : 'var(--t2)'} />
@@ -348,6 +353,7 @@ export default function StoreAudit() {
 function ItemRow({ item, canEdit, employees, auditId, onChange }) {
   const [uploading, setUploading] = useState(false)
   const failed = item.passed === false
+  const isPartial = item.partial === true
   const showRemark = item.category_code === '五' && item.item_no === 6
   const attachments = Array.isArray(item.attachments) ? item.attachments : []
 
@@ -377,19 +383,27 @@ function ItemRow({ item, canEdit, employees, auditId, onChange }) {
   const removeAttachment = (url) => onChange({ attachments: attachments.filter(u => u !== url) })
 
   return (
-    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: failed ? 'rgba(239,68,68,0.05)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
+    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: failed ? 'rgba(239,68,68,0.05)' : isPartial ? 'rgba(168,85,247,0.08)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
         <span style={{ fontSize: 11, color: 'var(--t3)', minWidth: 18 }}>{item.item_no}</span>
         <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>{item.item_text}</span>
         {canEdit ? (
           <div style={{ display: 'flex', gap: 4 }}>
-            <button onClick={() => onChange({ passed: true })}
+            <button onClick={() => onChange({ passed: true, partial: false })}
               style={{
                 padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, border: 'none',
                 background: item.passed === true ? '#22c55e' : 'rgba(148,163,184,0.2)',
                 color: item.passed === true ? '#fff' : 'var(--t3)',
               }}>✓</button>
-            <button onClick={() => onChange({ passed: false })}
+            <button onClick={() => onChange({ passed: null, partial: true })}
+              title="△（不扣分）"
+              style={{
+                padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4,
+                border: isPartial ? '1.5px solid #a855f7' : 'none',
+                background: isPartial ? '#a855f7' : 'rgba(148,163,184,0.2)',
+                color: isPartial ? '#fff' : 'var(--t3)',
+              }}>△</button>
+            <button onClick={() => onChange({ passed: false, partial: false })}
               style={{
                 padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, border: 'none',
                 background: item.passed === false ? '#ef4444' : 'rgba(148,163,184,0.2)',
@@ -399,10 +413,19 @@ function ItemRow({ item, canEdit, employees, auditId, onChange }) {
         ) : (
           <span style={{
             padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
-            background: item.passed === true ? 'rgba(34,197,94,0.15)' : item.passed === false ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)',
-            color: item.passed === true ? '#22c55e' : item.passed === false ? '#ef4444' : 'var(--t3)',
+            background: item.passed === true ? 'rgba(34,197,94,0.15)'
+              : item.passed === false ? 'rgba(239,68,68,0.15)'
+              : isPartial ? 'rgba(168,85,247,0.15)'
+              : 'rgba(148,163,184,0.15)',
+            color: item.passed === true ? '#22c55e'
+              : item.passed === false ? '#ef4444'
+              : isPartial ? '#a855f7'
+              : 'var(--t3)',
           }}>
-            {item.passed === true ? '✓' : item.passed === false ? `-${item.deduct_score}` : '—'}
+            {item.passed === true ? '✓'
+              : item.passed === false ? `-${item.deduct_score}`
+              : isPartial ? '△'
+              : '—'}
           </span>
         )}
       </div>
