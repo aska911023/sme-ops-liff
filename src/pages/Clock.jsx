@@ -107,6 +107,7 @@ export default function ClockPage() {
   const [distance, setDistance] = useState(null)
   const [gpsRetrying, setGpsRetrying] = useState(false)     // 距離 151–1800m 時自動重抓一次
   const retriedRef = useRef(false)                          // 同次 mount 只重試 1 次
+  const watchdogRef = useRef(null)                          // 定位看門狗 timer（8s 沒結果就解卡）
   const [clientIp, setClientIp] = useState(null)
   const [ipError, setIpError] = useState(false)
   const [wifiMatch, setWifiMatch] = useState(null) // null=checking, true/false
@@ -131,7 +132,19 @@ export default function ClockPage() {
     retriedRef.current = false   // 允許距離重試 useEffect 再跑一次
     setGpsError('')
     setGpsRetrying(true)
+    // 看門狗：不靠瀏覽器 geolocation timeout（LINE/WebView 有時 callback 不回，
+    // 會卡在「定位中」永遠不解）。8 秒沒結果就強制解卡，顯示逾時讓使用者可
+    // 重按或改外出。背景 getCurrentPosition 仍在跑，之後定到會自動更新。
+    if (watchdogRef.current) clearTimeout(watchdogRef.current)
+    watchdogRef.current = setTimeout(() => {
+      setGpsRetrying(false)
+      setGpsError('定位逾時，請按「重新定位」重試，或改用「外出」打卡')
+    }, 8000)
+    const clearWatchdog = () => {
+      if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null }
+    }
     const onSuccess = (pos) => {
+      clearWatchdog()
       const { latitude, longitude, accuracy } = pos.coords
       setLocation({ lat: latitude, lng: longitude })
       setGpsAccuracy(Math.round(accuracy))
@@ -145,6 +158,7 @@ export default function ClockPage() {
       setGpsRetrying(false)
     }
     const onFinalError = (err) => {
+      clearWatchdog()
       setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
       setGpsRetrying(false)
     }
@@ -160,6 +174,9 @@ export default function ClockPage() {
       { enableHighAccuracy: true, timeout: 25000 }
     )
   }, [])
+
+  // 離開頁面時清掉看門狗 timer（反覆進出不累積、不對已卸載元件 setState）
+  useEffect(() => () => { if (watchdogRef.current) clearTimeout(watchdogRef.current) }, [])
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000)
@@ -401,13 +418,11 @@ export default function ClockPage() {
           <button
             type="button"
             onClick={refreshLocation}
-            disabled={gpsRetrying}
             style={{
               marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4,
               padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700,
               background: 'var(--cyan-dim)', color: 'var(--cyan)',
-              border: '1px solid var(--cyan)', cursor: gpsRetrying ? 'default' : 'pointer',
-              opacity: gpsRetrying ? 0.5 : 1,
+              border: '1px solid var(--cyan)', cursor: 'pointer',
             }}
           >
             <RefreshCw size={13} style={gpsRetrying ? { animation: 'spin 1s linear infinite' } : undefined} />
