@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle, CalendarDays } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle, CalendarDays, RefreshCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -123,6 +123,44 @@ export default function ClockPage() {
     return d.toISOString().slice(0, 10)
   })()
 
+  // 取一次 GPS — 頁面載入 + 手動「重新定位」按鈕共用。
+  // 第一次失敗自動 retry 一次（放寬 timeout + 容忍 60s 快取）避免單次 race。
+  // gpsRetrying 當「定位進行中」旗標：卡住時使用者可再按按鈕重觸發。
+  const refreshLocation = useCallback(() => {
+    if (!navigator.geolocation) { setGpsError('此裝置不支援 GPS'); return }
+    retriedRef.current = false   // 允許距離重試 useEffect 再跑一次
+    setGpsError('')
+    setGpsRetrying(true)
+    const onSuccess = (pos) => {
+      const { latitude, longitude, accuracy } = pos.coords
+      setLocation({ lat: latitude, lng: longitude })
+      setGpsAccuracy(Math.round(accuracy))
+      if (accuracy > GPS_ACCURACY_THRESHOLD) {
+        setGpsWeak(true)
+        setGpsError(`GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考`)
+      } else {
+        setGpsWeak(false)
+        setGpsError('')
+      }
+      setGpsRetrying(false)
+    }
+    const onFinalError = (err) => {
+      setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
+      setGpsRetrying(false)
+    }
+    navigator.geolocation.getCurrentPosition(
+      onSuccess,
+      () => {
+        // 第一次失敗 → retry：放寬 timeout + 容忍 60s 快取
+        navigator.geolocation.getCurrentPosition(
+          onSuccess, onFinalError,
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+        )
+      },
+      { enableHighAccuracy: true, timeout: 25000 }
+    )
+  }, [])
+
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(timer)
@@ -155,38 +193,8 @@ export default function ClockPage() {
         })
     }
 
-    // Get current GPS — 第一次失敗自動 retry 一次（容忍 60s 快取）避免單次 race
-    if (navigator.geolocation) {
-      const onSuccess = (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords
-        setLocation({ lat: latitude, lng: longitude })
-        setGpsAccuracy(Math.round(accuracy))
-        if (accuracy > GPS_ACCURACY_THRESHOLD) {
-          setGpsWeak(true)
-          setGpsError(`GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考`)
-        } else {
-          setGpsWeak(false)
-          setGpsError('')
-        }
-      }
-      const onFinalError = (err) => {
-        setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
-      }
-      navigator.geolocation.getCurrentPosition(
-        onSuccess,
-        () => {
-          // 第一次失敗 → retry：放寬 timeout + 容忍 60s 快取
-          navigator.geolocation.getCurrentPosition(
-            onSuccess,
-            onFinalError,
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
-          )
-        },
-        { enableHighAccuracy: true, timeout: 25000 }
-      )
-    } else {
-      setGpsError('此裝置不支援 GPS')
-    }
+    // Get current GPS — 抽成 refreshLocation（手動重新定位按鈕共用）
+    refreshLocation()
 
     // Get client IP for WiFi check (with retry + backup)
     fetchPublicIP().then(ip => {
@@ -198,7 +206,7 @@ export default function ClockPage() {
         setIpError(true)
       }
     })
-  }, [employee])
+  }, [employee, refreshLocation])
 
   // 跨店打卡：從候選店清單中挑出「員工現在實際在範圍內」的那家當 store
   // store._matched=true → 真匹配可打卡；_matched=false → 只是 fallback 給距離顯示
@@ -285,9 +293,15 @@ export default function ClockPage() {
   // Can clock if: GPS in range (and accurate) OR WiFi IP matches. If neither rule is set, allow.
   const gpsOk = (isInRange || !store?.lat) && !gpsWeak
   const wifiOk = !hasWifiRule || wifiMatch === true
+  // 外出模式：免位置驗證，直接可打卡（不擋距離/範圍）。
+  //   背景仍照抓 GPS，有抓到就把 lat/lng 一起送進紀錄（僅記錄不驗證），
+  //   抓不到也照打不卡住。
+  const isOuting = clockMode === 'outing'
   // 跨店打卡：store 若是 fallback (_matched=false) 則 canClock 一定 false
   // 真匹配時才走原本 gpsOk / wifiOk 邏輯
-  const canClock = location && store?._matched !== false && (gpsOk || wifiOk)
+  const canClock = isOuting
+    ? true
+    : (location && store?._matched !== false && (gpsOk || wifiOk))
 
   // Determine clock-in location name
   const getLocationName = () => {
@@ -383,9 +397,42 @@ export default function ClockPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
           <MapPin size={16} style={{ color: 'var(--cyan)' }} />
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)' }}>GPS 定位狀態</span>
+          {/* 重新定位 — 卡在「定位中」時可手動重觸發，任何時候都能按 */}
+          <button
+            type="button"
+            onClick={refreshLocation}
+            disabled={gpsRetrying}
+            style={{
+              marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4,
+              padding: '4px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+              background: 'var(--cyan-dim)', color: 'var(--cyan)',
+              border: '1px solid var(--cyan)', cursor: gpsRetrying ? 'default' : 'pointer',
+              opacity: gpsRetrying ? 0.5 : 1,
+            }}
+          >
+            <RefreshCw size={13} style={gpsRetrying ? { animation: 'spin 1s linear infinite' } : undefined} />
+            重新定位
+          </button>
         </div>
 
-        {gpsError && !gpsRetrying ? (
+        {isOuting ? (
+          // 外出模式：免位置驗證，GPS 僅背景記錄，不擋打卡、不顯示範圍外紅字
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '10px 14px', borderRadius: 10,
+            background: 'var(--green-dim)', border: '1px solid rgba(52,211,153,0.2)',
+          }}>
+            <CheckCircle size={18} style={{ color: 'var(--green)', flexShrink: 0 }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--green)' }}>外出模式 — 免位置驗證</div>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
+                {gpsRetrying ? '定位中，位置僅記錄不影響打卡'
+                  : location ? `位置已記錄${distance !== null && store?.lat ? `（距門市 ${distance >= 1000 ? `${(distance / 1000).toFixed(1)}km` : `${distance}m`}）` : ''}`
+                  : '未取得位置，仍可直接打卡'}
+              </div>
+            </div>
+          </div>
+        ) : gpsError && !gpsRetrying ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: gpsWeak ? 'var(--orange, #fb923c)' : 'var(--red)', fontSize: 13 }}>
             {gpsWeak ? <AlertTriangle size={16} /> : <XCircle size={16} />}
             <span>{gpsError}</span>
@@ -431,7 +478,7 @@ export default function ClockPage() {
         )}
 
         {/* WiFi IP Status */}
-        {hasWifiRule && (
+        {!isOuting && hasWifiRule && (
           <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Wifi size={14} style={{ color: 'var(--cyan)' }} />
