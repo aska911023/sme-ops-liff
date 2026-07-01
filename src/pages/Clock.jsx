@@ -297,6 +297,7 @@ export default function ClockPage() {
   }
 
   const [confirmOut, setConfirmOut] = useState(false)
+  const [clockInSuccess, setClockInSuccess] = useState(false)
 
   const handleClock = async (type) => {
     if (loading || !canClock) return
@@ -328,6 +329,11 @@ export default function ClockPage() {
         setTimeout(() => setMsg('⚠️ ' + data.reminder), 1500)
       } else {
         setMsg(base)
+      }
+      // 上班打卡 — 顯示成功 overlay 2 秒
+      if (type === 'in') {
+        setClockInSuccess(true)
+        setTimeout(() => setClockInSuccess(false), 2000)
       }
       // 成功後重置模式
       setClockMode('normal')
@@ -648,6 +654,27 @@ export default function ClockPage() {
           </div>
         )}
       </div>
+
+      {/* 上班打卡成功 overlay — 顯示 2 秒後自動消失 */}
+      {clockInSuccess && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 100,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 16,
+        }}>
+          <div style={{
+            width: 96, height: 96, borderRadius: '50%',
+            background: 'var(--green-dim)', border: '3px solid var(--green)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <CheckCircle size={52} style={{ color: 'var(--green)' }} />
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>上班打卡成功</div>
+          <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 600 }}>
+            {todayRecord?.clock_in || time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}
+          </div>
+        </div>
+      )}
 
       {/* 下班打卡 確認 modal — 防誤觸 */}
       {confirmOut && (
