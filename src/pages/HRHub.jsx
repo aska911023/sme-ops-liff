@@ -62,16 +62,18 @@ const MENU_GROUPS = [
 
 // 任務確認 (2026-05-09) 整合進「簽核中心 > 任務 tab」(/approve/task)，
 // 此處不再獨立列出。/task-confirmations 路由仍保留供 LINE deep link 用。
+// 每個主管功能各自的可見角色：
+//   儀表板 → 只有 super_admin/admin（後台分析數據）
+//   簽核中心 → super_admin/admin/manager（店長也是合法簽核人）
 const MANAGER_MENUS = [
-  { path: '/dashboard', icon: '📊', label: '儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
-  { path: '/approve', icon: '✅', label: '簽核中心', color: 'var(--green)', dim: 'var(--green-dim)' },
+  { path: '/dashboard', icon: '📊', label: '儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)', roles: ['super_admin', 'admin'] },
+  { path: '/approve', icon: '✅', label: '簽核中心', color: 'var(--green)', dim: 'var(--green-dim)', roles: ['super_admin', 'admin', 'manager'] },
 ]
 
 export default function HRHub() {
   const { employee } = useAuth()
-  // UI 閘門：主管功能（儀表板/簽核中心）限 super_admin/admin。
-  // manager（店長/督導混）人數多，不該看到主管面板；仍可經 LINE 卡片 deep-link 簽核。
-  const canApprove = ['super_admin', 'admin'].includes(employee?.role)
+  // UI 閘門：逐項按 roles 判斷（儀表板限 admin、簽核中心含 manager）
+  const managerMenus = MANAGER_MENUS.filter(m => m.roles.includes(employee?.role))
   // 門市稽核：由 liff.store_audit 權限碼控制（liff_get_employee_by_line_user 回傳），
   // 預設 admin+；可在主系統 系統設定→員工權限 逐人開關
   const canAudit = !!employee?.can_store_audit
@@ -80,11 +82,11 @@ export default function HRHub() {
     <div className="page">
       <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>📋 人事管理</div>
 
-      {canApprove && (
+      {managerMenus.length > 0 && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)', marginBottom: 10 }}>主管功能</div>
           <div className="menu-grid" style={{ marginBottom: 20 }}>
-            {MANAGER_MENUS.map(m => (
+            {managerMenus.map(m => (
               <Link key={m.path} to={m.path} className="menu-item" style={{ border: '1.5px solid rgba(52,211,153,0.2)' }}>
                 <div className="menu-icon" style={{ background: m.dim, border: `1.5px solid ${m.color}25` }}>{m.icon}</div>
                 <div className="menu-label">{m.label}</div>
