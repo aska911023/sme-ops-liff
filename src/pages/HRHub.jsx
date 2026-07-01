@@ -69,9 +69,9 @@ const MANAGER_MENUS = [
 
 export default function HRHub() {
   const { employee } = useAuth()
-  // UI 閘門：5 角色制下 super_admin/admin/manager 都看得到審核中心
-  // （真正的權限由 liff_approve_request RPC 依 role_permissions 把關）
-  const canApprove = ['super_admin', 'admin', 'manager'].includes(employee?.role)
+  // UI 閘門：主管功能（儀表板/簽核中心）限 super_admin/admin。
+  // manager（店長/督導混）人數多，不該看到主管面板；仍可經 LINE 卡片 deep-link 簽核。
+  const canApprove = ['super_admin', 'admin'].includes(employee?.role)
   // 門市稽核：由 liff.store_audit 權限碼控制（liff_get_employee_by_line_user 回傳），
   // 預設 admin+；可在主系統 系統設定→員工權限 逐人開關
   const canAudit = !!employee?.can_store_audit
