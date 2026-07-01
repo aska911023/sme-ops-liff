@@ -80,15 +80,11 @@ export function AuthProvider({ children }) {
       return
     }
 
-    // 同一個 LINE user，快取還是新鮮的 → 沿用快取，不重打 employee RPC
-    // （快取裡的 employee 還可能稍微舊但通常不會影響體驗）
-    if (cached?.profile?.lineUserId === profile.lineUserId) {
-      setLineProfile(profile)  // 更新 displayName 等可能變的欄位
-      return
-    }
-
-    // 換人或無快取 → 重抓 employee
-    if (cached) clearCache()  // 清舊的
+    // 快取只用來「立即渲染」，不代表資料最新。
+    // 無論同一人或換人，都必須背景重抓 employee，否則 role / 權限變更最多要等 24h TTL 才生效。
+    // （同一人時快取畫面已渲染中，背景更新是無感的；換人才清舊快取）
+    const sameUser = cached?.profile?.lineUserId === profile.lineUserId
+    if (cached && !sameUser) clearCache()
     setLineProfile(profile)
 
     try {
