@@ -116,6 +116,7 @@ export default function Leave() {
   const [existingAttach, setExistingAttach] = useState([]) // existing URLs from DB
   const [uploading, setUploading] = useState(false)
   const [benefitExtras, setBenefitExtras] = useState({}) // code → extra_days from benefit_policies
+  const [dbBalances, setDbBalances] = useState([])      // leave_balances rows from DB
   const [leaveSteps, setLeaveSteps] = useState({}) // 中文假別名稱 → {step, unit}
   const [compBalance, setCompBalance] = useState(null) // { total_remaining, ledgers: [...] }
 
@@ -143,7 +144,8 @@ export default function Leave() {
       supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_holidays'),
       supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([lr, hd, bp]) => {
+      supabase.rpc('liff_get_my_leave_balances', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([lr, hd, bp, lbRes]) => {
       const leaveList = Array.isArray(lr.data) ? lr.data : []
       setRecords(leaveList)
       setHolidays((Array.isArray(hd.data) ? hd.data : []).map(h => h.date))
@@ -178,6 +180,7 @@ export default function Leave() {
       }
       for (const k of Object.keys(extras)) delete extras[k]._s
       setBenefitExtras(extras)
+      setDbBalances(Array.isArray(lbRes.data) ? lbRes.data : [])
       setLoading(false)
     })
   }
@@ -794,6 +797,10 @@ export default function Leave() {
         const usedByType = (type) => approved
           .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
           .reduce((s, r) => s + (r.days || 0), 0)
+        // DB 餘額 map（與 leaveBalanceCalc 邏輯一致）
+        const dbMap = {}
+        for (const b of dbBalances) dbMap[b.leave_type] = { total: Number(b.total_days || 0), carry: Number(b.carry_over_days || 0) }
+
         const allBalances = [
           { label: '特休', total: annualTotal, used: annualUsed, extra: isEmpPT ? ptExtraHours : annualExtra },
           // onDemand 假別（產假/陪產/產檢/育嬰）不顯示在「假期餘額」— 不是每人每年固定有
@@ -801,7 +808,11 @@ export default function Leave() {
             .filter(([type]) => !LEAVE_INFO[type]?.onDemand)
             .map(([type, legalMax]) => {
               const extra = benefitExtras[type]?.extra_days || 0
-              return { label: type, total: legalMax + extra, used: usedByType(type), extra }
+              const db = dbMap[type]
+              const effectiveTotal = db && db.total > 0
+                ? Math.max(db.total, legalMax + extra) + db.carry
+                : legalMax + extra
+              return { label: type, total: effectiveTotal, used: usedByType(type), extra }
             }),
         ]
         const mainBalances = allBalances.filter(b => ['特休', '事假', '病假', '心理假'].includes(b.label))

@@ -76,22 +76,34 @@ export function getCalendarYearRange(year) {
  *   - leaveRequests: 員工已提交的請假單（filter 'status !== 已拒絕'）
  *   - benefitExtras: { 特休: { extra_days: 2 }, 病假: { extra_days: 5 }, ... }
  *   - calendarYear: 計算「其他假別」的曆年（預設今年）
+ *   - dbBalances: liff_get_my_leave_balances 回的陣列 [{leave_type, total_days, carry_over_days}]
+ *                 有 DB 記錄時 total = Math.max(dbTotal, 法定+加給) + carry_over
  * @returns Array<{ label, total, used, extra }>
  */
-export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0 }) {
+export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0, dbBalances = [] }) {
   const approved = leaveRequests.filter(r => r.status !== '已拒絕')
+
+  // DB 餘額 map（leave_type 中文 → {total_days, carry_over_days}）
+  const dbMap = {}
+  for (const b of dbBalances) {
+    dbMap[b.leave_type] = { total: Number(b.total_days || 0), carry: Number(b.carry_over_days || 0) }
+  }
 
   // 特休：到職週年制
   const annualRange = joinDate ? getAnnualLeaveRange(joinDate) : null
   const annualLegal = calcAnnualLeave(joinDate)
   const annualExtra = benefitExtras['特休']?.extra_days || 0
+  const annualDB = dbMap['特休']
 
   let annualTotal, annualUsed, annualExtraDisplay, annualIsHours
   if (isPartTime) {
     const ptInfo = calcPTAnnualLeaveHours(joinDate, weeklyHours)
     const dailyHours = (Number(weeklyHours) || 0) / 5 || 8
     const ptExtraHours = Math.round(annualExtra * 8 * Math.min(1, (Number(weeklyHours) || 0) / 40) * 10) / 10
-    annualTotal = Math.round((ptInfo.hours + ptExtraHours) * 10) / 10
+    const ptLegalTotal = Math.round((ptInfo.hours + ptExtraHours) * 10) / 10
+    annualTotal = annualDB && annualDB.total > 0
+      ? Math.max(annualDB.total * 8, ptLegalTotal) + annualDB.carry * 8
+      : ptLegalTotal
     annualUsed = annualRange
       ? approved
           .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
@@ -100,7 +112,10 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     annualExtraDisplay = ptExtraHours
     annualIsHours = true
   } else {
-    annualTotal = annualLegal + annualExtra
+    const legalTotal = annualLegal + annualExtra
+    annualTotal = annualDB && annualDB.total > 0
+      ? Math.max(annualDB.total, legalTotal) + annualDB.carry
+      : legalTotal
     annualUsed = annualRange
       ? approved
           .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
@@ -125,7 +140,11 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
       .filter(([type]) => !LEAVE_INFO[type]?.onDemand)
       .map(([type, legalMax]) => {
         const extra = benefitExtras[type]?.extra_days || 0
-        return { label: type, total: legalMax + extra, used: usedByType(type), extra }
+        const db = dbMap[type]
+        const effectiveTotal = db && db.total > 0
+          ? Math.max(db.total, legalMax + extra) + db.carry
+          : legalMax + extra
+        return { label: type, total: effectiveTotal, used: usedByType(type), extra }
       }),
   ]
 }

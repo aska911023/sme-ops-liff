@@ -51,7 +51,8 @@ export default function LeaveBalance() {
       supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_get_my_comp_time_balance', { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([reqRes, polRes, ctRes]) => {
+      supabase.rpc('liff_get_my_leave_balances', { p_line_user_id: lineProfile.lineUserId, p_year: year }),
+    ]).then(([reqRes, polRes, ctRes, lbRes]) => {
       // 補休餘額
       if (ctRes.data?.ok) {
         setCompBalance({
@@ -62,6 +63,7 @@ export default function LeaveBalance() {
       const reqs = Array.isArray(reqRes.data) ? reqRes.data : []
       const policies = Array.isArray(polRes.data) ? polRes.data : []
       const benefitExtras = parseBenefitExtras(policies)
+      const dbBalances = Array.isArray(lbRes.data) ? lbRes.data : []
       const all = computeAllBalances({
         joinDate: ctxEmployee?.join_date,
         leaveRequests: reqs,
@@ -69,6 +71,7 @@ export default function LeaveBalance() {
         calendarYear: year,
         isPartTime: ctxEmployee?.salary_type === 'hourly',
         weeklyHours: Number(ctxEmployee?.weekly_hours) || 0,
+        dbBalances,
       })
       setBalances(all)
       const total = all.reduce((s, b) => s + (b.total || 0), 0)
