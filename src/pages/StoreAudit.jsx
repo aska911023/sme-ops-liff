@@ -154,9 +154,11 @@ export default function StoreAudit() {
     if (busy) return
     if (!confirm('確認核准此份稽核？')) return
     setBusy(true)
-    const { data: res, error } = await supabase.rpc('liff_approve_request', {
+    // liff_approve_request 500 行大 function 在 20260604 restore 時把 store_audit 分支洗掉了
+    // 改走獨立 RPC liff_store_audit_approve（20260701220000）
+    const { data: res, error } = await supabase.rpc('liff_store_audit_approve', {
       p_line_user_id: lineProfile.lineUserId,
-      p_type: 'store_audit', p_id: Number(id), p_action: 'approve', p_reason: null,
+      p_id: Number(id), p_action: 'approve', p_reason: null,
     })
     setBusy(false)
     if (error || !res?.ok) { alert('失敗：' + (error?.message || res?.error || 'unknown')); return }
@@ -167,9 +169,9 @@ export default function StoreAudit() {
     if (busy) return
     if (!rejectReason.trim()) { alert('請填退回原因'); return }
     setBusy(true)
-    const { data: res, error } = await supabase.rpc('liff_approve_request', {
+    const { data: res, error } = await supabase.rpc('liff_store_audit_approve', {
       p_line_user_id: lineProfile.lineUserId,
-      p_type: 'store_audit', p_id: Number(id), p_action: 'reject', p_reason: rejectReason.trim(),
+      p_id: Number(id), p_action: 'reject', p_reason: rejectReason.trim(),
     })
     setBusy(false)
     if (error || !res?.ok) { alert('失敗：' + (error?.message || res?.error || 'unknown')); return }
