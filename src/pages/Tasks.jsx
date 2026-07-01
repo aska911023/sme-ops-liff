@@ -41,6 +41,9 @@ export default function Tasks() {
   const [sending, setSending] = useState(false)
   const [processing, setProcessing] = useState(null)
   const deepLinkAppliedRef = useRef(false)
+  // mention-only 任務（不在我的清單但被 @tag）
+  const [mentionTask, setMentionTask] = useState(null)
+  const [mentionTaskLoading, setMentionTaskLoading] = useState(false)
 
   const setScope = (next) => {
     const nextParams = new URLSearchParams(searchParams)
@@ -63,16 +66,34 @@ export default function Tasks() {
 
   useEffect(() => { loadList() }, [loadList])
 
+  // 被 @mention 的唯讀任務 open
+  const openMentionedTask = async (taskId) => {
+    setMentionTaskLoading(true)
+    const { data } = await supabase.rpc('liff_get_task_for_mentioned', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_task_id: taskId,
+    })
+    setMentionTaskLoading(false)
+    if (!data?.ok) { alert('找不到此任務或您沒有查看權限'); return }
+    setMentionTask(data)
+  }
+
   // BOT deep-link：網址帶 ?task=<id> 就自動展開該任務（只跑一次）
   useEffect(() => {
     if (deepLinkAppliedRef.current) return
-    if (!deepLinkTaskId || loading || tasks.length === 0) return
+    if (!deepLinkTaskId || loading) return
     const idNum = Number(deepLinkTaskId)
     const hit = tasks.find(t => t.id === idNum)
     if (hit) {
       deepLinkAppliedRef.current = true
       openDetail(hit)
-      // 展開完把 ?task= 從 URL 拿掉，避免 refresh 又展開一次
+      const nextParams = new URLSearchParams(searchParams)
+      nextParams.delete('task')
+      setSearchParams(nextParams, { replace: true })
+    } else if (!loading && lineProfile?.lineUserId) {
+      // 不在我的清單 → 嘗試 mention 路徑
+      deepLinkAppliedRef.current = true
+      openMentionedTask(idNum)
       const nextParams = new URLSearchParams(searchParams)
       nextParams.delete('task')
       setSearchParams(nextParams, { replace: true })
@@ -195,6 +216,57 @@ export default function Tasks() {
           <Plus size={14} /> 新增
         </button>
       </div>
+
+      {/* mention-only 唯讀任務（從 LINE 卡片帶進來的） */}
+      {mentionTaskLoading && (
+        <div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div>
+      )}
+      {mentionTask && (
+        <div style={{
+          marginBottom: 16, padding: '14px 16px', borderRadius: 12,
+          background: 'var(--card)', border: '2px solid var(--cyan)',
+        }}>
+          <div style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700, marginBottom: 6 }}>
+            💬 你在此任務被標記（唯讀）
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{mentionTask.title}</div>
+          <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 8 }}>
+            {mentionTask.store && <span>{mentionTask.store} · </span>}
+            {mentionTask.assignee && <span>負責人：{mentionTask.assignee} · </span>}
+            <span>狀態：{mentionTask.status}</span>
+          </div>
+          {mentionTask.description && (
+            <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 8, whiteSpace: 'pre-wrap' }}>
+              {mentionTask.description}
+            </div>
+          )}
+          {Array.isArray(mentionTask.comments) && mentionTask.comments.length > 0 && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>
+                💬 備註 ({mentionTask.comments.length})
+              </div>
+              {mentionTask.comments.map(c => (
+                <div key={c.id} style={{
+                  padding: '8px 10px', marginBottom: 6, borderRadius: 8,
+                  background: 'rgba(255,255,255,0.04)',
+                }}>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 2 }}>
+                    {c.author} · {new Date(c.created_at).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--t1)', whiteSpace: 'pre-wrap' }}>{c.content}</div>
+                </div>
+              ))}
+            </div>
+          )}
+          <button
+            onClick={() => setMentionTask(null)}
+            style={{
+              marginTop: 8, fontSize: 12, color: 'var(--t3)', background: 'none',
+              border: 'none', cursor: 'pointer', padding: 0,
+            }}
+          >收起</button>
+        </div>
+      )}
 
       {/* Scope tabs */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
