@@ -339,6 +339,12 @@ export default function ClockPage() {
     }
     setConfirmOut(false)
     setLoading(true)
+    // ★ 樂觀 UI：上班打卡一按就顯示成功動畫，不等後端往返（送 GPS + 處理常要 1~2 秒）。
+    //   後端在背景跑；若失敗，catch 會立刻收回並報錯。
+    if (type === 'in') {
+      setClockInSuccess(true)
+      setTimeout(() => setClockInSuccess(false), 2000)
+    }
 
     try {
       const action = type === 'in' ? 'clock_in' : 'clock_out'
@@ -361,14 +367,10 @@ export default function ClockPage() {
       } else {
         setMsg(base)
       }
-      // 上班打卡 — 顯示成功 overlay 2 秒
-      if (type === 'in') {
-        setClockInSuccess(true)
-        setTimeout(() => setClockInSuccess(false), 2000)
-      }
-      // 成功後重置模式
+      // 成功後重置模式（成功 overlay 已在按下時樂觀顯示）
       setClockMode('normal')
     } catch (e) {
+      setClockInSuccess(false)  // ★ 打卡失敗 → 立刻收回樂觀成功動畫
       setMsg('打卡失敗: ' + (e.message || '未知錯誤'))
     }
     setLoading(false)
