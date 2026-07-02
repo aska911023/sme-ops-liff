@@ -328,7 +328,7 @@ export default function ClockPage() {
   }
 
   const [confirmOut, setConfirmOut] = useState(false)
-  const [clockInSuccess, setClockInSuccess] = useState(false)
+  const [clockOverlay, setClockOverlay] = useState(null)  // null | 'pending' | 'success'
 
   const handleClock = async (type) => {
     if (loading || !canClock) return
@@ -339,12 +339,9 @@ export default function ClockPage() {
     }
     setConfirmOut(false)
     setLoading(true)
-    // ★ 樂觀 UI：上班打卡一按就顯示成功動畫，不等後端往返（送 GPS + 處理常要 1~2 秒）。
-    //   後端在背景跑；若失敗，catch 會立刻收回並報錯。
-    if (type === 'in') {
-      setClockInSuccess(true)
-      setTimeout(() => setClockInSuccess(false), 2000)
-    }
+    // ★ 一按即時回饋：先顯示「打卡中」spinner（不等後端往返），成功才切成功動畫。
+    //   永遠不會假成功 —— 失敗時 catch 收回 overlay 並報錯。
+    if (type === 'in') setClockOverlay('pending')
 
     try {
       const action = type === 'in' ? 'clock_in' : 'clock_out'
@@ -367,10 +364,15 @@ export default function ClockPage() {
       } else {
         setMsg(base)
       }
-      // 成功後重置模式（成功 overlay 已在按下時樂觀顯示）
+      // 成功 → 把「打卡中」切成成功動畫，1.5 秒後收回
+      if (type === 'in') {
+        setClockOverlay('success')
+        setTimeout(() => setClockOverlay(null), 1500)
+      }
+      // 成功後重置模式
       setClockMode('normal')
     } catch (e) {
-      setClockInSuccess(false)  // ★ 打卡失敗 → 立刻收回樂觀成功動畫
+      setClockOverlay(null)  // ★ 打卡失敗 → 收回 overlay + 報錯（不會假成功）
       setMsg('打卡失敗: ' + (e.message || '未知錯誤'))
     }
     setLoading(false)
@@ -720,7 +722,7 @@ export default function ClockPage() {
       </div>
 
       {/* 上班打卡成功 overlay — 顯示 2 秒後自動消失 */}
-      {clockInSuccess && (
+      {clockOverlay && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 100,
           display: 'flex', flexDirection: 'column',
@@ -728,15 +730,22 @@ export default function ClockPage() {
         }}>
           <div style={{
             width: 96, height: 96, borderRadius: '50%',
-            background: 'var(--green-dim)', border: '3px solid var(--green)',
+            background: clockOverlay === 'success' ? 'var(--green-dim)' : 'rgba(255,255,255,0.1)',
+            border: `3px solid ${clockOverlay === 'success' ? 'var(--green)' : 'rgba(255,255,255,0.3)'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <CheckCircle size={52} style={{ color: 'var(--green)' }} />
+            {clockOverlay === 'success'
+              ? <CheckCircle size={52} style={{ color: 'var(--green)' }} />
+              : <div className="spinner" style={{ width: 48, height: 48, borderColor: 'rgba(255,255,255,0.25)', borderTopColor: '#fff' }} />}
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>上班打卡成功</div>
-          <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 600 }}>
-            {todayRecord?.clock_in || time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#fff' }}>
+            {clockOverlay === 'success' ? '上班打卡成功' : '打卡中...'}
           </div>
+          {clockOverlay === 'success' && (
+            <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.75)', fontWeight: 600 }}>
+              {todayRecord?.clock_in || time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false })}
+            </div>
+          )}
         </div>
       )}
 
