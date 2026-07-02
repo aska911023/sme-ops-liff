@@ -377,9 +377,11 @@ export default function Leave() {
       const [sh, sm] = form.start_time.split(':').map(Number)
       const [eh, em] = form.end_time.split(':').map(Number)
       hours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
-      // 對齊到該假別的最小單位（小時模式）
+      // 對齊到該假別的最小單位（小時 → 直接 snap；分鐘 → 換分鐘 snap 再換回）
       if (currentStep.unit === 'hour') {
         hours = snapToStep(hours, currentStep.step)
+      } else if (currentStep.unit === 'minute') {
+        hours = snapToStep(hours * 60, currentStep.step) / 60
       }
       days = Math.round(hours / 8 * 10) / 10
     } else {
