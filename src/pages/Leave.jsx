@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508130000_hr_a_chain_db_trigger.sql)
 
-const TYPES = ['特休', '事假', '病假', '補休', '公假', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理假', '產檢假', '家庭照顧假', '公傷病假']
+const TYPES = ['特休', '事假', '病假', '補休', '公假', '天災', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理假', '產檢假', '家庭照顧假', '公傷病假']
 
 // 特休天數依年資計算（勞基法 §38）
 function calcAnnualLeave(joinDate) {
@@ -43,6 +43,7 @@ const LEAVE_INFO = {
   '陪產假': { max: 7, paid: '有薪', law: '性平法 §15', note: '配偶分娩前後15日內請畢', onDemand: true },
   '產檢假': { max: 7, paid: '有薪', law: '性平法 §15', note: '可以小時為單位，女性適用', onDemand: true },
   '公假': { max: null, paid: '有薪', law: '勞工請假規則 §3', note: '選舉、教召、作證等' },
+  '天災': { max: null, paid: '有薪', law: '天然災害停止上班辦法', note: '颱風、地震等宣布停止上班' },
   '產假': { max: 56, paid: '有薪', law: '勞基法 §50', note: '分娩8週，女性適用', onDemand: true },
   '育嬰假': { max: 730, paid: '津貼80%', law: '性平法 §16', note: '子女滿3歲前，2026可按日申請', onDemand: true },
   '公傷病假': { max: null, paid: '有薪', law: '勞基法 §43', note: '職業災害，工資照給' },
@@ -53,7 +54,7 @@ const LEAVE_LIMITS = Object.fromEntries(
 
 // benefit_policies code → LIFF 假別名稱對照
 const LEAVE_CODE_MAP = {
-  annual: '特休', sick: '病假', personal: '事假', official: '公假',
+  annual: '特休', sick: '病假', personal: '事假', official: '公假', disaster: '天災',
   maternity: '產假', paternity: '陪產假', parental: '育嬰假',
   menstrual: '生理假', marriage: '婚假', bereavement: '喪假',
   family_care: '家庭照顧假', mental_health: '心理假',
@@ -125,7 +126,7 @@ export default function Leave() {
     // form.type 是中文（如 '特休'），需轉成 code
     const codeMap = { '特休': 'annual', '病假': 'sick', '事假': 'personal', '婚假': 'marriage',
       '喪假': 'bereavement', '產假': 'maternity', '陪產假': 'paternity', '生理假': 'menstrual',
-      '家庭照顧假': 'family', '公假': 'official', '公傷假': 'injury' }
+      '家庭照顧假': 'family', '公假': 'official', '天災': 'disaster', '公傷假': 'injury' }
     const code = codeMap[form?.type] || ''
     const cfg = leaveSteps[code]
     if (!cfg) return { step: 0.5, unit: 'day' }  // fallback
