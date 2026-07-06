@@ -110,11 +110,17 @@ export default function StoreAudit() {
   }
   const updateDraftStaff = (idx, empId) => {
     const emp = employees.find(e => e.id === Number(empId))
-    setDraftOnDuty(prev => prev.map((d, i) => i === idx
+    const next = draftOnDuty.map((d, i) => i === idx
       ? { ...d, employee_id: emp?.id || null, employee_name: emp?.name || '' }
-      : d))
+      : d)
+    setDraftOnDuty(next)
+    saveDraftOnDuty(next)
   }
-  const removeDraftStaff = (idx) => setDraftOnDuty(prev => prev.filter((_, i) => i !== idx))
+  const removeDraftStaff = (idx) => {
+    const next = draftOnDuty.filter((_, i) => i !== idx)
+    setDraftOnDuty(next)
+    saveDraftOnDuty(next)
+  }
 
   // ─── 上傳簽名到 Storage ───
   const uploadSignature = async (dataUrl, audId, empId) => {
@@ -125,6 +131,21 @@ export default function StoreAudit() {
       .upload(path, blob, { contentType: 'image/png', upsert: true })
     if (error) throw error
     return supabase.storage.from('audit-signatures').getPublicUrl(path).data.publicUrl
+  }
+
+  // ─── 草稿即時保存當班人員/簽名（避免關掉重開簽名消失）───
+  const saveDraftOnDuty = async (list) => {
+    if (!isDraft || !lineProfile?.lineUserId) return
+    try {
+      const uploaded = await Promise.all(list.map(async d => ({
+        employee_id: d.employee_id,
+        employee_name: d.employee_name,
+        signature: d.signature_data_url ? await uploadSignature(d.signature_data_url, Number(id), d.employee_id) : null,
+      })))
+      await supabase.rpc('liff_save_audit_draft_on_duty', {
+        p_line_user_id: lineProfile.lineUserId, p_audit_id: Number(id), p_on_duty: uploaded,
+      })
+    } catch (e) { console.warn('save draft on_duty failed', e) }
   }
 
   // ─── 送出 ───
@@ -340,9 +361,15 @@ export default function StoreAudit() {
       {signingIdx !== null && (
         <SignaturePad open signerName={draftOnDuty[signingIdx]?.employee_name || ''}
           onClose={() => setSigningIdx(null)}
-          onConfirm={(dataUrl) => {
-            setDraftOnDuty(prev => prev.map((d, i) => i === signingIdx ? { ...d, signature_data_url: dataUrl } : d))
+          onConfirm={async (dataUrl) => {
+            const idx = signingIdx
             setSigningIdx(null)
+            // 立即上傳 Storage → state 存 URL → 存進草稿 DB（關掉重開簽名還在）
+            let url = dataUrl
+            try { url = await uploadSignature(dataUrl, Number(id), draftOnDuty[idx]?.employee_id) } catch { /* 上傳失敗先留 dataURL，送出時再上傳 */ }
+            const next = draftOnDuty.map((d, i) => i === idx ? { ...d, signature_data_url: url } : d)
+            setDraftOnDuty(next)
+            saveDraftOnDuty(next)
           }} />
       )}
     </div>
