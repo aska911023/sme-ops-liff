@@ -141,7 +141,7 @@ export default function StoreAudit() {
         signature: await uploadSignature(d.signature_data_url, Number(id), d.employee_id),
       })))
       const { data: res, error } = await supabase.rpc('submit_store_audit', {
-        p_audit_id: Number(id), p_on_duty: uploaded,
+        p_line_user_id: lineProfile.lineUserId, p_audit_id: Number(id), p_on_duty: uploaded,
       })
       if (error) throw error
       if (!res?.ok) throw new Error(res?.error || 'unknown')
