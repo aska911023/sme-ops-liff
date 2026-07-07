@@ -356,15 +356,23 @@ export default function Leave() {
       }
     }
 
-    // Check date overlap with existing leaves
+    // Check overlap with existing leaves（同一天不同時段的小時假不算衝突）
     const startD = new Date(form.start_date)
     const endD = new Date(form.end_date || form.start_date)
+    const toMin = t => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+    const formHourly = form.unit === 'hour' && (!form.end_date || form.end_date === form.start_date)
     const overlap = records.find(r => {
       if (r.id === editingId) return false // skip self when editing
       if (r.status === '已拒絕') return false
       const rStart = new Date(r.start_date)
       const rEnd = new Date(r.end_date || r.start_date)
-      return startD <= rEnd && endD >= rStart
+      if (!(startD <= rEnd && endD >= rStart)) return false   // 日期段沒交集
+      // 兩筆都是「同一天的小時假」→ 只在時間段真的重疊才算衝突
+      const rHourly = !!(r.start_time && r.end_time) && (!r.end_date || r.end_date === r.start_date)
+      if (formHourly && rHourly && form.start_date === r.start_date) {
+        return toMin(form.start_time) < toMin(r.end_time) && toMin(form.end_time) > toMin(r.start_time)
+      }
+      return true   // 其一為整天/跨日 → 日期重疊就算衝突
     })
     if (overlap) {
       alert(`日期與已申請的「${overlap.type}」（${overlap.start_date}${overlap.end_date !== overlap.start_date ? ' ~ ' + overlap.end_date : ''}）重疊，請修改日期`)
