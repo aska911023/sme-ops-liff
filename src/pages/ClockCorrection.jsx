@@ -14,6 +14,10 @@ const MODE_META = {
   outing:     { label: '外出', icon: '✈️', color: 'var(--green)',  dim: 'var(--green-dim)' },
 }
 
+// type 統一存英文（對齊主系統補登 trigger _apply_correction_to_attendance）；顯示用中文 label
+const TYPE_LABEL = { clock_in: '上班打卡', clock_out: '下班打卡' }
+const normType = (t) => (t === '上班打卡' ? 'clock_in' : t === '下班打卡' ? 'clock_out' : (t || 'clock_in'))
+
 export default function ClockCorrection() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
@@ -21,8 +25,8 @@ export default function ClockCorrection() {
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  // clock_corrections 實際欄位：type (上班打卡/下班打卡) + correction_time + clock_mode
-  const [form, setForm] = useState({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
+  // clock_corrections 實際欄位：type (clock_in/clock_out，英文) + correction_time + clock_mode
+  const [form, setForm] = useState({ date: '', type: 'clock_in', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
   const [stores, setStores] = useState([])
   const [submitting, setSubmitting] = useState(false)
 
@@ -43,7 +47,7 @@ export default function ClockCorrection() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const resetForm = () => {
-    setForm({ date: '', type: '上班打卡', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
+    setForm({ date: '', type: 'clock_in', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
     setEditingId(null)
     setShowForm(false)
   }
@@ -51,7 +55,7 @@ export default function ClockCorrection() {
   const handleEdit = (r) => {
     setForm({
       date: r.date,
-      type: r.type || '上班打卡',
+      type: normType(r.type),
       correction_time: r.correction_time || '',
       reason: r.reason || '',
       store: r.store || '',
@@ -131,8 +135,8 @@ export default function ClockCorrection() {
             <div className="form-group">
               <label className="form-label">類型</label>
               <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
-                <option>上班打卡</option>
-                <option>下班打卡</option>
+                <option value="clock_in">上班打卡</option>
+                <option value="clock_out">下班打卡</option>
               </select>
             </div>
             <div className="form-group">
@@ -230,7 +234,7 @@ export default function ClockCorrection() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--t2)' }}>
-            <span>{r.type}：{r.correction_time}</span>
+            <span>{TYPE_LABEL[r.type] || r.type}：{r.correction_time}</span>
             {r.clock_mode && r.clock_mode !== 'normal' && MODE_META[r.clock_mode] && (
               <span style={{
                 padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,

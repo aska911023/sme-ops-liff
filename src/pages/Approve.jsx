@@ -828,7 +828,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
           <ApproverRoleBadge role={c.my_approver_role} stepLabel={c.my_step_label} isSelf={c.is_self_approve} />
           <div style={{ fontSize: 13, color: 'var(--t2)' }}>{c.date}</div>
           <div style={{ fontSize: 13, color: 'var(--cyan)', fontWeight: 600, marginTop: 2 }}>
-            {c.type || '上班打卡'}：{c.correction_time || '未填'}
+            {({ clock_in: '上班打卡', clock_out: '下班打卡' }[c.type] || c.type || '上班打卡')}：{c.correction_time || '未填'}
           </div>
           {c.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{c.reason}</div>}
         </>}

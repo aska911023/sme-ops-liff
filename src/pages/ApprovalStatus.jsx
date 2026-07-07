@@ -87,7 +87,7 @@ export default function ApprovalStatus() {
     if (r._type === 'overtimes') return `${r.date} · ${r.hours}h`
     if (r._type === 'trips')     return `${r.destination || ''} · ${r.start_date} ~ ${r.end_date}`
     if (r._type === 'expenses')  return `${r.category || ''} · NT$ ${Number(r.amount || 0).toLocaleString()} · ${r.date}`
-    if (r._type === 'corrections') return `${r.type || '上班打卡'} · ${r.date} · ${r.correction_time || '未填'}`
+    if (r._type === 'corrections') return `${({ clock_in: '上班打卡', clock_out: '下班打卡' }[r.type] || r.type || '上班打卡')} · ${r.date} · ${r.correction_time || '未填'}`
     if (r._type === 'expense_requests') return `${r.title} · NT$ ${Number(r.estimated_amount || 0).toLocaleString()}`
     if (r._type === 'form_submissions') return r.template_name || '自訂表單'
     return ''
