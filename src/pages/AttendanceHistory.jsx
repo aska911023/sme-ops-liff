@@ -32,6 +32,7 @@ export default function AttendanceHistory() {
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth() + 1)
   const [records, setRecords] = useState([])
+  const [overtimes, setOvertimes] = useState([])   // 已核准加班單 → 當天加班紀錄
   const [loading, setLoading] = useState(true)
   const [selectedRecord, setSelectedRecord] = useState(null)
 
@@ -41,12 +42,15 @@ export default function AttendanceHistory() {
   useEffect(() => {
     if (!lineUserId) return
     setLoading(true)
-    supabase
-      .rpc('liff_get_my_attendance_month', { p_line_user_id: lineUserId, p_year_month: ym })
-      .then(({ data }) => {
-        setRecords(Array.isArray(data) ? data : [])
-        setLoading(false)
-      })
+    Promise.all([
+      supabase.rpc('liff_get_my_attendance_month', { p_line_user_id: lineUserId, p_year_month: ym }),
+      supabase.rpc('liff_list_overtime_requests', { p_line_user_id: lineUserId }),
+    ]).then(([att, ot]) => {
+      setRecords(Array.isArray(att.data) ? att.data : [])
+      setOvertimes((Array.isArray(ot.data) ? ot.data : [])
+        .filter(o => o.status === '已核准' && String(o.date || '').startsWith(ym)))
+      setLoading(false)
+    })
   }, [lineUserId, ym])
 
   // dateStr → record map
@@ -55,6 +59,13 @@ export default function AttendanceHistory() {
     for (const r of records) m[r.date] = r
     return m
   }, [records])
+
+  // dateStr → 加班單陣列（一天可能多筆）
+  const otByDate = useMemo(() => {
+    const m = {}
+    for (const o of overtimes) { (m[o.date] ||= []).push(o) }
+    return m
+  }, [overtimes])
 
   const stats = useMemo(() => {
     const clockedIn = records.filter(r => r.clock_in).length
@@ -136,14 +147,15 @@ export default function AttendanceHistory() {
           ) : cells.map((cell, i) => {
             if (!cell) return <div key={`empty-${i}`} />
             const r = recordByDate[cell.dateStr]
+            const dayOT = otByDate[cell.dateStr]
             const isToday = cell.dateStr === todayStr
             const isWeekend = i % 7 >= 5
             const sty = r?.status ? (STATUS_STYLE[r.status] || null) : null
             return (
               <button
                 key={cell.dateStr}
-                onClick={() => r && setSelectedRecord(r)}
-                disabled={!r}
+                onClick={() => (r || dayOT) && setSelectedRecord(r || { date: cell.dateStr })}
+                disabled={!r && !dayOT}
                 style={{
                   aspectRatio: '1', padding: 0,
                   background: r ? (sty?.bg || 'var(--card-hover)') : 'transparent',
@@ -157,9 +169,11 @@ export default function AttendanceHistory() {
               >
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{cell.d}</div>
                 {r ? (
-                  <div style={{ fontSize: 9, fontWeight: 600, color: sty?.color || 'var(--t3)' }}>
-                    {r.status || '?'}
+                  <div style={{ fontSize: 9, fontWeight: 600, color: sty?.color || 'var(--t3)', display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {r.status || '?'}{dayOT ? <span style={{ color: 'var(--orange)' }}>⚡</span> : null}
                   </div>
+                ) : dayOT ? (
+                  <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--orange)' }}>⚡加班</div>
                 ) : (
                   <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border)' }} />
                 )}
@@ -228,6 +242,24 @@ export default function AttendanceHistory() {
                 <div style={{ fontSize: 11, color: 'var(--orange)' }}>⏰ 遲到 {selectedRecord.late_minutes} 分鐘</div>
               )}
             </div>
+
+            {/* 加班（另計，來自加班單起訖時間）— 跟當天正常班分開顯示 */}
+            {(otByDate[selectedRecord.date] || []).length > 0 && (
+              <div style={{ background: 'rgba(251,146,60,0.12)', padding: '12px 14px', borderRadius: 10, marginBottom: 10, border: '1px solid var(--orange)' }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--orange)', marginBottom: 6 }}>⚡ 加班（另計）</div>
+                {otByDate[selectedRecord.date].map(o => (
+                  <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 4 }}>
+                    <Clock size={13} style={{ color: 'var(--orange)', flexShrink: 0 }} />
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--t1)' }}>
+                      {String(o.start_time || '').slice(0, 5) || '—'} → {String(o.end_time || '').slice(0, 5) || '—'}
+                    </span>
+                    <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--t2)' }}>
+                      {Number(o.ot_hours ?? o.hours ?? 0)} 小時
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{ background: 'var(--card)', padding: '12px 14px', borderRadius: 10, fontSize: 12, color: 'var(--t2)' }}>
               {/* 驗證方式 — 根據 clock_in_method 顯示，避免 outing (bypass) 看起來像 GPS 驗證 */}

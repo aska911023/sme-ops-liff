@@ -5,12 +5,10 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
-// 4 模式 tag — 跟主系統 Clock.jsx 同步
+// 補打卡只修「正常班」的打卡；加班走加班單（有起訖時間=打卡）、請假走請假單、換班走換班流程。
+// 故補打卡模式只留 一般 / 外出（attendance 也只支援這兩種 mode）。
 const MODE_META = {
   normal:     { label: '一般', icon: '🕒', color: 'var(--cyan)',   dim: 'var(--cyan-dim)' },
-  overtime:   { label: '加班', icon: '⚡', color: 'var(--orange)', dim: 'var(--orange-dim)' },
-  leave:      { label: '請假', icon: '🌴', color: 'var(--blue)',   dim: 'var(--blue-dim)' },
-  shift_swap: { label: '換班', icon: '🔄', color: 'var(--purple)', dim: 'var(--purple-dim)' },
   outing:     { label: '外出', icon: '✈️', color: 'var(--green)',  dim: 'var(--green-dim)' },
 }
 
@@ -151,7 +149,7 @@ export default function ClockCorrection() {
           {/* 4 模式選擇 — 與 Clock.jsx 對齊 */}
           <div className="form-group">
             <label className="form-label">補打卡模式</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6, marginBottom: 6 }}>
               {Object.entries(MODE_META).map(([key, m]) => {
                 const active = form.clock_mode === key
                 return (
