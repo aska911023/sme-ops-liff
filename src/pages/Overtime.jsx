@@ -131,9 +131,12 @@ export default function Overtime() {
     if (!form.hours || form.hours <= 0) { alert('加班時數計算為 0，請檢查起訖時間'); return }
     if (!form.store) { alert('請選擇加班門市'); return }
 
-    // Check duplicate date
-    const dup = records.find(r => r.id !== editingId && r.date === form.date && r.status !== '已拒絕')
-    if (dup) { alert(`${form.date} 已有加班申請`); return }
+    // 同日時段重疊才擋（同日不同時段的加班可各自請；對齊主系統）
+    const toMin = t => { const [h, m] = String(t || '').split(':').map(Number); return (h || 0) * 60 + (m || 0) }
+    const dup = records.find(r => r.id !== editingId && r.date === form.date
+      && !['已拒絕', '已駁回', '已退回', '已取消'].includes(r.status)
+      && toMin(form.start_time) < toMin(r.end_time) && toMin(form.end_time) > toMin(r.start_time))
+    if (dup) { alert(`${form.date} ${dup.start_time}~${dup.end_time} 已有加班（時段重疊）`); return }
 
     setSubmitting(true)
 
@@ -256,11 +259,6 @@ export default function Overtime() {
             <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
               本店加班最小單位 {step} 小時 · 訖時 ≤ 起時自動視為跨日
             </div>
-            {form.hours > 4 && (
-              <div style={{ fontSize: 11, color: 'var(--orange)', marginTop: 4 }}>
-                提醒：單日加班超過 4 小時，依勞基法加班費率較高
-              </div>
-            )}
           </div>
           <div className="form-group">
             <label className="form-label">加班原因</label>
