@@ -138,6 +138,17 @@ export default function Overtime() {
       && toMin(form.start_time) < toMin(r.end_time) && toMin(form.end_time) > toMin(r.start_time))
     if (dup) { alert(`${form.date} ${dup.start_time}~${dup.end_time} 已有加班（時段重疊）`); return }
 
+    // 本月加班上限 46h 硬擋（特例不計；DB trigger 也會擋）
+    const ym = form.date?.slice(0, 7)
+    const monthUsed = records
+      .filter(r => r.id !== editingId && r.date?.slice(0, 7) === ym
+        && ['已核准', '待審核', '申請中'].includes(r.status) && !r.is_exception)
+      .reduce((s, r) => s + (Number(r.hours) || 0), 0)
+    if (monthUsed + Number(form.hours) > 46) {
+      alert(`本月加班已達上限（46 小時）。當月已 ${monthUsed} 小時，本次 ${form.hours} 小時，合計 ${monthUsed + Number(form.hours)}`)
+      return
+    }
+
     setSubmitting(true)
 
     const payload = {
