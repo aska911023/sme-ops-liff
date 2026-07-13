@@ -24,7 +24,6 @@ export const LEAVE_INFO = {
   '特休':     { max: null, paid: '有薪',  law: '勞基法 §38',     note: '依年資計算，未休完應折算工資' },
   '事假':     { max: 14,   paid: '無薪',  law: '勞工請假規則 §7', note: '因事必須親自處理' },
   '病假':     { max: 30,   paid: '半薪',  law: '勞工請假規則 §4', note: '未住院30天/年，2026新制10天內不得不利處分' },
-  '心理假':   { max: 3,    paid: '有薪',  law: '2025新制',       note: '不需診斷證明，不列入考績' },
   '家庭照顧假': { max: 7,  paid: '無薪',  law: '性平法 §20',     note: '2026起可以小時為單位，不扣全勤' },
   '生理假':   { max: 12,   paid: '半薪',  law: '性平法 §14',     note: '每月1天，女性員工適用' },
   '婚假':     { max: 8,    paid: '有薪',  law: '勞工請假規則 §2', note: '登記日前10日起3個月內請畢' },
@@ -47,7 +46,7 @@ export const LEAVE_CODE_MAP = {
   annual: '特休', sick: '病假', personal: '事假', official: '公假', disaster: '天災',
   maternity: '產假', paternity: '陪產假', parental: '育嬰假',
   menstrual: '生理假', marriage: '婚假', bereavement: '喪假',
-  family_care: '家庭照顧假', mental_health: '心理假',
+  family_care: '家庭照顧假',
   occupational: '公傷病假', nursing: '哺乳時間', prenatal: '產檢假',
 }
 

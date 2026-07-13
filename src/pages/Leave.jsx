@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508130000_hr_a_chain_db_trigger.sql)
 
-const TYPES = ['特休', '事假', '病假', '補休', '公假', '天災', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '心理假', '產檢假', '家庭照顧假', '公傷病假']
+const TYPES = ['特休', '事假', '病假', '補休', '公假', '天災', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '產檢假', '家庭照顧假', '公傷病假']
 
 // 特休天數依年資計算（勞基法 §38）
 function calcAnnualLeave(joinDate) {
@@ -35,7 +35,6 @@ const LEAVE_INFO = {
   '事假': { max: 14, paid: '無薪', law: '勞工請假規則 §7', note: '因事必須親自處理' },
   '病假': { max: 30, paid: '半薪', law: '勞工請假規則 §4', note: '未住院30天/年，2026新制10天內不得不利處分' },
   '補休': { max: null, paid: '由補休時數抵扣', law: '', note: '加班申請選補休累積；FIFO 扣最早到期那筆' },
-  '心理假': { max: 3, paid: '有薪', law: '2025新制', note: '不需診斷證明，不列入考績' },
   '家庭照顧假': { max: 7, paid: '無薪', law: '性平法 §20', note: '2026起可以小時為單位，不扣全勤' },
   '生理假': { max: 12, paid: '半薪', law: '性平法 §14', note: '每月1天，女性員工適用' },
   '婚假': { max: 8, paid: '有薪', law: '勞工請假規則 §2', note: '登記日前10日起3個月內請畢' },
@@ -57,7 +56,7 @@ const LEAVE_CODE_MAP = {
   annual: '特休', sick: '病假', personal: '事假', official: '公假', disaster: '天災',
   maternity: '產假', paternity: '陪產假', parental: '育嬰假',
   menstrual: '生理假', marriage: '婚假', bereavement: '喪假',
-  family_care: '家庭照顧假', mental_health: '心理假',
+  family_care: '家庭照顧假',
   occupational: '公傷病假', nursing: '哺乳時間', prenatal: '產檢假',
 }
 
@@ -826,8 +825,8 @@ export default function Leave() {
               return { label: type, total: effectiveTotal, used: usedByType(type), extra }
             }),
         ]
-        const mainBalances = allBalances.filter(b => ['特休', '事假', '病假', '心理假'].includes(b.label))
-        const otherBalances = allBalances.filter(b => !['特休', '事假', '病假', '心理假'].includes(b.label))
+        const mainBalances = allBalances.filter(b => ['特休', '事假', '病假'].includes(b.label))
+        const otherBalances = allBalances.filter(b => !['特休', '事假', '病假'].includes(b.label))
         const displayed = showAllBalances ? allBalances : mainBalances
 
         return (
