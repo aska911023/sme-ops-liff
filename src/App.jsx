@@ -50,6 +50,7 @@ import StoreAuditNew from './pages/StoreAuditNew'
 import Resignation from './pages/Resignation'
 import PersonnelTransfer from './pages/PersonnelTransfer'
 import StoreRepair from './pages/StoreRepair'
+import WorkOrders from './pages/WorkOrders'
 
 // CRM pages
 import NewCustomer from './pages/NewCustomer'
@@ -235,6 +236,7 @@ export default function App() {
         <Route path="/resignation" element={<Resignation />} />
         <Route path="/personnel-transfer" element={<PersonnelTransfer />} />
         <Route path="/store-repair" element={<StoreRepair />} />
+        <Route path="/work-orders" element={<WorkOrders />} />
 
         {/* CRM Hub + pages */}
         <Route path="/crm" element={<CRMHub />} />
