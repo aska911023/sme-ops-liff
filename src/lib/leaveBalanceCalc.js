@@ -89,6 +89,8 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
   // DB 餘額 map（key 統一成中文 label：DB 存 code(annual/sick)→用 LEAVE_CODE_MAP 轉回中文）
   const dbMap = {}
   for (const b of dbBalances) {
+    // 可休期間已過(expires_at < 今天)→ 略過不顯示(如謀職假期間已結束)
+    if (b.expires_at && String(b.expires_at).slice(0, 10) < todayStr) continue
     const key = LEAVE_CODE_MAP[b.leave_type] || b.leave_type
     const notStarted = !!(b.period_start && String(b.period_start).slice(0, 10) > todayStr)
     dbMap[key] = {
