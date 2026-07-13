@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ChevronLeft, Plus, Building2, Send, Inbox, List, X, CheckCircle2, XCircle, Flag } from 'lucide-react'
+import { ChevronLeft, Plus, Building2, Send, Inbox, List, X, CheckCircle2, Flag } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -56,7 +56,6 @@ export default function WorkOrders() {
   const inboxOpen = data.orders.filter(o => o.target_department_id === myDept && ['待受理', '處理中'].includes(o.status)).length
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
-  const deptName = (id) => data.departments.find(d => d.id === id)?.name || '—'
   const storeName = (id) => data.stores.find(s => s.id === id)?.name || `#${id}`
 
   const submitCreate = async () => {
@@ -154,19 +153,21 @@ export default function WorkOrders() {
       )}
 
       {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, onClose: () => setShowCreate(false) }} />}
-      {detail && <DetailOverlay {...{ o: detail, me: data.me, employees: data.employees, deptName, storeName, busy, act, onClose: () => setDetail(null) }} />}
+      {detail && <DetailOverlay {...{ o: detail, me: data.me, employees: data.employees, storeName, busy, act, onClose: () => setDetail(null) }} />}
     </div>
   )
 }
 
+// 整頁式覆蓋（蓋過底部 tab bar，避免內容被卡在下方）
 function Overlay({ title, onClose, children }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxHeight: '90vh', overflowY: 'auto', background: 'var(--bg)', borderRadius: '16px 16px 0 0', padding: 18 }}>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, flex: 1 }}>{title}</div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', display: 'flex' }}><X size={20} /></button>
-        </div>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--bg)', zIndex: 200, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--t2)', cursor: 'pointer', display: 'flex' }}><ChevronLeft size={22} /></button>
+        <div style={{ fontSize: 16, fontWeight: 700, flex: 1 }}>{title}</div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--t3)', cursor: 'pointer', display: 'flex' }}><X size={20} /></button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, paddingBottom: 40 }}>
         {children}
       </div>
     </div>
@@ -217,7 +218,7 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
   )
 }
 
-function DetailOverlay({ o, me, employees, deptName, storeName, busy, act, onClose }) {
+function DetailOverlay({ o, me, employees, storeName, busy, act, onClose }) {
   const [accepting, setAccepting] = useState(false)
   const [aForm, setAForm] = useState({ assignee_id: o.assignee_id ? String(o.assignee_id) : '', scheduled_due_date: o.scheduled_due_date || o.expected_due_date || '' })
   const myId = me?.id, myDept = me?.department_id
