@@ -83,11 +83,20 @@ export function getCalendarYearRange(year) {
 export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0, dbBalances = [] }) {
   const approved = leaveRequests.filter(r => r.status !== '已拒絕')
 
+  // 今天(YYYY-MM-DD)：可休期間起日 > 今天(未生效)→ 可休算 0，只看當下能休的
+  const _t = new Date()
+  const todayStr = `${_t.getFullYear()}-${String(_t.getMonth() + 1).padStart(2, '0')}-${String(_t.getDate()).padStart(2, '0')}`
   // DB 餘額 map（key 統一成中文 label：DB 存 code(annual/sick)→用 LEAVE_CODE_MAP 轉回中文）
   const dbMap = {}
   for (const b of dbBalances) {
     const key = LEAVE_CODE_MAP[b.leave_type] || b.leave_type
-    dbMap[key] = { total: Number(b.total_days || 0), used: Number(b.used_days || 0), carry: Number(b.carry_over_days || 0) }
+    const notStarted = !!(b.period_start && String(b.period_start).slice(0, 10) > todayStr)
+    dbMap[key] = {
+      total: Number(b.total_days || 0),
+      used: Number(b.used_days || 0),
+      carry: Number(b.carry_over_days || 0),
+      notStarted,
+    }
   }
 
   // 特休：到職週年制
@@ -102,9 +111,11 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     const dailyHours = (Number(weeklyHours) || 0) / 5 || 8
     const ptExtraHours = Math.round(annualExtra * 8 * Math.min(1, (Number(weeklyHours) || 0) / 40) * 10) / 10
     const ptLegalTotal = Math.round((ptInfo.hours + ptExtraHours) * 10) / 10
-    annualTotal = annualDB && annualDB.total > 0
-      ? Math.max(annualDB.total * 8, ptLegalTotal) + annualDB.carry * 8
-      : ptLegalTotal
+    annualTotal = annualDB?.notStarted
+      ? 0  // 特休期間未生效(未滿6月)→ 當下可休 0
+      : (annualDB && annualDB.total > 0
+        ? Math.max(annualDB.total * 8, ptLegalTotal) + annualDB.carry * 8
+        : ptLegalTotal)
     // 已休：有 DB(104)餘額 → 讀 used_days×8(小時)；否則從請假單算
     annualUsed = annualDB
       ? Math.round(annualDB.used * 8 * 10) / 10
@@ -117,9 +128,11 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     annualIsHours = true
   } else {
     const legalTotal = annualLegal + annualExtra
-    annualTotal = annualDB && annualDB.total > 0
-      ? Math.max(annualDB.total, legalTotal) + annualDB.carry
-      : legalTotal
+    annualTotal = annualDB?.notStarted
+      ? 0  // 特休期間未生效(未滿6月)→ 當下可休 0
+      : (annualDB && annualDB.total > 0
+        ? Math.max(annualDB.total, legalTotal) + annualDB.carry
+        : legalTotal)
     // 已休：有 DB(104)餘額 → 讀 used_days(天)；否則從請假單算
     annualUsed = annualDB
       ? annualDB.used
@@ -148,17 +161,17 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
       .map(([type, legalMax]) => {
         const extra = benefitExtras[type]?.extra_days || 0
         const db = dbMap[type]
-        const effectiveTotal = db && db.total > 0
-          ? Math.max(db.total, legalMax + extra) + db.carry
-          : legalMax + extra
+        const effectiveTotal = db?.notStarted
+          ? 0  // 期間未生效 → 當下可休 0
+          : (db && db.total > 0 ? Math.max(db.total, legalMax + extra) + db.carry : legalMax + extra)
         // 已休：有 DB(104)→讀 used_days；否則從請假單算
         return { label: type, total: effectiveTotal, used: db ? db.used : usedByType(type), extra }
       }),
     // 殘骸/非標準假別（104 舊系統結算/謀職假等，不在 LEAVE_LIMITS）→ 直接顯示 DB 值
     ...Object.entries(dbMap)
       .filter(([label]) => label !== '特休' && !LEAVE_LIMITS[label])
-      .filter(([, v]) => (v.total + v.carry) > 0 || v.used > 0)
-      .map(([label, v]) => ({ label, total: v.total + v.carry, used: v.used, extra: 0 })),
+      .map(([label, v]) => ({ label, total: v.notStarted ? 0 : (v.total + v.carry), used: v.used, extra: 0 }))
+      .filter(r => r.total > 0 || r.used > 0),
   ]
 }
 
