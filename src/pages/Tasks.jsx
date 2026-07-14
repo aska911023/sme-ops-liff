@@ -515,6 +515,9 @@ function FormBindingsBlock({ bindings, viewerEmpId, lineUserId }) {
     else if (b.form_type === 'store_audit') {
       url = `/store-audits/new?binding_id=${b.id}${taskQs}`
     }
+    else if (b.form_type === 'work_order') {
+      url = `/work-orders?binding_id=${b.id}${taskQs}`
+    }
     if (url) window.location.href = url
     else alert(`「${b.form_label}」無法在 LIFF 填寫，請至電腦版 SME Ops 系統`)
   }

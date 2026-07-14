@@ -47,6 +47,12 @@ export default function WorkOrders() {
     if (row) { setDetail(row); setSearchParams(sp => { const x = new URLSearchParams(sp); x.delete('focus'); return x }, { replace: true }) }
   }, [data.orders, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 從任務綁定「跨部門工單」填寫過來(?binding_id=N)→ 自動開開單
+  const bindingId = searchParams.get('binding_id')
+  useEffect(() => {
+    if (bindingId && !loading) { setForm(emptyForm()); setShowCreate(true) }
+  }, [bindingId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const myId = data.me?.id, myDept = data.me?.department_id
   const tabbed = useMemo(() => {
     if (tab === 'inbox') return data.orders.filter(o => o.target_department_id === myDept)
@@ -63,7 +69,7 @@ export default function WorkOrders() {
     if (!form.title.trim()) return alert('請填主旨')
     if (!form.expected_due_date) return alert('請選期望完成日')
     setBusy(true)
-    const { data: res, error } = await supabase.rpc('liff_create_work_order', {
+    const base = {
       p_line_user_id: lineProfile.lineUserId,
       p_target_department_id: Number(form.target_department_id),
       p_title: form.title.trim(),
@@ -72,10 +78,20 @@ export default function WorkOrders() {
       p_expected_due_date: form.expected_due_date,
       p_store_id: form.store_id ? Number(form.store_id) : null,
       p_assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
-    })
+    }
+    const { data: res, error } = bindingId
+      ? await supabase.rpc('liff_create_work_order_for_binding', { ...base, p_binding_id: Number(bindingId) })
+      : await supabase.rpc('liff_create_work_order', base)
     setBusy(false)
     if (error || !res?.ok) return alert('開單失敗：' + (error?.message || res?.error || ''))
-    setShowCreate(false); setForm(emptyForm()); load()
+    setShowCreate(false); setForm(emptyForm())
+    if (bindingId) {
+      // 綁定填完 → 回到任務
+      const taskId = searchParams.get('task_id')
+      alert('已開工單並綁定任務')
+      if (taskId) { window.location.href = `/tasks?task=${taskId}`; return }
+    }
+    load()
   }
 
   const act = async (rpc, args, okMsg) => {
