@@ -249,6 +249,7 @@ function DetailOverlay({ o, me, employees, storeName, busy, act, onClose }) {
       <Row label="期望完成">{o.expected_due_date}</Row>
       <Row label="排定完成">{o.scheduled_due_date || <span style={{ color: 'var(--t3)' }}>—（受理時填）</span>}</Row>
       {o.store_id && <Row label="關聯門市">{storeName(o.store_id)}</Row>}
+      {o.linked_type && <Row label="執行方式">已轉{o.linked_type === 'project' ? '專案' : '流程'}（完成由裡面任務決定）</Row>}
       <Row label="說明"><span style={{ whiteSpace: 'pre-wrap' }}>{o.description || '—'}</span></Row>
       {o.reject_reason && <Row label="退回原因"><span style={{ color: 'var(--red)' }}>{o.reject_reason}</span></Row>}
 
@@ -277,12 +278,21 @@ function DetailOverlay({ o, me, employees, storeName, busy, act, onClose }) {
             </div>
           )
         )}
-        {/* 處理中：承辦/目標部門 完成/退回 */}
+        {/* 處理中：綁了專案/流程 → 提示自動;沒綁 → 回報完成 / 轉專案 / 退回 */}
         {o.status === '處理中' && (isAssignee || isTargetDept) && (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button disabled={busy} onClick={() => act('liff_complete_work_order', { p_id: o.id }, '已回報完成')} style={btn('var(--green)')}><CheckCircle2 size={14} style={{ verticalAlign: -2 }} /> 回報完成</button>
-            <button disabled={busy} onClick={doReject} style={btn('var(--red)')}>退回</button>
-          </div>
+          o.linked_type ? (
+            <div style={{ padding: 12, borderRadius: 10, background: 'var(--card)', border: '1px solid var(--border)', fontSize: 13, color: 'var(--t2)' }}>
+              已轉<b>{o.linked_type === 'project' ? '專案' : '流程'}</b>執行 —— 完成由裡面任務全數完成後<b>自動關閉</b>，不需手動回報。
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button disabled={busy} onClick={() => act('liff_complete_work_order', { p_id: o.id }, '已回報完成')} style={btn('var(--green)')}><CheckCircle2 size={14} style={{ verticalAlign: -2 }} /> 回報完成</button>
+                <button disabled={busy} onClick={doReject} style={btn('var(--red)')}>退回</button>
+              </div>
+              <button disabled={busy} onClick={() => { if (window.confirm('轉成專案執行？之後完成由專案任務決定、不能手動回報。（到電腦版加任務）')) act('liff_convert_work_order_to_project', { p_id: o.id }, '已轉專案，請至電腦版加任務') }} style={{ ...btn('var(--purple)'), width: '100%' }}>轉專案執行</button>
+            </div>
+          )
         )}
         {/* 已完成：申請人確認結案 */}
         {o.status === '已完成' && isRequester && (
