@@ -64,9 +64,13 @@ export default function ClockCorrection() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const handleDelete = async (_r) => {
-    // 刪除補打卡尚未做 RPC；暫時只支援新建
-    alert('目前不支援撤回，請聯繫管理員')
+  const handleDelete = async (r) => {
+    if (!confirm('撤回這張補打卡申請？')) return
+    const { error } = await supabase.rpc('liff_delete_clock_correction', {
+      p_line_user_id: lineProfile.lineUserId, p_id: r.id,
+    })
+    if (error) { alert('撤回失敗：' + error.message); return }
+    reload()
   }
 
   const handleSubmit = async () => {
@@ -217,11 +221,13 @@ export default function ClockCorrection() {
               <span className={`badge ${statusBadge(r.status)}`}>{r.status}</span>
               {r.status === '待審核' && (
                 <>
+                  {(r.current_step ?? 0) === 0 && (
                   <button onClick={() => handleEdit(r)} style={{
                     padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
                     background: 'var(--card)', color: 'var(--cyan)', cursor: 'pointer', fontSize: 11,
                     display: 'flex', alignItems: 'center', gap: 3,
                   }}><Pencil size={11} /> 編輯</button>
+                  )}
                   <button onClick={() => handleDelete(r)} style={{
                     padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border2)',
                     background: 'var(--card)', color: 'var(--red)', cursor: 'pointer', fontSize: 11,
