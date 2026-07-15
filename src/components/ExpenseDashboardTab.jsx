@@ -9,6 +9,13 @@ const RATE_NOTE = 'USD×32、JPY×0.21、CNY×4.4、EUR×35'
 
 const toTWD  = (amt, cur) => Math.round((amt || 0) * (RATES[cur] || 1))
 const fmtTWD = (n) => 'NT$' + Math.round(n).toLocaleString('zh-TW')
+// 摘要卡用:大數字縮成 萬/億(NT$3,296萬),避免窄卡片被切
+const fmtMoneyShort = (n) => {
+  n = Math.round(n || 0)
+  if (n >= 1e8) return 'NT$' + (n / 1e8).toFixed(n % 1e8 === 0 ? 0 : 1) + '億'
+  if (n >= 1e4) return 'NT$' + Math.round(n / 1e4).toLocaleString('zh-TW') + '萬'
+  return 'NT$' + n.toLocaleString('zh-TW')
+}
 const fmtAmt = (n, cur) =>
   (cur === 'TWD' ? 'NT$' : cur + ' ') + (n || 0).toLocaleString('zh-TW')
 
@@ -396,7 +403,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
         { label: '總申請', value: expTally.total },
         { label: '待處理', value: expTally.pending, color: 'var(--orange)' },
         { label: '核准率', value: `${expTally.donePct}%`, color: 'var(--green)' },
-        { label: '本期費用', value: `≈${fmtTWD(expenseTWD)}`, color: 'var(--cyan)', small: true },
+        { label: '本期費用', value: `≈${fmtMoneyShort(expenseTWD)}`, color: 'var(--cyan)', small: true },
       ]} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
