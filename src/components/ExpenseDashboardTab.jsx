@@ -26,10 +26,15 @@ const STATUS_COLOR = {
   '申請中':      '#3b82f6',
   '已核准':      '#10b981',
   '已駁回':      '#ef4444',
+  '已取消':      '#94a3b8',
   '未送核銷':    '#f59e0b',
   '待核銷':      '#6366f1',
   '已核銷':      '#06b6d4',
   '核銷被駁回':  '#ef4444',
+  // 驗收桶（顯示字樣，DB 狀態值仍是核銷）
+  '未送驗收':    '#f59e0b',
+  '已驗收':      '#06b6d4',
+  '驗收被駁回':  '#ef4444',
   // expenses（經常性費用）
   '待審核':      '#3b82f6',
   // store_repair_requests
@@ -39,7 +44,7 @@ const STATUS_COLOR = {
   // goods_transfer_requests
   '草稿':        '#94a3b8',
   '申請審核中':  '#3b82f6',
-  '待驗收':      '#f59e0b',
+  '待驗收':      '#6366f1',
   '驗收審核中':  '#6366f1',
   '已完成':      '#10b981',
   '已撤回':      '#ef4444',
@@ -64,10 +69,10 @@ function bucketApply(rows) {
 function bucketSettle(rows) {
   const sum = (pred) => rows.filter(pred).reduce((s, r) => s + (r.count || 0), 0)
   return {
-    '未送核銷':   sum(r => r.status === '已核准'),
-    '待核銷':     sum(r => r.status === '待核銷'),
-    '已核銷':     sum(r => r.status === '已核銷'),
-    '核銷被駁回': sum(r => r.status === '核銷已退回'),
+    '未送驗收':   sum(r => r.status === '已核准'),
+    '待驗收':     sum(r => r.status === '待核銷'),
+    '已驗收':     sum(r => r.status === '已核銷'),
+    '驗收被駁回': sum(r => r.status === '核銷已退回'),
   }
 }
 // 其他表：status → count 直接對映
@@ -412,21 +417,19 @@ export function ExpenseDashboardTab({ lineUserId }) {
         <Block title="申請狀態" buckets={expApplyBkts}
           statuses={['申請中', '已核准', '已駁回']}
           amounts={expApplyAmts} amountLabel="預估金額（估算匯率）" isActual={false} />
-        <Block title="核銷狀態" buckets={expSettleBkts}
-          statuses={['未送核銷', '待核銷', '已核銷', '核銷被駁回']}
-          labelSuffix="(核銷)"
+        <Block title="驗收狀態" buckets={expSettleBkts}
+          statuses={['未送驗收', '待驗收', '已驗收', '驗收被駁回']}
           amounts={expSettleAmts} amountLabel="實際金額" isActual={true} />
 
         <SectionTitle>🛒 叫貨申請</SectionTitle>
         <Block title="申請狀態" buckets={orderApplyBkts}
           statuses={['申請中', '已核准', '已駁回']} />
         <Block title="驗收狀態" buckets={orderSettleBkts}
-          statuses={['未送核銷', '待核銷', '已核銷', '核銷被駁回']}
-          labelSuffix="(驗收)" />
+          statuses={['未送驗收', '待驗收', '已驗收', '驗收被駁回']} />
 
         <SectionTitle>🔧 門市報修</SectionTitle>
-        <Block title="報修狀態" buckets={repairBkts}
-          statuses={['待處理', '處理中', '已完成', '已關閉']} />
+        <Block title="申請狀態" buckets={repairBkts}
+          statuses={['申請中', '已核准', '已駁回', '已取消']} />
 
         <SectionTitle>💸 經常性費用</SectionTitle>
         <Block title="費用狀態" buckets={regExpBkts}
@@ -485,8 +488,7 @@ export function NonExpenseDashboardTab({ lineUserId }) {
         <Block title="申請狀態" buckets={nonexpApplyBkts}
           statuses={['申請中', '已核准', '已駁回']} />
         <Block title="驗收狀態" buckets={nonexpSettleBkts}
-          statuses={['未送核銷', '待核銷', '已核銷', '核銷被駁回']}
-          labelSuffix="(驗收)" />
+          statuses={['未送驗收', '待驗收', '已驗收', '驗收被駁回']} />
 
         <SectionTitle>📦 商品調撥</SectionTitle>
         <Block title="調撥狀態" buckets={transferBkts}
