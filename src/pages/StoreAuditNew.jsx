@@ -31,7 +31,8 @@ export default function StoreAuditNew() {
   const [storeId, setStoreId] = useState('')
   const today = new Date().toISOString().slice(0, 10)
   const [date, setDate] = useState(today)
-  const [shift, setShift] = useState('')
+  const [shifts, setShifts] = useState([])
+  const toggleShift = (sh) => setShifts(prev => prev.includes(sh) ? prev.filter(x => x !== sh) : [...prev, sh])
   const [arrive, setArrive] = useState('')
   const [depart, setDepart] = useState('')
   const [saving, setSaving] = useState(false)
@@ -54,7 +55,7 @@ export default function StoreAuditNew() {
       p_line_user_id: lineProfile.lineUserId,
       p_store_id: Number(storeId),
       p_audit_date: date,
-      p_shift: shift || null,
+      p_shift: shifts.length ? shifts.join('、') : null,
       p_arrive_time: arrive || null,
       p_depart_time: depart || null,
       p_binding_id: bindingId,
@@ -74,7 +75,7 @@ export default function StoreAuditNew() {
       <button className="back-btn" onClick={() => navigate(-1)}><ChevronLeft size={16} /> 返回</button>
       <div className="header">
         <div className="header-title">📝 新增稽核單</div>
-        <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>建立後將自動帶入 42 項評核</div>
+        <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>建立後將自動帶入 142 項評核</div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }}>
@@ -86,19 +87,28 @@ export default function StoreAuditNew() {
           </select>
         </Field>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="日期 *">
-            <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)}
-              style={{ width: '100%', padding: 10, borderRadius: 8, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)' }} />
-          </Field>
-          <Field label="班次">
-            <select className="form-input" value={shift} onChange={e => setShift(e.target.value)}
-              style={{ width: '100%', padding: 10, borderRadius: 8, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)' }}>
-              <option value="">未指定</option>
-              {SHIFTS.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </Field>
-        </div>
+        <Field label="日期 *">
+          <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)}
+            style={{ width: '100%', padding: 10, borderRadius: 8, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)' }} />
+        </Field>
+        <Field label="視察班別（可複選）">
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {SHIFTS.map(sh => {
+              const on = shifts.includes(sh)
+              return (
+                <button key={sh} type="button" onClick={() => toggleShift(sh)}
+                  style={{
+                    padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                    border: on ? '1px solid #22c55e' : '1px solid var(--border)',
+                    background: on ? 'rgba(34,197,94,0.15)' : 'var(--glass)',
+                    color: on ? '#22c55e' : 'var(--t2)',
+                  }}>
+                  {on ? '✓ ' : ''}{sh}
+                </button>
+              )
+            })}
+          </div>
+        </Field>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="到店時間">

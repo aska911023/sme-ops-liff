@@ -141,8 +141,8 @@ export default function StoreAudits() {
                   }}>
                     {ROLE_LABEL[r.my_role]}
                   </span>
-                  <span style={{ color: r.total_deducted > 0 ? '#ef4444' : 'var(--t3)' }}>
-                    扣 {r.total_deducted} / {r.total_max_score}
+                  <span style={{ fontWeight: 700, color: r.avg_score >= 90 ? '#22c55e' : r.avg_score >= 70 ? '#f59e0b' : r.avg_score > 0 ? '#ef4444' : 'var(--t3)' }}>
+                    {r.avg_score > 0 ? `總平均 ${r.avg_score}` : '未評分'}
                   </span>
                 </div>
                 {r.need_my_approve && (

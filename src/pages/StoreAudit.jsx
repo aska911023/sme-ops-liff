@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ChevronLeft, Check, X, ClipboardCheck, AlertCircle, Edit3, Send, Paperclip } from 'lucide-react'
+import { ChevronLeft, Check, X, ClipboardCheck, AlertCircle, Edit3, Send, Paperclip, Star } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
@@ -14,6 +14,25 @@ const STATUS_COLOR = {
   '已退回': '#ef4444',
 }
 
+const CAT_ORDER = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 }
+
+// 依 item_no → 兩層分組：大類 → 關聯群組
+function buildCats(items) {
+  const cats = {}
+  ;[...items].sort((a, b) => (a.item_no || 0) - (b.item_no || 0)).forEach(item => {
+    const c = item.category_code || '?'
+    if (!cats[c]) cats[c] = { code: c, name: item.category_name, groups: {}, order: [] }
+    const g = item.relation_group || '—'
+    if (!cats[c].groups[g]) { cats[c].groups[g] = { name: g, allot: item.group_allot || 0, items: [] }; cats[c].order.push(g) }
+    cats[c].groups[g].items.push(item)
+  })
+  return Object.values(cats).sort((a, b) => (CAT_ORDER[a.code] || 99) - (CAT_ORDER[b.code] || 99))
+}
+const groupDeduct = (grp) => grp.items.reduce((s, i) => s + (i.deduct_score || 0), 0)
+const catMax = (cat) => cat.order.reduce((s, g) => s + (cat.groups[g].allot || 0), 0)
+const catDeduct = (cat) => cat.order.reduce((s, g) => s + groupDeduct(cat.groups[g]), 0)
+const catScore = (cat) => Math.max(0, catMax(cat) - catDeduct(cat))
+
 export default function StoreAudit() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -24,9 +43,8 @@ export default function StoreAudit() {
   const [showReject, setShowReject] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
 
-  // 編輯狀態（草稿）
   const [employees, setEmployees] = useState([])
-  const [draftOnDuty, setDraftOnDuty] = useState([])  // [{employee_id, employee_name, signature_data_url}]
+  const [draftOnDuty, setDraftOnDuty] = useState([])
   const [signingIdx, setSigningIdx] = useState(null)
 
   const load = useCallback(async () => {
@@ -47,82 +65,103 @@ export default function StoreAudit() {
 
   useEffect(() => { load() }, [load])
 
-  // 載員工清單（編輯時用）— 走 SECURITY DEFINER RPC 繞過 anon RLS
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
     supabase.rpc('liff_list_employees', { p_line_user_id: lineProfile.lineUserId })
       .then(({ data }) => setEmployees(data?.list || []))
   }, [lineProfile?.lineUserId])
 
-  const CATEGORY_ORDER = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 }
-  const grouped = useMemo(() => {
-    if (!data?.items) return {}
-    const map = data.items.reduce((acc, item) => {
-      const k = item.category_code
-      if (!acc[k]) acc[k] = { name: item.category_name, items: [] }
-      acc[k].items.push(item)
-      return acc
-    }, {})
-    return Object.fromEntries(
-      Object.entries(map).sort(([a], [b]) => (CATEGORY_ORDER[a] || 99) - (CATEGORY_ORDER[b] || 99))
-    )
-  }, [data])
+  const cats = useMemo(() => buildCats(data?.items || []), [data])
+  const scoredCats = useMemo(() => cats.filter(c => catMax(c) > 0), [cats])
+  const avgScore = useMemo(() => scoredCats.length
+    ? Math.round(scoredCats.reduce((s, c) => s + catScore(c), 0) / scoredCats.length * 100) / 100 : 0, [scoredCats])
 
   const stats = useMemo(() => {
-    if (!data?.items) return { passed: 0, failed: 0, partial: 0, pending: 0, deducted: 0, total: 0 }
-    const passed = data.items.filter(i => i.passed === true).length
-    const failed = data.items.filter(i => i.passed === false).length
-    // △（partial）：不扣分、不算未評核
-    const partial = data.items.filter(i => i.partial === true).length
-    const pending = data.items.filter(i => i.passed === null && !i.partial).length
-    const deducted = data.items.filter(i => i.passed === false).reduce((s, i) => s + (i.deduct_score || 0), 0)
-    const total = data.items.reduce((s, i) => s + (i.deduct_score || 0), 0)
-    return { passed, failed, partial, pending, deducted, total }
+    const its = data?.items || []
+    const deductedCount = its.filter(i => (i.deduct_score || 0) > 0).length
+    const totalDeducted = its.reduce((s, i) => s + (i.deduct_score || 0), 0)
+    return { deductedCount, totalDeducted }
   }, [data])
 
   const a = data?.audit
   const isDraft = a?.status === '草稿'
   const isAuditor = a?.auditor_id === employee?.id
   const canEdit = isDraft && isAuditor
+  const photos = Array.isArray(a?.photos) ? a.photos : []
 
-  // ─── 編輯：更新項目（走 RPC 繞 anon RLS）───
-  const updateItem = async (itemId, patch) => {
-    setData(prev => ({
-      ...prev,
-      items: prev.items.map(i => i.id === itemId ? { ...i, ...patch } : i),
-    }))
+  const patchItem = (itemId, patch) =>
+    setData(prev => ({ ...prev, items: prev.items.map(i => i.id === itemId ? { ...i, ...patch } : i) }))
+
+  // 扣分（clamp 群組配分）
+  const setDeduct = async (item, raw, maxDeduct) => {
+    let v = Math.max(0, Math.floor(Number(raw) || 0))
+    if (v > maxDeduct) { v = Math.max(0, maxDeduct); alert(`此群組最多再扣 ${Math.max(0, maxDeduct)} 分`) }
+    patchItem(item.id, { deduct_score: v, passed: v > 0 ? false : true })
     await supabase.rpc('liff_update_store_audit_item', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_item_id: itemId,
-      p_passed: patch.passed ?? null,
-      p_responsible_employee_id: patch.responsible_employee_id ?? null,
-      p_remark: patch.remark ?? null,
-      p_attachments: patch.attachments !== undefined ? patch.attachments : null,
-      // △ 三態互斥：patch.partial 若沒傳(undefined)→null；true/false 傳到 RPC 三選一分支
-      p_partial: patch.partial !== undefined ? patch.partial : null,
+      p_line_user_id: lineProfile.lineUserId, p_item_id: item.id, p_deduct_score: v,
+    })
+  }
+  // 群組說明（存群組首項）
+  const setGroupNote = async (leadItemId, text) => {
+    patchItem(leadItemId, { group_note: text })
+    await supabase.rpc('liff_update_store_audit_item', {
+      p_line_user_id: lineProfile.lineUserId, p_item_id: leadItemId, p_group_note: text,
+    })
+  }
+  // 打字題內容
+  const setItemRemark = async (itemId, text) => {
+    patchItem(itemId, { remark: text })
+    await supabase.rpc('liff_update_store_audit_item', {
+      p_line_user_id: lineProfile.lineUserId, p_item_id: itemId, p_remark: text,
     })
   }
 
-  // ─── 編輯：當班人員 ───
+  // ─── 整張單共用照片 ───
+  const [photoUploading, setPhotoUploading] = useState(false)
+  const savePhotos = async (next) => {
+    setData(prev => ({ ...prev, audit: { ...prev.audit, photos: next } }))
+    await supabase.rpc('liff_save_store_audit_photos', {
+      p_line_user_id: lineProfile.lineUserId, p_audit_id: Number(id), p_photos: next,
+    })
+  }
+  const handlePhotoFiles = async (e) => {
+    const files = Array.from(e.target.files || [])
+    if (!files.length) return
+    const remaining = 20 - photos.length
+    if (remaining <= 0) { alert('最多 20 張照片'); e.target.value = ''; return }
+    setPhotoUploading(true)
+    try {
+      const urls = await Promise.all(files.slice(0, remaining).map(async (file) => {
+        const ext = file.name.split('.').pop() || 'jpg'
+        const path = `${Number(id)}/audit/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+        const { error } = await supabase.storage.from('audit-photos').upload(path, file, { upsert: false })
+        if (error) throw error
+        return supabase.storage.from('audit-photos').getPublicUrl(path).data.publicUrl
+      }))
+      await savePhotos([...photos, ...urls])
+    } catch (err) {
+      alert('上傳失敗：' + err.message)
+    } finally {
+      setPhotoUploading(false); e.target.value = ''
+    }
+  }
+  const removePhoto = (url) => savePhotos(photos.filter(u => u !== url))
+
+  // ─── 當班人員 ───
   const addDraftStaff = () => {
     if (draftOnDuty.length >= 3) { alert('最多 3 人'); return }
     setDraftOnDuty(prev => [...prev, { employee_id: null, employee_name: '' }])
   }
   const updateDraftStaff = (idx, empId) => {
     const emp = employees.find(e => e.id === Number(empId))
-    const next = draftOnDuty.map((d, i) => i === idx
-      ? { ...d, employee_id: emp?.id || null, employee_name: emp?.name || '' }
-      : d)
-    setDraftOnDuty(next)
-    saveDraftOnDuty(next)
+    const next = draftOnDuty.map((d, i) => i === idx ? { ...d, employee_id: emp?.id || null, employee_name: emp?.name || '' } : d)
+    setDraftOnDuty(next); saveDraftOnDuty(next)
   }
   const removeDraftStaff = (idx) => {
     const next = draftOnDuty.filter((_, i) => i !== idx)
-    setDraftOnDuty(next)
-    saveDraftOnDuty(next)
+    setDraftOnDuty(next); saveDraftOnDuty(next)
   }
 
-  // ─── 上傳簽名到 Storage ───
   const uploadSignature = async (dataUrl, audId, empId) => {
     if (dataUrl.startsWith('http')) return dataUrl
     const blob = await (await fetch(dataUrl)).blob()
@@ -133,7 +172,6 @@ export default function StoreAudit() {
     return supabase.storage.from('audit-signatures').getPublicUrl(path).data.publicUrl
   }
 
-  // ─── 草稿即時保存當班人員/簽名（避免關掉重開簽名消失）───
   const saveDraftOnDuty = async (list) => {
     if (!isDraft || !lineProfile?.lineUserId) return
     try {
@@ -150,7 +188,6 @@ export default function StoreAudit() {
 
   // ─── 送出 ───
   const doSubmit = async () => {
-    if (stats.pending > 0) { alert(`還有 ${stats.pending} 項未評核`); return }
     if (draftOnDuty.length === 0) { alert('請至少選 1 名當班人員'); return }
     const unsigned = draftOnDuty.filter(d => !d.signature_data_url)
     if (unsigned.length > 0) { alert(`還有 ${unsigned.length} 位當班人員未簽名`); return }
@@ -179,11 +216,8 @@ export default function StoreAudit() {
     if (busy) return
     if (!confirm('確認核准此份稽核？')) return
     setBusy(true)
-    // liff_approve_request 500 行大 function 在 20260604 restore 時把 store_audit 分支洗掉了
-    // 改走獨立 RPC liff_store_audit_approve（20260701220000）
     const { data: res, error } = await supabase.rpc('liff_store_audit_approve', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_id: Number(id), p_action: 'approve', p_reason: null,
+      p_line_user_id: lineProfile.lineUserId, p_id: Number(id), p_action: 'approve', p_reason: null,
     })
     setBusy(false)
     if (error || !res?.ok) { alert('失敗：' + (error?.message || res?.error || 'unknown')); return }
@@ -195,8 +229,7 @@ export default function StoreAudit() {
     if (!rejectReason.trim()) { alert('請填退回原因'); return }
     setBusy(true)
     const { data: res, error } = await supabase.rpc('liff_store_audit_approve', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_id: Number(id), p_action: 'reject', p_reason: rejectReason.trim(),
+      p_line_user_id: lineProfile.lineUserId, p_id: Number(id), p_action: 'reject', p_reason: rejectReason.trim(),
     })
     setBusy(false)
     if (error || !res?.ok) { alert('失敗：' + (error?.message || res?.error || 'unknown')); return }
@@ -217,6 +250,7 @@ export default function StoreAudit() {
   }
 
   const statusColor = STATUS_COLOR[a.status] || '#94a3b8'
+  const scoreColor = avgScore >= 90 ? '#22c55e' : avgScore >= 70 ? '#f59e0b' : '#ef4444'
 
   return (
     <div className="page">
@@ -235,13 +269,19 @@ export default function StoreAudit() {
         <span style={{ padding: '4px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700, background: `${statusColor}22`, color: statusColor }}>{a.status}</span>
       </div>
 
-      {/* 統計 */}
-      <div style={{ margin: '12px 0', padding: 12, background: 'var(--glass)', borderRadius: 10, display: 'flex', justifyContent: 'space-around', textAlign: 'center', fontSize: 12 }}>
-        <Stat label="合格" value={stats.passed} color="#22c55e" />
-        {stats.partial > 0 && <Stat label="△" value={stats.partial} color="#a855f7" />}
-        <Stat label="不合格" value={stats.failed} color="#ef4444" />
-        {stats.pending > 0 && <Stat label="未評核" value={stats.pending} color="#f59e0b" />}
-        <Stat label="扣分" value={`${stats.deducted}/${stats.total}`} color={stats.deducted > 0 ? '#ef4444' : 'var(--t2)'} />
+      {/* 總平均 + 各類 */}
+      <div style={{ margin: '12px 0', padding: 12, background: 'var(--glass)', borderRadius: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 12, color: 'var(--t3)' }}>扣分 {stats.deductedCount} 項 · 總扣 {stats.totalDeducted}</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: scoreColor }}>總平均 {avgScore}</span>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {scoredCats.map(c => (
+            <span key={c.code} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--bg)', color: 'var(--t2)' }}>
+              {c.name} {catScore(c)}
+            </span>
+          ))}
+        </div>
       </div>
 
       <Section title="基本資訊">
@@ -252,7 +292,7 @@ export default function StoreAudit() {
         {a.reject_reason && <Row label="退回原因" value={a.reject_reason} color="#ef4444" />}
       </Section>
 
-      {/* 當班人員（草稿可編輯，否則只讀） */}
+      {/* 當班人員 */}
       <Section title={canEdit ? '當班人員（1~3 人，請現場簽名）' : '當班人員'}>
         {canEdit ? (
           <>
@@ -261,8 +301,7 @@ export default function StoreAudit() {
                 <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'flex-start' }}>
                   <div style={{ flex: 1 }}>
                     <EmployeePicker value={d.employee_id || ''} employees={employees}
-                      onChange={(v) => updateDraftStaff(idx, v)}
-                      placeholder="選當班人員" />
+                      onChange={(v) => updateDraftStaff(idx, v)} placeholder="選當班人員" />
                   </div>
                   <button onClick={() => removeDraftStaff(idx)}
                     style={{ padding: '0 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t3)', minHeight: 38 }}>×</button>
@@ -305,15 +344,63 @@ export default function StoreAudit() {
         )}
       </Section>
 
-      {/* 評核項目 */}
-      {Object.entries(grouped).map(([code, group]) => (
-        <Section key={code} title={`${code}、${group.name}`}
-          subtitle={`${group.items.length} 項 · 不合格 ${group.items.filter(i => i.passed === false).length}`}>
-          {group.items.map(item => (
-            <ItemRow key={item.id} item={item} canEdit={canEdit} employees={employees} auditId={Number(id)} onChange={p => updateItem(item.id, p)} />
-          ))}
+      {/* 評核項目：大類 → 群組 */}
+      {cats.map(cat => (
+        <Section key={cat.code} title={`${cat.code}、${cat.name}`}
+          subtitle={catMax(cat) > 0 ? `${catScore(cat)} / ${catMax(cat)}` : undefined}>
+          {cat.order.map(gName => {
+            const grp = cat.groups[gName]
+            const gd = groupDeduct(grp)
+            const lead = grp.items[0]
+            return (
+              <div key={gName} style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontWeight: 700, color: 'var(--t2)', padding: '4px 6px', background: 'var(--bg)', borderRadius: 6, marginBottom: 4 }}>
+                  <span>{grp.name}</span>
+                  <span style={{ color: gd > 0 ? '#ef4444' : 'var(--t3)' }}>配分 {grp.allot}{gd > 0 ? ` · 已扣 ${gd}` : ''}</span>
+                </div>
+                {canEdit ? (
+                  <input value={lead?.group_note || ''} onChange={e => setGroupNote(lead.id, e.target.value)}
+                    placeholder="此區說明（可留白）"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginBottom: 6 }} />
+                ) : (lead?.group_note && (
+                  <div style={{ fontSize: 12, color: 'var(--t2)', padding: '6px 8px', background: 'var(--glass)', borderRadius: 6, marginBottom: 6 }}>說明：{lead.group_note}</div>
+                ))}
+                {grp.items.map(item => (
+                  <ItemRow key={item.id} item={item} canEdit={canEdit}
+                    maxDeduct={(grp.allot || 0) - (gd - (item.deduct_score || 0))}
+                    onDeduct={(v, max) => setDeduct(item, v, max)}
+                    onRemark={(t) => setItemRemark(item.id, t)} />
+                ))}
+              </div>
+            )
+          })}
         </Section>
       ))}
+
+      {/* 整張單共用照片 */}
+      {(canEdit || photos.length > 0) && (
+        <Section title={`稽核照片（${photos.length}/20）`}>
+          {canEdit && photos.length < 20 && (
+            <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 52, border: '1px dashed var(--border)', borderRadius: 8, cursor: photoUploading ? 'default' : 'pointer', fontSize: 12, color: 'var(--t3)', marginBottom: photos.length ? 8 : 0 }}>
+              <Paperclip size={14} /> {photoUploading ? '上傳中…' : '點此拍照或選圖（最多 20 張）'}
+              <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handlePhotoFiles} disabled={photoUploading} />
+            </label>
+          )}
+          {photos.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {photos.map((url, i) => (
+                <div key={url} style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', background: 'var(--glass)' }}>
+                  <img src={url} alt={`照片 ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onClick={() => window.open(url, '_blank')} />
+                  {canEdit && (
+                    <button onClick={() => removePhoto(url)}
+                      style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 14, lineHeight: '20px', padding: 0, cursor: 'pointer' }}>×</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* 底部 action */}
       {canEdit && (
@@ -364,167 +451,52 @@ export default function StoreAudit() {
           onConfirm={async (dataUrl) => {
             const idx = signingIdx
             setSigningIdx(null)
-            // 立即上傳 Storage → state 存 URL → 存進草稿 DB（關掉重開簽名還在）
             let url = dataUrl
-            try { url = await uploadSignature(dataUrl, Number(id), draftOnDuty[idx]?.employee_id) } catch { /* 上傳失敗先留 dataURL，送出時再上傳 */ }
+            try { url = await uploadSignature(dataUrl, Number(id), draftOnDuty[idx]?.employee_id) } catch { /* 上傳失敗先留 dataURL */ }
             const next = draftOnDuty.map((d, i) => i === idx ? { ...d, signature_data_url: url } : d)
-            setDraftOnDuty(next)
-            saveDraftOnDuty(next)
+            setDraftOnDuty(next); saveDraftOnDuty(next)
           }} />
       )}
     </div>
   )
 }
 
-// ─── 評核項目單列（草稿可編輯）───
-function ItemRow({ item, canEdit, employees, auditId, onChange }) {
-  const [uploading, setUploading] = useState(false)
-  const failed = item.passed === false
-  const isPartial = item.partial === true
-  const showRemark = item.category_code === '五' && item.item_no === 6
-  const attachments = Array.isArray(item.attachments) ? item.attachments : []
-
-  const handleFiles = async (e) => {
-    const files = Array.from(e.target.files || [])
-    if (!files.length) return
-    const remaining = 15 - attachments.length
-    if (remaining <= 0) { alert('最多 15 張附件'); e.target.value = ''; return }
-    setUploading(true)
-    try {
-      const urls = await Promise.all(files.slice(0, remaining).map(async (file) => {
-        const ext = file.name.split('.').pop() || 'jpg'
-        const path = `${auditId}/${item.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
-        const { error } = await supabase.storage.from('audit-photos').upload(path, file, { upsert: false })
-        if (error) throw error
-        return supabase.storage.from('audit-photos').getPublicUrl(path).data.publicUrl
-      }))
-      onChange({ attachments: [...attachments, ...urls] })
-    } catch (err) {
-      alert('上傳失敗：' + err.message)
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
-
-  const removeAttachment = (url) => onChange({ attachments: attachments.filter(u => u !== url) })
-
+// ─── 評核項目單列（評分制：只填扣分；打字題多內容框）───
+function ItemRow({ item, canEdit, maxDeduct, onDeduct, onRemark }) {
+  const deducted = item.deduct_score || 0
+  const hasDeduct = deducted > 0
   return (
-    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: failed ? 'rgba(239,68,68,0.05)' : isPartial ? 'rgba(168,85,247,0.08)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
-        <span style={{ fontSize: 11, color: 'var(--t3)', minWidth: 18 }}>{item.item_no}</span>
-        <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>{item.item_text}</span>
+    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: hasDeduct ? 'rgba(239,68,68,0.06)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>
+          {item.is_star && <Star size={12} style={{ color: '#f59e0b', verticalAlign: 'middle', marginRight: 4 }} fill="#f59e0b" />}
+          {item.item_text}
+          {item.is_star && <span style={{ fontSize: 10, color: '#f59e0b', marginLeft: 4 }}>可開罰</span>}
+        </span>
         {canEdit ? (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button onClick={() => onChange({ passed: true, partial: false })}
-              style={{
-                padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, border: 'none',
-                background: item.passed === true ? '#22c55e' : 'rgba(148,163,184,0.2)',
-                color: item.passed === true ? '#fff' : 'var(--t3)',
-              }}>✓</button>
-            <button onClick={() => onChange({ passed: null, partial: true })}
-              title="△（不扣分）"
-              style={{
-                padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4,
-                border: isPartial ? '1.5px solid #a855f7' : 'none',
-                background: isPartial ? '#a855f7' : 'rgba(148,163,184,0.2)',
-                color: isPartial ? '#fff' : 'var(--t3)',
-              }}>△</button>
-            <button onClick={() => onChange({ passed: false, partial: false })}
-              style={{
-                padding: '4px 8px', fontSize: 10, fontWeight: 700, borderRadius: 4, border: 'none',
-                background: item.passed === false ? '#ef4444' : 'rgba(148,163,184,0.2)',
-                color: item.passed === false ? '#fff' : 'var(--t3)',
-              }}>-{item.deduct_score}</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 11, color: 'var(--t3)' }}>扣</span>
+            <input type="number" min={0} inputMode="numeric"
+              value={deducted || ''} placeholder="0"
+              onChange={e => onDeduct(e.target.value, Math.max(0, maxDeduct))}
+              style={{ width: 52, padding: '5px 4px', textAlign: 'center', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass)', color: hasDeduct ? '#ef4444' : 'var(--t1)', fontWeight: hasDeduct ? 700 : 400, fontSize: 14 }} />
           </div>
         ) : (
           <span style={{
-            padding: '2px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
-            background: item.passed === true ? 'rgba(34,197,94,0.15)'
-              : item.passed === false ? 'rgba(239,68,68,0.15)'
-              : isPartial ? 'rgba(168,85,247,0.15)'
-              : 'rgba(148,163,184,0.15)',
-            color: item.passed === true ? '#22c55e'
-              : item.passed === false ? '#ef4444'
-              : isPartial ? '#a855f7'
-              : 'var(--t3)',
-          }}>
-            {item.passed === true ? '✓'
-              : item.passed === false ? `-${item.deduct_score}`
-              : isPartial ? '△'
-              : '—'}
-          </span>
+            padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+            background: hasDeduct ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
+            color: hasDeduct ? '#ef4444' : '#22c55e',
+          }}>{hasDeduct ? `扣 ${deducted}` : '✓'}</span>
         )}
       </div>
-      {failed && canEdit && (
-        <div style={{ marginTop: 6, marginLeft: 24 }}>
-          <EmployeePicker value={item.responsible_employee_id || ''} employees={employees}
-            onChange={(v) => {
-              const emp = employees.find(x => x.id === Number(v))
-              onChange({ responsible_employee_id: emp?.id || null, responsible_employee_name: emp?.name || null })
-            }}
-            placeholder="未指定責任人（算當班全體）" />
-        </div>
-      )}
-      {failed && !canEdit && item.responsible_employee_name && (
-        <div style={{ fontSize: 10, color: 'var(--t3)', marginLeft: 24, marginTop: 2 }}>責任人：{item.responsible_employee_name}</div>
-      )}
-      {showRemark && (
-        <div style={{ marginTop: 8, marginLeft: 24 }}>
-          {/* 備註 */}
-          <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>備註（現場數量 / 差異說明）</div>
-          {canEdit ? (
-            <textarea
-              value={item.remark || ''}
-              onChange={e => onChange({ remark: e.target.value })}
-              placeholder="例：商品A 盤點11支，系統顯示10支"
-              rows={2}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, resize: 'vertical' }}
-            />
-          ) : (
-            item.remark
-              ? <div style={{ fontSize: 12, color: 'var(--t2)', whiteSpace: 'pre-wrap', padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{item.remark}</div>
-              : <div style={{ fontSize: 12, color: 'var(--t3)' }}>—</div>
-          )}
-
-          {/* 附件照片 */}
-          <div style={{ marginTop: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: 11, color: 'var(--t3)' }}>
-                <Paperclip size={11} style={{ verticalAlign: 'middle', marginRight: 3 }} />
-                附件照片（{attachments.length}/15）
-              </span>
-              {canEdit && attachments.length < 15 && (
-                <label style={{ fontSize: 12, color: '#38bdf8', cursor: uploading ? 'default' : 'pointer', opacity: uploading ? 0.5 : 1 }}>
-                  {uploading ? '上傳中…' : '＋ 新增'}
-                  <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
-                </label>
-              )}
-            </div>
-            {attachments.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-                {attachments.map((url, i) => (
-                  <div key={url} style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', background: 'var(--glass)' }}>
-                    <img src={url} alt={`附件 ${i + 1}`}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                      onClick={() => window.open(url, '_blank')} />
-                    {canEdit && (
-                      <button onClick={() => removeAttachment(url)}
-                        style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 14, lineHeight: '20px', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : canEdit ? (
-              <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 52, border: '1px dashed var(--border)', borderRadius: 8, cursor: uploading ? 'default' : 'pointer', fontSize: 12, color: 'var(--t3)' }}>
-                <Paperclip size={14} /> {uploading ? '上傳中…' : '點此拍照或選圖（最多 15 張）'}
-                <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleFiles} disabled={uploading} />
-              </label>
-            ) : (
-              <div style={{ fontSize: 12, color: 'var(--t3)' }}>—</div>
-            )}
-          </div>
-        </div>
+      {item.input_type === 'text' && (
+        canEdit ? (
+          <input value={item.remark || ''} onChange={e => onRemark(e.target.value)}
+            placeholder="請填寫抽查 / 內容"
+            style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginTop: 6 }} />
+        ) : (
+          item.remark && <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4, padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{item.remark}</div>
+        )
       )}
     </div>
   )
@@ -533,9 +505,9 @@ function ItemRow({ item, canEdit, employees, auditId, onChange }) {
 function Section({ title, subtitle, children }) {
   return (
     <div style={{ marginTop: 16, padding: 12, background: 'var(--glass)', borderRadius: 10 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 8, display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t1)', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span>{title}</span>
-        {subtitle && <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 400 }}>{subtitle}</span>}
+        {subtitle && <span style={{ fontSize: 11, color: 'var(--t2)', fontWeight: 700 }}>{subtitle}</span>}
       </div>
       {children}
     </div>
@@ -547,15 +519,6 @@ function Row({ label, value, color }) {
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13 }}>
       <span style={{ color: 'var(--t3)' }}>{label}</span>
       <span style={{ color: color || 'var(--t1)', textAlign: 'right', maxWidth: '70%' }}>{value}</span>
-    </div>
-  )
-}
-
-function Stat({ label, value, color }) {
-  return (
-    <div>
-      <div style={{ color: 'var(--t3)' }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color }}>{value}</div>
     </div>
   )
 }
