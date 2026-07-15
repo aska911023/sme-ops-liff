@@ -9,12 +9,12 @@ const RATE_NOTE = 'USD×32、JPY×0.21、CNY×4.4、EUR×35'
 
 const toTWD  = (amt, cur) => Math.round((amt || 0) * (RATES[cur] || 1))
 const fmtTWD = (n) => 'NT$' + Math.round(n).toLocaleString('zh-TW')
-// 摘要卡用:大數字縮成 萬/億(NT$3,296萬),避免窄卡片被切
+// 摘要卡用:大數字縮成 萬/億(手機窄卡片,不加 NT$ 前綴,標籤已寫「費用」)
 const fmtMoneyShort = (n) => {
   n = Math.round(n || 0)
-  if (n >= 1e8) return 'NT$' + (n / 1e8).toFixed(n % 1e8 === 0 ? 0 : 1) + '億'
-  if (n >= 1e4) return 'NT$' + Math.round(n / 1e4).toLocaleString('zh-TW') + '萬'
-  return 'NT$' + n.toLocaleString('zh-TW')
+  if (n >= 1e8) return (n / 1e8).toFixed(n % 1e8 === 0 ? 0 : 1) + '億'
+  if (n >= 1e4) return Math.round(n / 1e4).toLocaleString('zh-TW') + '萬'
+  return n.toLocaleString('zh-TW')
 }
 const fmtAmt = (n, cur) =>
   (cur === 'TWD' ? 'NT$' : cur + ' ') + (n || 0).toLocaleString('zh-TW')
