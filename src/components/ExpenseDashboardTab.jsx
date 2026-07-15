@@ -311,6 +311,34 @@ function useDashboard(lineUserId, dateFrom, dateTo, selAccounts) {
   return { data, loading }
 }
 
+// 頂部摘要列（老闆一眼看重點）
+function SummaryBar({ items }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${items.length}, 1fr)`, gap: 8, marginBottom: 14 }}>
+      {items.map((it, i) => (
+        <div key={i} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '11px 6px', textAlign: 'center', minWidth: 0 }}>
+          <div style={{ fontSize: it.small ? 14 : 20, fontWeight: 800, color: it.color || 'var(--t1)', lineHeight: 1.15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.value}</div>
+          <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 3 }}>{it.label}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// 一組 rows(含 status/count) 的統計 helper
+const PENDING_STATUSES = ['申請中', '待審核', '未送核銷', '待核銷', '待處理', '處理中', '待受理', '待驗收', '驗收審核中', '申請審核中', '待確認', '草稿']
+const DONE_STATUSES    = ['已核准', '已核銷', '已完成', '已關閉', '已結案']
+function tallyRows(...rowLists) {
+  const rows = rowLists.flat()
+  const cnt = (pred) => rows.filter(pred).reduce((s, r) => s + (r.count || 0), 0)
+  const total = cnt(() => true)
+  return {
+    total,
+    pending: cnt(r => PENDING_STATUSES.includes(r.status)),
+    donePct: total ? Math.round(cnt(r => DONE_STATUSES.includes(r.status)) / total * 100) : 0,
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // 費用 tab：費用申請 / 叫貨 / 門市報修 / 經常性費用
 export function ExpenseDashboardTab({ lineUserId }) {
@@ -346,6 +374,11 @@ export function ExpenseDashboardTab({ lineUserId }) {
   const regExpBkts     = bucketRaw(regExpRows)
   const regExpAmts     = { TWD: regExpRows.filter(r => r.status !== '已駁回').reduce((s, r) => s + Number(r.amount_sum || 0), 0) }
 
+  // 頂部摘要（總申請 / 待處理 / 核准率 / 本期費用估算 TWD）
+  const expTally   = tallyRows(expRows, orderRows, repairRows, regExpRows)
+  const expenseTWD = Object.entries(expApplyAmts).reduce((s, [c, v]) => s + toTWD(v, c), 0)
+                   + Object.entries(regExpAmts).reduce((s, [c, v]) => s + toTWD(v, c), 0)
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 10, marginBottom: 14, alignItems: 'center' }}>
@@ -358,6 +391,13 @@ export function ExpenseDashboardTab({ lineUserId }) {
           </div>
         )}
       </div>
+
+      <SummaryBar items={[
+        { label: '總申請', value: expTally.total },
+        { label: '待處理', value: expTally.pending, color: 'var(--orange)' },
+        { label: '核准率', value: `${expTally.donePct}%`, color: 'var(--green)' },
+        { label: '本期費用', value: `≈${fmtTWD(expenseTWD)}`, color: 'var(--cyan)', small: true },
+      ]} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
@@ -418,11 +458,19 @@ export function NonExpenseDashboardTab({ lineUserId }) {
   const workOrderRows   = data.work_order_rows || []
   const workOrderBkts   = bucketRaw(workOrderRows)
 
+  const nonTally = tallyRows(nonexpRows, transferRows, auditRows, workOrderRows)
+
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
         <DateFilter from={dateFrom} to={dateTo} onSet={(f, t) => { setDateFrom(f); setDateTo(t) }} />
       </div>
+
+      <SummaryBar items={[
+        { label: '總申請', value: nonTally.total },
+        { label: '待處理', value: nonTally.pending, color: 'var(--orange)' },
+        { label: '已完成率', value: `${nonTally.donePct}%`, color: 'var(--green)' },
+      ]} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
