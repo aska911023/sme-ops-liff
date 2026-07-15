@@ -65,11 +65,18 @@ export default function ClockCorrection() {
   }
 
   const handleDelete = async (r) => {
-    if (!confirm('撤回這張補打卡申請？')) return
+    if (!confirm('撤回這張補打卡申請？撤回後可重新申請。')) return
     const { error } = await supabase.rpc('liff_delete_clock_correction', {
       p_line_user_id: lineProfile.lineUserId, p_id: r.id,
     })
-    if (error) { alert('撤回失敗：' + error.message); return }
+    if (error) {
+      const m = error.message || ''
+      if (/找不到|待審核/.test(m))       alert('無法撤回：這張申請可能已經審核完成或狀態已改變，請下拉重新整理後再看看。')
+      else if (/employee not found/.test(m)) alert('無法撤回：身份辨識失敗，請關掉重新從 LINE 進入。')
+      else if (/function|does not exist|404/.test(m)) alert('撤回功能尚未上線（系統更新中），請稍後再試或聯繫管理員。')
+      else alert('撤回失敗：' + m)
+      return
+    }
     reload()
   }
 
