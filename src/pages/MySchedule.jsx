@@ -64,10 +64,22 @@ export default function MySchedule() {
     return { bg: (def?.color || '#22d3ee') + '15', color: def?.color || 'var(--cyan)', border: (def?.color || '#22d3ee') + '40' }
   }
 
-  // Stats
-  const workDays = weekDates.filter(d => { const s = getShift(d); return s && s !== '休' }).length
-  const restDays = weekDates.filter(d => getShift(d) === '休').length
-  const unscheduled = weekDates.filter(d => !getShift(d)).length
+  // Stats — 認新標籤(休息/例假/特休…),休假不算上班;週時數用實際班別淨工時
+  const ABSENCE = new Set(['例假', '休息', '休', '補休', '特休', '病', '會議', '產', '事', '國定假'])
+  const REST = new Set(['例假', '休息', '休'])
+  const segHours = (start, end, restMin) => {
+    if (!start || !end) return 0
+    const [sh, sm] = String(start).split(':').map(Number)
+    const [eh, em] = String(end).split(':').map(Number)
+    let m = (eh * 60 + em) - (sh * 60 + sm)
+    if (m <= 0) m += 1440
+    const brk = restMin != null ? restMin : (m >= 540 ? 60 : m >= 300 ? 30 : 0)  // 手動休息優先,否則階梯公式
+    return Math.max(0, (m - brk) / 60)
+  }
+  const netOf = (s) => segHours(s.actual_start, s.actual_end, s.rest_minutes) + segHours(s.actual_start_2, s.actual_end_2, null)
+  const workDays = weekDates.filter(d => { const s = getShift(d); return s && !ABSENCE.has(s) }).length
+  const restDays = weekDates.filter(d => REST.has(getShift(d))).length
+  const weekHours = Math.round(schedules.reduce((sum, s) => sum + netOf(s), 0) * 10) / 10
 
   if (loading) return <div className="page"><div className="empty"><div className="spinner" style={{ margin: '0 auto' }} /></div></div>
 
@@ -105,7 +117,7 @@ export default function MySchedule() {
           <div className="stat-label">休息</div>
         </div>
         <div className="stat-box">
-          <div className="stat-num" style={{ color: workDays * 8 > 40 ? 'var(--red)' : 'var(--t2)' }}>{workDays * 8}h</div>
+          <div className="stat-num" style={{ color: weekHours > 40 ? 'var(--red)' : 'var(--t2)' }}>{weekHours}h</div>
           <div className="stat-label">週時數</div>
         </div>
       </div>
