@@ -28,10 +28,12 @@ function buildCats(items) {
   })
   return Object.values(cats).sort((a, b) => (CAT_ORDER[a.code] || 99) - (CAT_ORDER[b.code] || 99))
 }
-const groupDeduct = (grp) => grp.items.reduce((s, i) => s + (i.deduct_score || 0), 0)
+// 加分列(input_type='bonus')的 deduct_score 存加分點數,計分時當負扣往回加
+const itemDeduct = (i) => i.input_type === 'bonus' ? -(i.deduct_score || 0) : (i.deduct_score || 0)
+const groupDeduct = (grp) => grp.items.reduce((s, i) => s + itemDeduct(i), 0)
 const catMax = (cat) => cat.order.reduce((s, g) => s + (cat.groups[g].allot || 0), 0)
 const catDeduct = (cat) => cat.order.reduce((s, g) => s + groupDeduct(cat.groups[g]), 0)
-const catScore = (cat) => Math.max(0, catMax(cat) - catDeduct(cat))
+const catScore = (cat) => Math.min(catMax(cat), Math.max(0, catMax(cat) - catDeduct(cat)))
 
 export default function StoreAudit() {
   const { id } = useParams()
@@ -78,8 +80,8 @@ export default function StoreAudit() {
 
   const stats = useMemo(() => {
     const its = data?.items || []
-    const deductedCount = its.filter(i => (i.deduct_score || 0) > 0).length
-    const totalDeducted = its.reduce((s, i) => s + (i.deduct_score || 0), 0)
+    const deductedCount = its.filter(i => i.input_type !== 'bonus' && (i.deduct_score || 0) > 0).length
+    const totalDeducted = its.reduce((s, i) => s + (i.input_type === 'bonus' ? 0 : (i.deduct_score || 0)), 0)
     return { deductedCount, totalDeducted }
   }, [data])
 
@@ -94,9 +96,10 @@ export default function StoreAudit() {
 
   // 扣分（clamp 群組配分）
   const setDeduct = async (item, raw, maxDeduct) => {
+    const isBonus = item.input_type === 'bonus'
     let v = Math.max(0, Math.floor(Number(raw) || 0))
-    if (v > maxDeduct) { v = Math.max(0, maxDeduct); alert(`此群組最多再扣 ${Math.max(0, maxDeduct)} 分`) }
-    patchItem(item.id, { deduct_score: v, passed: v > 0 ? false : true })
+    if (v > maxDeduct) { v = Math.max(0, maxDeduct); alert(isBonus ? `加分上限 ${Math.max(0, maxDeduct)} 分` : `此群組最多再扣 ${Math.max(0, maxDeduct)} 分`) }
+    patchItem(item.id, isBonus ? { deduct_score: v, passed: true } : { deduct_score: v, passed: v > 0 ? false : true })
     await supabase.rpc('liff_update_store_audit_item', {
       p_line_user_id: lineProfile.lineUserId, p_item_id: item.id, p_deduct_score: v,
     })
@@ -188,6 +191,8 @@ export default function StoreAudit() {
 
   // ─── 送出 ───
   const doSubmit = async () => {
+    const bonusMissing = (data?.items || []).find(i => i.input_type === 'bonus' && (i.deduct_score || 0) > 0 && !i.remark?.trim())
+    if (bonusMissing) { alert('有加分的項目需填「加分原因」'); return }
     if (draftOnDuty.length === 0) { alert('請至少選 1 名當班人員'); return }
     const unsigned = draftOnDuty.filter(d => !d.signature_data_url)
     if (unsigned.length > 0) { alert(`還有 ${unsigned.length} 位當班人員未簽名`); return }
@@ -350,24 +355,28 @@ export default function StoreAudit() {
           subtitle={catMax(cat) > 0 ? `${catScore(cat)} / ${catMax(cat)}` : undefined}>
           {cat.order.map(gName => {
             const grp = cat.groups[gName]
+            const isBonusGroup = grp.items.some(i => i.input_type === 'bonus')
             const gd = groupDeduct(grp)
+            const bonusPts = isBonusGroup ? grp.items.reduce((s, i) => s + (i.deduct_score || 0), 0) : 0
             const lead = grp.items[0]
             return (
               <div key={gName} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontWeight: 700, color: 'var(--t2)', padding: '4px 6px', background: 'var(--bg)', borderRadius: 6, marginBottom: 4 }}>
-                  <span>{grp.name}</span>
-                  <span style={{ color: gd > 0 ? '#ef4444' : 'var(--t3)' }}>配分 {grp.allot}{gd > 0 ? ` · 已扣 ${gd}` : ''}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontWeight: 700, color: isBonusGroup ? '#22c55e' : 'var(--t2)', padding: '4px 6px', background: isBonusGroup ? 'rgba(34,197,94,0.12)' : 'var(--bg)', borderRadius: 6, marginBottom: 4 }}>
+                  <span>{isBonusGroup ? '➕ 加分（回補分數，上限 100）' : grp.name}</span>
+                  {isBonusGroup
+                    ? (bonusPts > 0 && <span style={{ color: '#22c55e' }}>已加 {bonusPts}</span>)
+                    : <span style={{ color: gd > 0 ? '#ef4444' : 'var(--t3)' }}>配分 {grp.allot}{gd > 0 ? ` · 已扣 ${gd}` : ''}</span>}
                 </div>
-                {canEdit ? (
+                {!isBonusGroup && (canEdit ? (
                   <input value={lead?.group_note || ''} onChange={e => setGroupNote(lead.id, e.target.value)}
                     placeholder="此區說明（可留白）"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginBottom: 6 }} />
                 ) : (lead?.group_note && (
                   <div style={{ fontSize: 12, color: 'var(--t2)', padding: '6px 8px', background: 'var(--glass)', borderRadius: 6, marginBottom: 6 }}>說明：{lead.group_note}</div>
-                ))}
+                )))}
                 {grp.items.map(item => (
                   <ItemRow key={item.id} item={item} canEdit={canEdit}
-                    maxDeduct={(grp.allot || 0) - (gd - (item.deduct_score || 0))}
+                    maxDeduct={item.input_type === 'bonus' ? 100 : (grp.allot || 0) - (gd - (item.deduct_score || 0))}
                     onDeduct={(v, max) => setDeduct(item, v, max)}
                     onRemark={(t) => setItemRemark(item.id, t)} />
                 ))}
@@ -461,12 +470,16 @@ export default function StoreAudit() {
   )
 }
 
-// ─── 評核項目單列（評分制：只填扣分；打字題多內容框）───
+// ─── 評核項目單列（評分制：扣分；加分列往回補分）───
 function ItemRow({ item, canEdit, maxDeduct, onDeduct, onRemark }) {
-  const deducted = item.deduct_score || 0
-  const hasDeduct = deducted > 0
+  const isBonus = item.input_type === 'bonus'
+  const val = item.deduct_score || 0
+  const active = val > 0
+  const c = isBonus ? '#22c55e' : '#ef4444'
+  const bg = isBonus ? 'rgba(34,197,94,0.08)' : 'rgba(239,68,68,0.06)'
+  const needRemark = isBonus && val > 0 && !item.remark
   return (
-    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: hasDeduct ? 'rgba(239,68,68,0.06)' : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
+    <div style={{ padding: '8px 0', borderBottom: '1px solid var(--border)', background: active ? bg : 'transparent', marginLeft: -6, marginRight: -6, paddingLeft: 6, paddingRight: 6 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <span style={{ flex: 1, fontSize: 13, lineHeight: 1.5 }}>
           {item.is_star && <Star size={12} style={{ color: '#f59e0b', verticalAlign: 'middle', marginRight: 4 }} fill="#f59e0b" />}
@@ -475,27 +488,27 @@ function ItemRow({ item, canEdit, maxDeduct, onDeduct, onRemark }) {
         </span>
         {canEdit ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 11, color: 'var(--t3)' }}>扣</span>
+            <span style={{ fontSize: 11, color: isBonus ? '#22c55e' : 'var(--t3)' }}>{isBonus ? '加' : '扣'}</span>
             <input type="number" min={0} inputMode="numeric"
-              value={deducted || ''} placeholder="0"
+              value={val || ''} placeholder="0"
               onChange={e => onDeduct(e.target.value, Math.max(0, maxDeduct))}
-              style={{ width: 52, padding: '5px 4px', textAlign: 'center', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass)', color: hasDeduct ? '#ef4444' : 'var(--t1)', fontWeight: hasDeduct ? 700 : 400, fontSize: 14 }} />
+              style={{ width: 52, padding: '5px 4px', textAlign: 'center', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--glass)', color: active ? c : 'var(--t1)', fontWeight: active ? 700 : 400, fontSize: 14 }} />
           </div>
         ) : (
           <span style={{
             padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
-            background: hasDeduct ? 'rgba(239,68,68,0.15)' : 'rgba(34,197,94,0.15)',
-            color: hasDeduct ? '#ef4444' : '#22c55e',
-          }}>{hasDeduct ? `扣 ${deducted}` : '✓'}</span>
+            background: active ? (isBonus ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)') : 'rgba(34,197,94,0.15)',
+            color: active ? c : '#22c55e',
+          }}>{isBonus ? (active ? `加 ${val}` : '—') : (active ? `扣 ${val}` : '✓')}</span>
         )}
       </div>
-      {item.input_type === 'text' && (
+      {(item.input_type === 'text' || isBonus) && (
         canEdit ? (
           <input value={item.remark || ''} onChange={e => onRemark(e.target.value)}
-            placeholder="請填寫抽查 / 內容"
-            style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginTop: 6 }} />
+            placeholder={isBonus ? '加分原因（有加分則必填）' : '請填寫抽查 / 內容'}
+            style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: needRemark ? '1px solid #ef4444' : '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginTop: 6 }} />
         ) : (
-          item.remark && <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4, padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{item.remark}</div>
+          item.remark && <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4, padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{isBonus ? '加分原因：' : ''}{item.remark}</div>
         )
       )}
     </div>
