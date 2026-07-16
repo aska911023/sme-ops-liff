@@ -55,9 +55,9 @@ const GROUPS = {
     icon: Wallet,
     color: 'green',
     tabs: [
-      { key: 'expense',         label: '報帳', pendingStatus: '待審核' },
-      { key: 'expense_request', label: '費用申請', pendingStatus: '申請中' },
-      { key: 'expense_settle',  label: '費用核銷', pendingStatus: '待核銷' },
+      { key: 'expense',         label: '經常性', pendingStatus: '待審核' },
+      { key: 'expense_request', label: '非經常性-申請', pendingStatus: '申請中' },
+      { key: 'expense_settle',  label: '非經常性-驗收', pendingStatus: '待核銷' },
       // 叫貨單跟費用同表(expense_requests)，doc_type='order' 才收；走同一支簽核 RPC
       { key: 'order_request',   label: '叫貨申請', pendingStatus: '申請中' },
       { key: 'order_settle',    label: '叫貨驗收', pendingStatus: '待核銷' },
