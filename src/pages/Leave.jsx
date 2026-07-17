@@ -344,7 +344,9 @@ export default function Leave() {
       if (form.unit === 'hour') {
         const [sh, sm] = form.start_time.split(':').map(Number)
         const [eh, em] = form.end_time.split(':').map(Number)
-        needHours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+        let _d = (eh + em / 60) - (sh + sm / 60)
+        if (_d < 0) _d += 24   // 跨午夜(如 18:00~00:00)：收尾算隔天同一班
+        needHours = Math.max(0.5, _d)
       } else {
         const wd = countWorkDays(form.start_date, form.end_date || form.start_date, holidays)
         needHours = wd * 8
@@ -384,7 +386,9 @@ export default function Leave() {
     if (form.unit === 'hour') {
       const [sh, sm] = form.start_time.split(':').map(Number)
       const [eh, em] = form.end_time.split(':').map(Number)
-      hours = Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+      let _d = (eh + em / 60) - (sh + sm / 60)
+      if (_d < 0) _d += 24   // 跨午夜(如 18:00~00:00)：收尾算隔天同一班
+      hours = Math.max(0.5, _d)
       // 對齊到該假別的最小單位（小時 → 直接 snap；分鐘 → 換分鐘 snap 再換回）
       if (currentStep.unit === 'hour') {
         hours = snapToStep(hours, currentStep.step)
@@ -404,7 +408,8 @@ export default function Leave() {
     const payload = {
       type: form.type,
       start_date: form.start_date,
-      end_date: form.end_date || form.start_date,
+      // 時數假是「一個班」→ 不跨天(跨午夜也收在 start_date),避免日曆/天數看起來像兩天
+      end_date: form.unit === 'hour' ? form.start_date : (form.end_date || form.start_date),
       days,
       hours,
       start_time: form.unit === 'hour' ? form.start_time : '',
