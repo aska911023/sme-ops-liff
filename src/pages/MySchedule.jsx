@@ -28,6 +28,8 @@ export default function MySchedule() {
   const [shiftDefs, setShiftDefs] = useState([])
   const [loading, setLoading] = useState(true)
   const [swapModal, setSwapModal] = useState(null) // { date, myShift }
+  const [viewMode, setViewMode] = useState('mine')  // 'mine' | 'store'
+  const [storeSchedules, setStoreSchedules] = useState([]) // 全店同事的班(本週)
 
   const weekDates = getWeekDates(weekOffset)
   const today = new Date().toISOString().slice(0, 10)
@@ -54,7 +56,14 @@ export default function MySchedule() {
         // client-side filter 本週範圍（避免 RPC 多傳參數）
         setSchedules(all.filter(s => s.date >= weekDates[0] && s.date <= weekDates[6]))
       })
-  }, [lineProfile, weekOffset])
+  }, [lineProfile, weekOffset]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 全店檢視：撈同店同事本週的班（僅在切到「全店」時撈）
+  useEffect(() => {
+    if (!lineProfile?.lineUserId || viewMode !== 'store') return
+    supabase.rpc('liff_list_store_schedules', { p_line_user_id: lineProfile.lineUserId, p_start: weekDates[0], p_end: weekDates[6] })
+      .then(({ data }) => setStoreSchedules(Array.isArray(data) ? data : []))
+  }, [lineProfile, weekOffset, viewMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const getShift = (date) => schedules.find(s => s.date === date)?.shift || null
   const getShiftDef = (name) => shiftDefs.find(s => s.name === name)
@@ -90,6 +99,18 @@ export default function MySchedule() {
         <div className="header-title">📅 我的班表</div>
       </div>
 
+      {/* 我的 / 全店 切換 */}
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginBottom: 12 }}>
+        {[{ v: 'mine', l: '我的班表' }, { v: 'store', l: '全店班表' }].map(t => (
+          <button key={t.v} onClick={() => setViewMode(t.v)} style={{
+            padding: '7px 18px', borderRadius: 999, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+            border: viewMode === t.v ? '1.5px solid var(--cyan)' : '1px solid var(--border2)',
+            background: viewMode === t.v ? 'rgba(34,211,238,0.12)' : 'var(--card)',
+            color: viewMode === t.v ? 'var(--cyan)' : 'var(--t2)',
+          }}>{t.l}</button>
+        ))}
+      </div>
+
       {/* Week nav */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 16 }}>
         <button onClick={() => setWeekOffset(w => w - 1)} style={{
@@ -106,7 +127,8 @@ export default function MySchedule() {
         }}><ChevronRight size={18} /></button>
       </div>
 
-      {/* Quick stats */}
+      {/* Quick stats（僅個人檢視）*/}
+      {viewMode === 'mine' && (
       <div className="stat-row" style={{ marginBottom: 16 }}>
         <div className="stat-box">
           <div className="stat-num" style={{ color: 'var(--cyan)' }}>{workDays}</div>
@@ -121,9 +143,10 @@ export default function MySchedule() {
           <div className="stat-label">週時數</div>
         </div>
       </div>
+      )}
 
-      {/* Schedule cards */}
-      {weekDates.map((date, i) => {
+      {/* Schedule cards（我的）*/}
+      {viewMode === 'mine' && weekDates.map((date, i) => {
         const shift = getShift(date)
         const isToday = date === today
         const isHoliday = holidays[date]
@@ -185,6 +208,51 @@ export default function MySchedule() {
                   🎌 {isHoliday}
                 </div>
               )}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* Schedule cards（全店）*/}
+      {viewMode === 'store' && weekDates.map((date, i) => {
+        const rows = storeSchedules.filter(s => s.date === date)
+          .sort((a, b) => (a.actual_start || 'z').localeCompare(b.actual_start || 'z') || (a.employee || '').localeCompare(b.employee || ''))
+        const isToday = date === today
+        const isHoliday = holidays[date]
+        return (
+          <div key={date} style={{
+            display: 'flex', alignItems: 'stretch', gap: 12, marginBottom: 8,
+            padding: '14px 16px', borderRadius: 14,
+            background: isToday ? 'rgba(34,211,238,0.06)' : 'var(--card)',
+            border: `1.5px solid ${isToday ? 'rgba(34,211,238,0.3)' : 'var(--border)'}`,
+          }}>
+            <div style={{ width: 48, textAlign: 'center', flexShrink: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: i >= 5 ? 'var(--red)' : 'var(--t2)' }}>週{DAY_LABELS[i]}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: isToday ? 'var(--cyan)' : 'var(--t1)' }}>{date.slice(8)}</div>
+              {isToday && <div style={{ fontSize: 9, color: 'var(--cyan)', fontWeight: 700 }}>今天</div>}
+              {isHoliday && <div style={{ fontSize: 9, color: 'var(--red)', fontWeight: 600, marginTop: 2 }}>🎌</div>}
+            </div>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5 }}>
+              {rows.length === 0 ? (
+                <div style={{ padding: '8px 12px', borderRadius: 10, background: 'var(--card)', border: '1px dashed var(--border2)', fontSize: 13, color: 'var(--t3)' }}>尚未排班</div>
+              ) : rows.map(s => {
+                const c = getShiftColor(s.shift)
+                const def = s.shift && s.shift !== '休' ? getShiftDef(s.shift) : null
+                const timeStr = (s.actual_start && s.actual_end)
+                  ? `${String(s.actual_start).slice(0, 5)}~${String(s.actual_end).slice(0, 5)}`
+                  : (def ? `${def.start_time?.slice(0, 5)}~${def.end_time?.slice(0, 5)}` : '')
+                return (
+                  <div key={s.id ?? (s.employee + s.shift)} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                    padding: '6px 10px', borderRadius: 8, background: c.bg, border: `1px solid ${c.border}`,
+                  }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--t1)' }}>{s.employee || '—'}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: c.color, textAlign: 'right' }}>
+                      {ABSENCE.has(s.shift) ? s.shift : (timeStr || s.shift)}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         )
