@@ -3,6 +3,7 @@ import { ChevronLeft, FileText, Clock, CheckCircle2, XCircle, ArrowRight, Rotate
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import ChainTimeline from '../components/ChainTimeline'
 
 // 把 status 分到三大類：進行中 / 已通過 / 已退回
 const PASS_STATUSES = ['已核准', '已核銷', '已通過']
@@ -42,6 +43,21 @@ export default function ApprovalStatus() {
   }, [lineProfile?.lineUserId])
 
   useEffect(() => { reload() }, [reload])
+
+  // 展開看簽核進度（懶載入 liff_get_request_chain）
+  const [openChain, setOpenChain] = useState(null)   // `${type}-${id}`
+  const [chains, setChains] = useState({})           // { key: { loading, steps } }
+  const toggleChain = useCallback(async (r) => {
+    const key = `${r._type}-${r.id}`
+    if (openChain === key) { setOpenChain(null); return }
+    setOpenChain(key)
+    if (chains[key]) return
+    setChains(prev => ({ ...prev, [key]: { loading: true, steps: [] } }))
+    const { data: steps, error } = await supabase.rpc('liff_get_request_chain', {
+      p_type: r._meta.rpcType, p_id: r.id,
+    })
+    setChains(prev => ({ ...prev, [key]: { loading: false, steps: error ? [] : (steps || []) } }))
+  }, [openChain, chains])
 
   // 把所有 type 的 records 攤平成統一格式
   const flatten = () => {
@@ -176,6 +192,26 @@ export default function ApprovalStatus() {
           <div style={{ fontSize: 13, color: 'var(--t2)', marginLeft: 24 }}>
             {renderSummary(r)}
           </div>
+          {r._meta.rpcType !== 'expense' && (
+            <div style={{ marginLeft: 24, marginTop: 8 }}>
+              <button
+                onClick={() => toggleChain(r)}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--cyan)', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+              >
+                {openChain === `${r._type}-${r.id}` ? '▾' : '▸'} 查看簽核進度
+              </button>
+              {openChain === `${r._type}-${r.id}` && (
+                <div style={{ marginTop: 8 }}>
+                  <ChainTimeline
+                    steps={chains[`${r._type}-${r.id}`]?.steps || []}
+                    loading={chains[`${r._type}-${r.id}`]?.loading}
+                    requestType={r._meta.rpcType}
+                    requestId={r.id}
+                  />
+                </div>
+              )}
+            </div>
+          )}
           {r.reject_reason && (
             <div style={{
               marginTop: 8, marginLeft: 24, padding: '10px 12px', borderRadius: 8,
