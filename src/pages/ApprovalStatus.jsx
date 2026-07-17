@@ -200,16 +200,16 @@ export default function ApprovalStatus() {
               >
                 {openChain === `${r._type}-${r.id}` ? '▾' : '▸'} 查看簽核進度
               </button>
-              {openChain === `${r._type}-${r.id}` && (
-                <div style={{ marginTop: 8 }}>
-                  <ChainTimeline
-                    steps={chains[`${r._type}-${r.id}`]?.steps || []}
-                    loading={chains[`${r._type}-${r.id}`]?.loading}
-                    requestType={r._meta.rpcType}
-                    requestId={r.id}
-                  />
-                </div>
-              )}
+              {openChain === `${r._type}-${r.id}` && (() => {
+                const c = chains[`${r._type}-${r.id}`]
+                if (!c || c.loading) return <div style={{ marginTop: 8, fontSize: 12, color: 'var(--t3)' }}>載入中…</div>
+                if (!c.steps.length) return <div style={{ marginTop: 8, fontSize: 12, color: 'var(--t3)' }}>此單無詳細簽核關卡紀錄（較早期建立的單）。</div>
+                return (
+                  <div style={{ marginTop: 8 }}>
+                    <ChainTimeline steps={c.steps} requestType={r._meta.rpcType} requestId={r.id} />
+                  </div>
+                )
+              })()}
             </div>
           )}
           {r.reject_reason && (
