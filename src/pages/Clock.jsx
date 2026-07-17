@@ -320,6 +320,11 @@ export default function ClockPage() {
     ? true
     : (location && store?._matched !== false && (gpsOk || wifiOk))
 
+  // GPS 不穩(精確度差)→ 不鎖按鈕,改走「確定畫面」後照打(後端標 gps_weak、位置僅參考、時間照記)。
+  //   只在「一般模式 + GPS 弱 + 一般驗證沒過」時啟用;GPS 良好但超出範圍(真的不在店)仍擋。
+  const canClockWeak = !isOuting && gpsWeak && !canClock
+  const canPunch = canClock || canClockWeak
+
   // Determine clock-in location name
   const getLocationName = () => {
     if (gpsOk && store?.name) return store.name
@@ -328,16 +333,13 @@ export default function ClockPage() {
   }
 
   const [confirmOut, setConfirmOut] = useState(false)
+  const [weakGpsConfirm, setWeakGpsConfirm] = useState(null)  // null | 'in' | 'out' — 待確認的弱GPS打卡
   const [clockOverlay, setClockOverlay] = useState(null)  // null | 'pending' | 'success'
 
-  const handleClock = async (type) => {
-    if (loading || !canClock) return
-    // ★ 下班打卡 — 加 confirm 防誤觸
-    if (type === 'out' && !confirmOut) {
-      setConfirmOut(true)
-      return
-    }
+  // 實際送出打卡(關卡都過了才呼叫)
+  const doPunch = async (type) => {
     setConfirmOut(false)
+    setWeakGpsConfirm(null)
     setLoading(true)
     // ★ 一按即時回饋：先顯示「打卡中」spinner（不等後端往返），成功才切成功動畫。
     //   永遠不會假成功 —— 失敗時 catch 收回 overlay 並報錯。
@@ -354,6 +356,7 @@ export default function ClockPage() {
         accuracy: gpsAccuracy  || null,
         ip:       clientIp     || null,
         clock_mode:   clockMode,
+        force_weak_gps: canClockWeak,   // GPS 不穩已確認 → 後端照打、標 gps_weak
       })
       setTodayRecord(data.record)
       const base = type === 'in' ? '上班打卡成功 ✓' : '下班打卡成功 ✓'
@@ -379,6 +382,21 @@ export default function ClockPage() {
     // outing 有 reminder 訊息，多顯示一些時間
     const msgDuration = clockMode === 'outing' ? 8000 : 5000
     setTimeout(() => setMsg(''), msgDuration)
+  }
+
+  // 從按鈕按下：依序過「弱GPS確認 → 下班確認」兩關,都過才送
+  const handleClock = (type) => {
+    if (loading || !canPunch) return
+    if (canClockWeak && !weakGpsConfirm) { setWeakGpsConfirm(type); return }   // GPS 不穩 → 確定畫面
+    if (type === 'out' && !confirmOut) { setConfirmOut(true); return }         // 下班 → 防誤觸
+    doPunch(type)
+  }
+  // 弱 GPS 確定畫面「仍要打卡」→ 下班仍二次確認,上班直接送
+  const confirmWeakGps = () => {
+    const type = weakGpsConfirm
+    setWeakGpsConfirm(null)
+    if (type === 'out' && !confirmOut) { setConfirmOut(true); return }
+    doPunch(type)
   }
 
   const clockedIn = !!todayRecord?.clock_in
@@ -586,10 +604,10 @@ export default function ClockPage() {
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32 }}>
         {!clockedIn ? (
           <button
-            className={`clock-btn ${canClock && clockMode === 'normal' ? 'clock-in' : ''}`}
+            className={`clock-btn ${canPunch && clockMode === 'normal' ? 'clock-in' : ''}`}
             onClick={() => handleClock('in')}
-            disabled={loading || !canClock}
-            style={!canClock ? {
+            disabled={loading || !canPunch}
+            style={!canPunch ? {
               background: 'var(--card)', border: '2px solid var(--border)',
               color: 'var(--t3)', boxShadow: 'none', cursor: 'not-allowed',
               width: 140, height: 140, borderRadius: '50%',
@@ -603,15 +621,15 @@ export default function ClockPage() {
               boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
             } : undefined)}
           >
-            <span style={{ fontSize: 28 }}>{canClock ? (clockMode === 'normal' ? '👆' : MODE_META[clockMode].icon) : '📍'}</span>
-            {!canClock ? '範圍外' : (clockMode === 'normal' ? '上班打卡' : `${MODE_META[clockMode].label}上班`)}
+            <span style={{ fontSize: 28 }}>{canPunch ? (clockMode === 'normal' ? '👆' : MODE_META[clockMode].icon) : '📍'}</span>
+            {!canPunch ? '範圍外' : (clockMode === 'normal' ? '上班打卡' : `${MODE_META[clockMode].label}上班`)}
           </button>
         ) : !clockedOut ? (
           <button
-            className={`clock-btn ${canClock && clockMode === 'normal' ? 'clock-out' : ''}`}
+            className={`clock-btn ${canPunch && clockMode === 'normal' ? 'clock-out' : ''}`}
             onClick={() => handleClock('out')}
-            disabled={loading || !canClock}
-            style={!canClock ? {
+            disabled={loading || !canPunch}
+            style={!canPunch ? {
               background: 'var(--card)', border: '2px solid var(--border)',
               color: 'var(--t3)', boxShadow: 'none', cursor: 'not-allowed',
               width: 140, height: 140, borderRadius: '50%',
@@ -625,8 +643,8 @@ export default function ClockPage() {
               boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
             } : undefined)}
           >
-            <span style={{ fontSize: 28 }}>{canClock ? (clockMode === 'normal' ? '👋' : MODE_META[clockMode].icon) : '📍'}</span>
-            {!canClock ? '範圍外' : (clockMode === 'normal' ? '下班打卡' : `${MODE_META[clockMode].label}下班`)}
+            <span style={{ fontSize: 28 }}>{canPunch ? (clockMode === 'normal' ? '👋' : MODE_META[clockMode].icon) : '📍'}</span>
+            {!canPunch ? '範圍外' : (clockMode === 'normal' ? '下班打卡' : `${MODE_META[clockMode].label}下班`)}
           </button>
         ) : (
           <div style={{
@@ -788,7 +806,7 @@ export default function ClockPage() {
                 取消
               </button>
               <button
-                onClick={() => handleClock('out')}
+                onClick={() => doPunch('out')}
                 style={{
                   flex: 1, padding: '12px', borderRadius: 10,
                   background: 'var(--orange)', color: '#fff', border: 'none',
@@ -796,6 +814,45 @@ export default function ClockPage() {
                 }}
               >
                 確認下班
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GPS 不穩 確定畫面 — 告知後照打(後端標 gps_weak、時間照記) */}
+      {weakGpsConfirm && (
+        <div
+          onClick={() => setWeakGpsConfirm(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 100,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: 380, background: 'var(--bg)', borderRadius: 16, padding: '24px 22px', textAlign: 'center' }}
+          >
+            <div style={{ fontSize: 40, marginBottom: 8 }}>📍</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--t1)', marginBottom: 6 }}>GPS 定位不穩定</div>
+            <div style={{ fontSize: 13, color: 'var(--t3)', marginBottom: 6 }}>
+              目前定位精確度不足{gpsAccuracy ? `（約 ${gpsAccuracy}m）` : ''}，系統無法確認你是否在店內。
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--orange)', marginBottom: 18 }}>
+              仍要打卡的話，<b>打卡時間會照樣記錄</b>，但此筆<b>位置僅供參考</b>，主管可能會再跟你確認。
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setWeakGpsConfirm(null)}
+                style={{ flex: 1, padding: '12px', borderRadius: 10, background: 'var(--card)', color: 'var(--t2)', border: '1px solid var(--border)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmWeakGps}
+                style={{ flex: 1, padding: '12px', borderRadius: 10, background: 'var(--orange)', color: '#fff', border: 'none', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+              >
+                仍要打卡
               </button>
             </div>
           </div>
