@@ -5,16 +5,25 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
-// 算加班時數：依起訖時間 + 商店最小單位（step）
+// 加班應扣休息分鐘（沿用全系統階梯 = clock-in / scheduleUtils.getRestMinutes）：
+//   毛時數 <5h → 0 · 5~9h → 30 · ≥9h → 60（上限）
+function otRestMinutes(grossHours) {
+  if (grossHours < 5) return 0
+  if (grossHours < 9) return 30
+  return 60
+}
+
+// 算加班時數：依起訖時間 + 商店最小單位（step），並自動扣休息時間（淨工時）
 // 跨日：end <= start 自動 +24h（例 22:00 -> 02:00 = 4 小時）
+// 扣休息後再湊 step；存進 hours→trigger 同步 ot_hours→計薪直接用淨值。
 function computeOvertimeHours(start, end, step = 0.5) {
   if (!start || !end) return 0
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = end.split(':').map(Number)
   let mins = (eh * 60 + em) - (sh * 60 + sm)
   if (mins <= 0) mins += 24 * 60
-  const hours = mins / 60
-  return Math.round(hours / step) * step
+  const netMins = Math.max(0, mins - otRestMinutes(mins / 60))
+  return Math.round(netMins / 60 / step) * step
 }
 
 export default function Overtime() {
@@ -270,6 +279,18 @@ export default function Overtime() {
             <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
               本店加班最小單位 {step} 小時 · 訖時 ≤ 起時自動視為跨日
             </div>
+            {(() => {
+              if (!form.start_time || !form.end_time) return null
+              const toM = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+              let g = toM(form.end_time) - toM(form.start_time); if (g <= 0) g += 1440
+              const rest = g < 300 ? 0 : g < 540 ? 30 : 60
+              if (rest === 0) return null
+              return (
+                <div style={{ fontSize: 11, color: 'var(--orange)', marginTop: 4 }}>
+                  ⏱ 毛時數 {(g / 60).toFixed(1)}h，已自動扣休息 {rest} 分
+                </div>
+              )
+            })()}
           </div>
           <div className="form-group">
             <label className="form-label">加班原因</label>
