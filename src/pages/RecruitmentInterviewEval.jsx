@@ -88,7 +88,7 @@ export default function RecruitmentInterviewEval() {
   const iv = data.interview
 
   return (
-    <div style={{ padding: 14, paddingBottom: 140 }}>
+    <div style={{ padding: 14, paddingBottom: 'calc(150px + env(safe-area-inset-bottom, 8px))' }}>
       <button onClick={() => navigate(-1)}
         style={{ background: 'none', border: 'none', color: 'var(--cyan)', padding: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
         <ChevronLeft size={16} /> 返回
@@ -196,9 +196,11 @@ export default function RecruitmentInterviewEval() {
       </div>
 
       <div style={{
-        position: 'fixed', left: 0, right: 0, bottom: 0, padding: 14,
+        position: 'fixed', left: 0, right: 0,
+        /* 墊到全域 TabBar(fixed bottom:0, 高約 54px + 安全區)上方,否則送出鈕被 hub tab 蓋住 */
+        bottom: 'calc(54px + env(safe-area-inset-bottom, 8px))', padding: 14,
         background: 'var(--bg)', borderTop: '1px solid var(--border)',
-        display: 'flex', gap: 8,
+        display: 'flex', gap: 8, zIndex: 99,
       }}>
         <button onClick={() => navigate(-1)}
           style={{ flex: 1, padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontWeight: 600 }}>
