@@ -37,6 +37,7 @@ import RecruitmentHub from './pages/RecruitmentHub'
 import RecruitmentCandidate from './pages/RecruitmentCandidate'
 import RecruitmentInterview from './pages/RecruitmentInterview'
 import RecruitmentInterviewEval from './pages/RecruitmentInterviewEval'
+import RecruitmentOffer from './pages/RecruitmentOffer'
 import CoverInvitations from './pages/CoverInvitations'
 import LeaveBalance from './pages/LeaveBalance'
 import Documents from './pages/Documents'
@@ -223,6 +224,7 @@ export default function App() {
         <Route path="/recruitment/candidate/:id" element={<RecruitmentCandidate />} />
         <Route path="/recruitment/interview/:id" element={<RecruitmentInterview />} />
         <Route path="/recruitment/interview/:id/eval" element={<RecruitmentInterviewEval />} />
+        <Route path="/recruitment/offer/:id" element={<RecruitmentOffer />} />
         <Route path="/cover-invitations" element={<CoverInvitations />} />
         <Route path="/leave-balance" element={<LeaveBalance />} />
         <Route path="/documents" element={<Documents />} />
