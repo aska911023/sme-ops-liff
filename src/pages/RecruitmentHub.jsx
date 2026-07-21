@@ -5,12 +5,17 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 const STAGE_COLOR = {
-  '投遞':   'var(--t3)',
-  '篩選':   '#6366f1',
-  '面試':   'var(--cyan)',
-  '錄取決定': 'var(--orange)',
-  '已錄取':  'var(--green)',
-  '淘汰':    'var(--red)',
+  '投遞':       'var(--t3)',
+  '篩選中':     '#6366f1',
+  '面試中':     'var(--cyan)',
+  '待錄取決定': 'var(--orange)',
+  '錄取簽核中': 'var(--orange)',
+  '已錄取':     'var(--green)',
+  '待報到':     'var(--green)',
+  '已報到':     'var(--green)',
+  '淘汰':       'var(--red)',
+  '婉拒':       'var(--red)',
+  '人才庫':     'var(--t3)',
 }
 
 export default function RecruitmentHub() {
