@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronLeft, Check, X } from 'lucide-react'
+import { ChevronLeft, Check, X, UserPlus } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import EmployeePicker from '../components/EmployeePicker'
 
 const money = (n) => n != null && n !== '' ? 'NT$ ' + Number(n).toLocaleString() : '—'
 const STEP_COLOR = { '待審': 'var(--orange)', '已核准': 'var(--green)', '已駁回': 'var(--red)' }
@@ -15,6 +16,37 @@ export default function RecruitmentOffer() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [reason, setReason] = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+  const [addApprover, setAddApprover] = useState('')
+  const [employees, setEmployees] = useState([])
+  const [adding, setAdding] = useState(false)
+
+  const reload = () => supabase.rpc('liff_get_offer_detail', {
+    p_line_user_id: lineProfile.lineUserId, p_offer_id: Number(id),
+  }).then(({ data }) => setData(data))
+
+  const openAdd = async () => {
+    setShowAdd(true)
+    if (employees.length === 0) {
+      const { data: emps } = await supabase.rpc('liff_list_employees_in_org', { p_line_user_id: lineProfile.lineUserId })
+      setEmployees(Array.isArray(emps) ? emps : [])
+    }
+  }
+  const doAddSigner = async () => {
+    if (!addApprover) { alert('請選擇加簽人'); return }
+    setAdding(true)
+    try {
+      const { data: res, error } = await supabase.rpc('liff_add_offer_signer', {
+        p_line_user_id: lineProfile.lineUserId, p_offer_id: Number(id),
+        p_approver_id: Number(addApprover), p_after_step: data?.offer?.current_step ?? 1,
+      })
+      if (error) throw error
+      if (!res?.ok) throw new Error(res?.error || '加簽失敗')
+      alert('已加簽，輪到該簽核人時會通知')
+      setShowAdd(false); setAddApprover('')
+      await reload()
+    } catch (e) { alert('加簽失敗：' + e.message) } finally { setAdding(false) }
+  }
 
   useEffect(() => {
     if (!lineProfile?.lineUserId || !id) return
@@ -96,6 +128,26 @@ export default function RecruitmentOffer() {
 
       {canAct && (
         <>
+          {/* 加簽 — 在自己這關之後插一位簽核人 */}
+          <div style={{ marginBottom: 12 }}>
+            {!showAdd ? (
+              <button onClick={openAdd}
+                style={{ width: '100%', justifyContent: 'center', background: 'none', border: '1px dashed var(--border)', borderRadius: 8, padding: '9px 12px', color: 'var(--cyan)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <UserPlus size={15} /> 加簽（在你這關之後插一位）
+              </button>
+            ) : (
+              <div style={{ padding: 12, background: 'var(--glass)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 6 }}>加簽人（排在你核准後、下一關之前）</div>
+                <EmployeePicker value={addApprover} onChange={setAddApprover} employees={employees} placeholder="選擇加簽人" />
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button onClick={() => { setShowAdd(false); setAddApprover('') }}
+                    style={{ flex: 1, padding: 8, borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontWeight: 600 }}>取消</button>
+                  <button onClick={doAddSigner} disabled={adding}
+                    style={{ flex: 1, padding: 8, borderRadius: 8, border: 'none', background: 'var(--cyan)', color: '#fff', fontWeight: 700, opacity: adding ? 0.5 : 1 }}>{adding ? '加簽中…' : '確認加簽'}</button>
+                </div>
+              </div>
+            )}
+          </div>
           <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="退回原因（退回時必填）"
             style={{ width: '100%', minHeight: 70, padding: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 14 }} />
           <div style={{
