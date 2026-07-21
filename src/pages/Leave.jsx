@@ -117,6 +117,7 @@ export default function Leave() {
   const [uploading, setUploading] = useState(false)
   const [benefitExtras, setBenefitExtras] = useState({}) // code → extra_days from benefit_policies
   const [dbBalances, setDbBalances] = useState([])      // leave_balances rows from DB
+  const [annualEnt, setAnnualEnt] = useState(null)      // 特休額度單一真相(leave_annual_entitlement RPC)
   const [leaveSteps, setLeaveSteps] = useState({}) // 中文假別名稱 → {step, unit}
   const [compBalance, setCompBalance] = useState(null) // { total_remaining, ledgers: [...] }
 
@@ -145,9 +146,11 @@ export default function Leave() {
       supabase.rpc('liff_list_holidays'),
       supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_get_my_leave_balances', { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([lr, hd, bp, lbRes]) => {
+      supabase.rpc('liff_leave_annual_entitlement', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([lr, hd, bp, lbRes, entRes]) => {
       const leaveList = Array.isArray(lr.data) ? lr.data : []
       setRecords(leaveList)
+      setAnnualEnt(entRes?.data || null)
       setHolidays((Array.isArray(hd.data) ? hd.data : []).map(h => h.date))
       // 抓「已有人 approved 過」的 leave id（駁回不算）— 走 SECURITY DEFINER RPC 繞 anon RLS
       const ids = leaveList.map(x => x.id).filter(Boolean)
@@ -304,7 +307,9 @@ export default function Leave() {
 
     // 特休年資檢查（勞基法 §38：須滿 6 個月）
     if (form.type === '特休') {
-      const entitlement = calcAnnualLeave(employee?.join_date)
+      // 特休額度單一真相走 RPC(含修好第一年3天/PT實排比例),失敗 fallback 舊 client 算法
+      const entitlement = (annualEnt?.ok && annualEnt.ft_days != null)
+        ? Number(annualEnt.ft_days) : calcAnnualLeave(employee?.join_date)
       if (entitlement === 0) {
         alert('未滿 6 個月年資，尚無特休資格，無法申請特休')
         return
@@ -312,7 +317,8 @@ export default function Leave() {
       // 兼職：用時數上限驗證
       if (employee?.salary_type === 'hourly') {
         const empWeeklyHours = Number(employee?.weekly_hours) || 0
-        const { hours: ptEntitleHours } = calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours)
+        const ptEntitleHours = (annualEnt?.ok && annualEnt.is_pt && annualEnt.pt_hours != null)
+          ? Number(annualEnt.pt_hours) : calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours).hours
         const annualRange = getAnnualLeaveRange(employee.join_date)
         const dailyHours = empWeeklyHours / 5 || 8
         const usedHoursThisYear = records
@@ -787,7 +793,9 @@ export default function Leave() {
       {employee?.join_date && (() => {
         const isEmpPT = employee?.salary_type === 'hourly'
         const empWeeklyHours = Number(employee?.weekly_hours) || 0
-        const annualLegal = calcAnnualLeave(employee.join_date)
+        // 特休額度單一真相走 RPC(含修好第一年3天/PT實排比例),失敗 fallback 舊 client 算法
+        const annualLegal = (annualEnt?.ok && annualEnt.ft_days != null)
+          ? Number(annualEnt.ft_days) : calcAnnualLeave(employee.join_date)
         const annualExtra = benefitExtras['特休']?.extra_days || 0
         const approved = records.filter(r => r.status !== '已拒絕')
 
@@ -795,10 +803,13 @@ export default function Leave() {
         const annualRange = getAnnualLeaveRange(employee.join_date)
 
         // 兼職改用時數；正職用天數
-        const ptInfo = isEmpPT ? calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours) : null
+        const ptBaseHours = isEmpPT
+          ? ((annualEnt?.ok && annualEnt.is_pt && annualEnt.pt_hours != null)
+            ? Number(annualEnt.pt_hours) : calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours).hours)
+          : 0
         const ptExtraHours = isEmpPT ? (annualExtra * 8 * Math.min(1, empWeeklyHours / 40)) : 0
         const annualTotal = isEmpPT
-          ? Math.round((ptInfo.hours + ptExtraHours) * 10) / 10
+          ? Math.round((ptBaseHours + ptExtraHours) * 10) / 10
           : annualLegal + annualExtra
         const dailyHours = isEmpPT ? (empWeeklyHours / 5 || 8) : 8
         const annualUsed = approved

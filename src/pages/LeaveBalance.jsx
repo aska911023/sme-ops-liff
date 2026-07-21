@@ -52,7 +52,9 @@ export default function LeaveBalance() {
       supabase.rpc('liff_list_benefit_policies', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_get_my_comp_time_balance', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_get_my_leave_balances', { p_line_user_id: lineProfile.lineUserId, p_year: year }),
-    ]).then(([reqRes, polRes, ctRes, lbRes]) => {
+      // 特休額度單一真相(今天基準的當期)
+      supabase.rpc('liff_leave_annual_entitlement', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([reqRes, polRes, ctRes, lbRes, entRes]) => {
       // 補休餘額
       if (ctRes.data?.ok) {
         setCompBalance({
@@ -72,6 +74,7 @@ export default function LeaveBalance() {
         isPartTime: ctxEmployee?.salary_type === 'hourly',
         weeklyHours: Number(ctxEmployee?.weekly_hours) || 0,
         dbBalances,
+        annualEnt: entRes?.data || null,
       })
       setBalances(all)
       const total = all.reduce((s, b) => s + (b.total || 0), 0)

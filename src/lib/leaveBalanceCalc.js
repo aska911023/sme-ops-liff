@@ -80,7 +80,7 @@ export function getCalendarYearRange(year) {
  *                 有 DB 記錄時 total = Math.max(dbTotal, 法定+加給) + carry_over
  * @returns Array<{ label, total, used, extra }>
  */
-export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0, dbBalances = [] }) {
+export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0, dbBalances = [], annualEnt = null }) {
   const approved = leaveRequests.filter(r => r.status !== '已拒絕')
 
   // 今天(YYYY-MM-DD)：可休期間起日 > 今天(未生效)→ 可休算 0，只看當下能休的
@@ -101,18 +101,24 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     }
   }
 
-  // 特休：到職週年制
+  // 特休：到職週年制。額度單一真相走後端 leave_annual_entitlement RPC(含修好的第一年3天/PT實排比例);
+  //   RPC 失敗才 fallback 舊 client 算法(weekly_hours/40)。
   const annualRange = joinDate ? getAnnualLeaveRange(joinDate) : null
-  const annualLegal = calcAnnualLeave(joinDate)
+  const annualLegal = (annualEnt?.ok && annualEnt.ft_days != null)
+    ? Number(annualEnt.ft_days)
+    : calcAnnualLeave(joinDate)
   const annualExtra = benefitExtras['特休']?.extra_days || 0
   const annualDB = dbMap['特休']
 
   let annualTotal, annualUsed, annualExtraDisplay, annualIsHours
   if (isPartTime) {
-    const ptInfo = calcPTAnnualLeaveHours(joinDate, weeklyHours)
+    // PT 特休時數:優先用 RPC 實排比例時數,失敗 fallback 舊 weekly_hours/40
+    const ptBaseHours = (annualEnt?.ok && annualEnt.is_pt && annualEnt.pt_hours != null)
+      ? Number(annualEnt.pt_hours)
+      : calcPTAnnualLeaveHours(joinDate, weeklyHours).hours
     const dailyHours = (Number(weeklyHours) || 0) / 5 || 8
     const ptExtraHours = Math.round(annualExtra * 8 * Math.min(1, (Number(weeklyHours) || 0) / 40) * 10) / 10
-    const ptLegalTotal = Math.round((ptInfo.hours + ptExtraHours) * 10) / 10
+    const ptLegalTotal = Math.round((ptBaseHours + ptExtraHours) * 10) / 10
     annualTotal = annualDB?.notStarted
       ? 0  // 特休期間未生效(未滿6月)→ 當下可休 0
       : (annualDB && annualDB.total > 0
