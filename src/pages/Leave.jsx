@@ -581,7 +581,13 @@ export default function Leave() {
           <div className="form-group">
             <label className="form-label">假別</label>
             <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
-              {TYPES.map(t => <option key={t}>{t}</option>)}
+              {/* 標準假別 + 員工有 DB 餘額的非標準假別(如「特休假2025結算」「舊人資系統補休結算」等結餘) */}
+              {[...TYPES, ...dbBalances
+                .filter(b => !TYPES.includes(b.leave_type) && !LEAVE_CODE_MAP[b.leave_type]
+                  && (Number(b.total_days || 0) + Number(b.carry_over_days || 0) - Number(b.used_days || 0)) > 0)
+                .map(b => b.leave_type)
+                .filter((t, i, a) => a.indexOf(t) === i)
+              ].map(t => <option key={t}>{t}</option>)}
             </select>
             <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
               本店此假別最小單位：<b style={{ color: 'var(--cyan)' }}>{currentStep.step} {currentStep.unit === 'day' ? '天' : '小時'}</b>
