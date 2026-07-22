@@ -2064,6 +2064,28 @@ function ApproverRoleBadge({ role, stepLabel, isSelf }) {
   )
 }
 
+// 當天出勤面板格式化（忘打卡/加班/請假 審核用）
+const ATT_TYPES = ['leave', 'overtime', 'correction']
+const _hhmm = (v) => { if (!v) return null; const m = String(v).match(/(\d{2}):(\d{2})/); return m ? `${m[1]}:${m[2]}` : String(v) }
+function fmtSched(s) {
+  if (!s) return '當天無排班'
+  const seg = (a, b) => (a || b) ? `${_hhmm(a) || '?'}–${_hhmm(b) || '?'}` : ''
+  let t = s.shift || ''
+  const s1 = seg(s.actual_start, s.actual_end); if (s1) t += (t ? ' ' : '') + s1
+  const s2 = seg(s.actual_start_2, s.actual_end_2); if (s2) t += ` + ${s2}`
+  if (s.rest_minutes) t += `（休 ${s.rest_minutes} 分）`
+  if (s.absence_type) t += ` · ${s.absence_type}`
+  return t || '—'
+}
+function fmtClock(c) {
+  if (!c) return '當天無打卡'
+  let t = `${_hhmm(c.clock_in) || '—'} 上 / ${_hhmm(c.clock_out) || '—'} 下`
+  if (c.is_late && c.late_minutes) t += ` · 遲到 ${c.late_minutes} 分`
+  if (c.clock_in_mode === 'outing') t += ' · 外出'
+  if (c.total_hours) t += ` · ${c.total_hours}h`
+  return t
+}
+
 function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准', extraExpanded = null }) {
   const { employee: me, lineProfile } = useAuth()
   const [expanded, setExpanded] = useState(false)
@@ -2099,6 +2121,22 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
     })()
     return () => { cancelled = true }
   }, [expanded, isPending, sourceTable, item.id, extraEmployees.length, lineProfile?.lineUserId])
+
+  // 當天出勤（忘打卡/加班/請假）：展開時抓申請人當天班表 vs 打卡
+  const [dayAtt, setDayAtt] = useState(null)
+  useEffect(() => {
+    if (!expanded || !ATT_TYPES.includes(type) || !sourceTable) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase.rpc('liff_get_applicant_day_attendance', {
+        p_line_user_id: lineProfile?.lineUserId,
+        p_source_table: sourceTable,
+        p_source_id: item.id,
+      })
+      if (!cancelled) setDayAtt(data?.ok ? data : null)
+    })()
+    return () => { cancelled = true }
+  }, [expanded, type, sourceTable, item.id, lineProfile?.lineUserId])
 
   const isMyExtraRequest = pendingExtra && me && pendingExtra.requested_by_id === me.id
   const isMyExtraAssignment = pendingExtra && me && pendingExtra.assignee_id === me.id
@@ -2211,6 +2249,24 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
           </div>
           <div style={{ fontSize: 13, color: 'var(--red)', whiteSpace: 'pre-wrap' }}>
             {item.reject_reason}
+          </div>
+        </div>
+      )}
+
+      {/* 當天出勤（忘打卡/加班/請假 審核用）*/}
+      {expanded && ATT_TYPES.includes(type) && dayAtt && (
+        <div style={{
+          marginTop: 10, padding: '10px 12px', borderRadius: 8,
+          background: 'var(--card)', border: '1px solid var(--border2)',
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--t3)', marginBottom: 6 }}>📅 當天出勤（{dayAtt.date}）</div>
+          <div style={{ display: 'flex', gap: 8, fontSize: 12, padding: '3px 0', borderBottom: '1px dashed var(--border2)' }}>
+            <span style={{ color: 'var(--t3)', minWidth: 40 }}>班表</span>
+            <span style={{ fontWeight: 600 }}>{fmtSched(dayAtt.schedule)}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, fontSize: 12, padding: '3px 0' }}>
+            <span style={{ color: 'var(--t3)', minWidth: 40 }}>打卡</span>
+            <span style={{ fontWeight: 600, color: dayAtt.clock ? 'var(--t1)' : 'var(--t3)' }}>{fmtClock(dayAtt.clock)}</span>
           </div>
         </div>
       )}
