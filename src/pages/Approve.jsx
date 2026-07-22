@@ -230,6 +230,18 @@ function PendingApprovalsView() {
     const settleExpense = settleAll.filter(e => (e.doc_type || 'expense') !== 'order')
     const settleOrder   = settleAll.filter(e => e.doc_type === 'order')
 
+    // 請假:pending RPC 的 leaves 段沒回 attachments(病假/喪假證明)→ 加法小 RPC 補,主管審核看得到
+    let leavesEnriched = rpc?.leaves || []
+    const leaveIds = leavesEnriched.map(x => x.id).filter(Boolean)
+    if (leaveIds.length) {
+      const { data: la } = await supabase.rpc('liff_leave_attachments_for_ids', {
+        p_line_user_id: lineProfile.lineUserId, p_ids: leaveIds,
+      })
+      const laMap = {}
+      for (const row of (la || [])) laMap[row.id] = row.attachments
+      leavesEnriched = leavesEnriched.map(l => (laMap[l.id] ? { ...l, attachments: laMap[l.id] } : l))
+    }
+
     // 自訂表單:pending RPC 的 read-snapshot 改寫把 data_resolved 洗掉了(picker id 沒換成名字)
     //   → 前端補呼叫既有 anon 解析器 _resolve_form_submission_data(store/emp/dept picker id→name)
     const rawForms = rpc?.form_submissions || []
@@ -242,7 +254,7 @@ function PendingApprovalsView() {
     }))
 
     setData({
-      leaves:                  rpc?.leaves                  || [],
+      leaves:                  leavesEnriched,
       overtimes:               rpc?.overtimes               || [],
       trips:                   rpc?.trips                   || [],
       expenses:                rpc?.expenses                || [],
@@ -796,6 +808,25 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
             </span>
           </div>
           {l.reason && <div style={{ fontSize: 12, color: 'var(--t3)' }}>{l.reason}</div>}
+          {Array.isArray(l.attachments) && l.attachments.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>📎 證明附件（{l.attachments.length}）</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {l.attachments.map((url, i) => {
+                  const isImg = /\.(jpe?g|png|gif|webp|heic|heif)(\?|$)/i.test(String(url))
+                  return isImg ? (
+                    <a key={i} href={url} target="_blank" rel="noreferrer">
+                      <img src={url} alt={`證明${i + 1}`} loading="lazy"
+                        style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border2)' }} />
+                    </a>
+                  ) : (
+                    <a key={i} href={url} target="_blank" rel="noreferrer"
+                      style={{ fontSize: 12, color: 'var(--cyan)', textDecoration: 'underline' }}>附件 {i + 1}</a>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </>}
       />
     ))
