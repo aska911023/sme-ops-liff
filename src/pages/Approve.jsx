@@ -230,6 +230,17 @@ function PendingApprovalsView() {
     const settleExpense = settleAll.filter(e => (e.doc_type || 'expense') !== 'order')
     const settleOrder   = settleAll.filter(e => e.doc_type === 'order')
 
+    // 自訂表單:pending RPC 的 read-snapshot 改寫把 data_resolved 洗掉了(picker id 沒換成名字)
+    //   → 前端補呼叫既有 anon 解析器 _resolve_form_submission_data(store/emp/dept picker id→name)
+    const rawForms = rpc?.form_submissions || []
+    const formSubsResolved = await Promise.all(rawForms.map(async (r) => {
+      if (r.data_resolved || !r.data || !Array.isArray(r.template_fields)) return r
+      const { data: rd } = await supabase.rpc('_resolve_form_submission_data', {
+        p_data: r.data, p_fields: r.template_fields,
+      })
+      return rd ? { ...r, data_resolved: rd } : r
+    }))
+
     setData({
       leaves:                  rpc?.leaves                  || [],
       overtimes:               rpc?.overtimes               || [],
@@ -246,8 +257,8 @@ function PendingApprovalsView() {
       personnel_transfer_requests: rpc?.personnel_transfer_requests || [],
       // 人力需求（2026-05-19）
       headcount_requests:          rpc?.headcount_requests          || [],
-      // 自訂表單 (2026-05-19 phase 2)
-      form_submissions:            rpc?.form_submissions            || [],
+      // 自訂表單 (2026-05-19 phase 2) — 已補 data_resolved(picker id→name)
+      form_submissions:            formSubsResolved,
       // 商品調撥（2026-06-09 — 從專屬 RPC 拉，依 stage 切兩 tab）
       goods_transfer_apply_requests:   transferApply,
       goods_transfer_receipt_requests: transferReceipt,
@@ -1027,9 +1038,17 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
         if (f.type === 'section') continue
         const v = src[f.key]
         if (f.type === 'file') {
-          if (v) {
-            const name = String(v).split('?')[0].split('/').pop() || f.label || '附件'
-            attachments.push({ url: v, name, label: f.label })
+          // 檔案欄位值可能是 [{url,name}] 陣列 / 單一 {url,name} 物件 / 字串 URL
+          const items = Array.isArray(v) ? v : (v ? [v] : [])
+          for (const it of items) {
+            if (!it) continue
+            if (typeof it === 'string') {
+              const name = it.split('?')[0].split('/').pop() || f.label || '附件'
+              attachments.push({ url: it, name, label: f.label })
+            } else if (it.url) {
+              const name = it.name || String(it.url).split('?')[0].split('/').pop() || f.label || '附件'
+              attachments.push({ url: it.url, name, label: f.label })
+            }
           }
         } else {
           let displayValue
