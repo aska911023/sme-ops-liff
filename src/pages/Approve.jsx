@@ -2109,6 +2109,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   const [extraAssignee, setExtraAssignee] = useState('')
   const [extraReason, setExtraReason] = useState('')
   const [extraBusy, setExtraBusy] = useState(false)
+  const [pickerDebug, setPickerDebug] = useState('')  // 診斷:加簽選人為何空
 
   useEffect(() => {
     if (!expanded || !isPending || !sourceTable) return
@@ -2123,10 +2124,13 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
 
       if (extraEmployees.length === 0) {
         // anon 直查 employees 會被 RLS 擋成空 → 走 SECURITY DEFINER RPC（與 ExpenseRequestRow 一致）
-        const { data: emps } = await supabase.rpc('liff_list_employees_in_org', {
+        const { data: emps, error: empErr } = await supabase.rpc('liff_list_employees_in_org', {
           p_line_user_id: lineProfile?.lineUserId,
         })
-        if (!cancelled) setExtraEmployees(Array.isArray(emps) ? emps : [])
+        if (!cancelled) {
+          setExtraEmployees(Array.isArray(emps) ? emps : [])
+          setPickerDebug(`line=${String(lineProfile?.lineUserId || 'NULL').slice(-8)} 回=${Array.isArray(emps) ? emps.length : (emps === null ? 'null' : typeof emps)} 錯=${empErr?.message || '-'}`)
+        }
       }
     })()
     return () => { cancelled = true }
@@ -2394,6 +2398,11 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
             options={extraEmployees.filter(e => e.id !== me?.id && e.id !== item.employee_id)}
             placeholder="— 請選擇加簽人 —"
           />
+          {extraEmployees.length === 0 && pickerDebug && (
+            <div style={{ fontSize: 10, color: 'var(--red)', marginTop: -6, marginBottom: 6, wordBreak: 'break-all' }}>
+              🔍 診斷：{pickerDebug}
+            </div>
+          )}
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽原因（選填）</label>
           <textarea value={extraReason} onChange={e => setExtraReason(e.target.value)}
             placeholder="例：金額較高，請會計師先看"
