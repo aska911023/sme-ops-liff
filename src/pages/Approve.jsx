@@ -253,6 +253,16 @@ function PendingApprovalsView() {
       return rd ? { ...r, data_resolved: rd } : r
     }))
 
+    // HR 異動類(離職/留停/異動/人力需求)pending RPC 只回 employee_id、沒回名字 → 卡片申請人顯示「—」
+    //   用員工清單 RPC 建 id→name map 補上(審核離職至少要看得到是誰)
+    const empNameMap = {}
+    {
+      const { data: allEmps } = await supabase.rpc('liff_list_employees_in_org', { p_line_user_id: lineProfile.lineUserId })
+      for (const e of (allEmps || [])) empNameMap[e.id] = e.name
+    }
+    const withEmpName = (arr) => (arr || []).map(r =>
+      (r.employee || !r.employee_id) ? r : { ...r, employee: empNameMap[r.employee_id] || r.employee })
+
     setData({
       leaves:                  leavesEnriched,
       overtimes:               rpc?.overtimes               || [],
@@ -263,12 +273,12 @@ function PendingApprovalsView() {
       expense_settles:         settleExpense,
       order_requests:          erOrder,
       order_settles:           settleOrder,
-      // HR 異動 3 表（2026-05-17 LIFF 跟 Web 對齊後新增）
-      resignation_requests:        rpc?.resignation_requests        || [],
-      leave_of_absence_requests:   rpc?.leave_of_absence_requests   || [],
-      personnel_transfer_requests: rpc?.personnel_transfer_requests || [],
+      // HR 異動 3 表（2026-05-17 LIFF 跟 Web 對齊後新增）— 補申請人名字(RPC 只回 id)
+      resignation_requests:        withEmpName(rpc?.resignation_requests),
+      leave_of_absence_requests:   withEmpName(rpc?.leave_of_absence_requests),
+      personnel_transfer_requests: withEmpName(rpc?.personnel_transfer_requests),
       // 人力需求（2026-05-19）
-      headcount_requests:          rpc?.headcount_requests          || [],
+      headcount_requests:          withEmpName(rpc?.headcount_requests),
       // 自訂表單 (2026-05-19 phase 2) — 已補 data_resolved(picker id→name)
       form_submissions:            formSubsResolved,
       // 商品調撥（2026-06-09 — 從專屬 RPC 拉，依 stage 切兩 tab）
