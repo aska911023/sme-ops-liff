@@ -6,10 +6,10 @@ import { supabase } from '../lib/supabase'
 import ChainTimeline from '../components/ChainTimeline'
 
 // 把 status 分到三大類：進行中 / 已通過 / 已退回
-const PASS_STATUSES = ['已核准', '已核銷', '已通過']
+const PASS_STATUSES = ['已核准', '已核銷', '已通過', 'approved']  // approved=headcount 英文狀態
 // 任何一種 reject 都可以編輯重送（後端 RPC 已支援 3 種變體）
 const RESUBMIT_STATUSES = ['已退回', '已駁回', '已拒絕']
-const FAIL_STATUSES = ['已拒絕', '已駁回', '已退回']
+const FAIL_STATUSES = ['已拒絕', '已駁回', '已退回', 'rejected']
 
 const TYPE_META = {
   leaves:           { label: '請假',   icon: '🏖️', color: 'cyan',   rpcType: 'leave',           editPath: '/leave' },
@@ -19,13 +19,17 @@ const TYPE_META = {
   corrections:      { label: '補打卡', icon: '✏️', color: 'cyan',   rpcType: 'correction',      editPath: '/clock-correction' },
   expense_requests: { label: '申請',   icon: '📝', color: 'green',  rpcType: 'expense_request', editPath: '/expense-request' },
   form_submissions: { label: '自訂表單', icon: '📋', color: 'blue',  rpcType: 'form_submission', editPath: null },
+  resignations:     { label: '離職',   icon: '👋', color: 'orange', rpcType: 'resignation',     editPath: null },
+  loas:             { label: '留停',   icon: '⏸️', color: 'cyan',   rpcType: 'loa',             editPath: null },
+  transfers:        { label: '異動',   icon: '🔀', color: 'purple', rpcType: 'transfer',        editPath: null },
+  headcounts:       { label: '人力需求', icon: '🧑‍💼', color: 'blue', rpcType: 'headcount',       editPath: null },
 }
 
 export default function ApprovalStatus() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [tab, setTab] = useState('pending') // pending | passed | failed
-  const [data, setData] = useState({ leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [], form_submissions: [] })
+  const [data, setData] = useState({ leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [], form_submissions: [], resignations: [], loas: [], transfers: [], headcounts: [] })
   const [loading, setLoading] = useState(true)
 
   const reload = useCallback(async () => {
@@ -38,7 +42,7 @@ export default function ApprovalStatus() {
       setLoading(false)
       return
     }
-    setData(rpcData || { leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [], form_submissions: [] })
+    setData(rpcData || { leaves: [], overtimes: [], trips: [], expenses: [], corrections: [], expense_requests: [], form_submissions: [], resignations: [], loas: [], transfers: [], headcounts: [] })
     setLoading(false)
   }, [lineProfile?.lineUserId])
 
@@ -106,6 +110,10 @@ export default function ApprovalStatus() {
     if (r._type === 'corrections') return `${({ clock_in: '上班打卡', clock_out: '下班打卡' }[r.type] || r.type || '上班打卡')} · ${r.date} · ${r.correction_time || '未填'}`
     if (r._type === 'expense_requests') return `${r.title} · NT$ ${Number(r.estimated_amount || 0).toLocaleString()}`
     if (r._type === 'form_submissions') return r.template_name || '自訂表單'
+    if (r._type === 'resignations') return `離職 · 預計 ${r.planned_resign_date || '—'}`
+    if (r._type === 'loas')        return `${r.reason_type || '留停'} · ${r.start_date || ''}${r.planned_end_date ? ' ~ ' + r.planned_end_date : ''}`
+    if (r._type === 'transfers')   return `${r.transfer_type || '異動'} · 生效 ${r.effective_date || '—'}`
+    if (r._type === 'headcounts')  return r.title || '人力需求申請'
     return ''
   }
 
