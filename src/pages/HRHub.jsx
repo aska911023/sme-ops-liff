@@ -75,9 +75,10 @@ export default function HRHub() {
   const { employee } = useAuth()
   // UI 閘門：逐項按 roles 判斷（儀表板限 admin、簽核中心含 manager）
   const managerMenus = MANAGER_MENUS.filter(m => m.roles.includes(employee?.role))
-  // 門市稽核：由 liff.store_audit 權限碼控制（liff_get_employee_by_line_user 回傳），
-  // 預設 admin+；可在主系統 系統設定→員工權限 逐人開關
+  // 門市稽核入口：能「填寫」(can_store_audit) 或能「查看」(can_view_store_audit：店長/督導/營運/稽核室/admin) 都顯示。
+  // can_store_audit=填寫權限 liff.store_audit；can_view_store_audit=後端算(view_all/店長/督導/稽核室/admin)。
   const canAudit = !!employee?.can_store_audit
+  const canViewAudit = !!employee?.can_view_store_audit
 
   return (
     <div className="page">
@@ -97,7 +98,7 @@ export default function HRHub() {
         </>
       )}
 
-      {canAudit && (
+      {(canAudit || canViewAudit) && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--orange)', marginBottom: 10 }}>門市功能</div>
           <div className="menu-grid" style={{ marginBottom: 20 }}>

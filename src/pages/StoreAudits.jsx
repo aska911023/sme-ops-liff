@@ -21,7 +21,8 @@ export default function StoreAudits() {
   const navigate = useNavigate()
   const { lineProfile, employee } = useAuth()
 
-  if (employee && !employee.can_store_audit) {
+  // 填寫者(can_store_audit)或可查看者(can_view_store_audit:店長/督導/營運/稽核室/admin)皆可進
+  if (employee && !employee.can_store_audit && !employee.can_view_store_audit) {
     return (
       <div className="page" style={{ textAlign: 'center', paddingTop: 60 }}>
         <div style={{ fontSize: 40, marginBottom: 12 }}>🔒</div>
@@ -75,14 +76,16 @@ export default function StoreAudits() {
             顯示與你相關的稽核單
           </div>
         </div>
-        <button onClick={() => navigate('/store-audits/new')}
-          style={{
-            padding: '8px 12px', borderRadius: 8, border: 'none',
-            background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 700,
-            display: 'flex', alignItems: 'center', gap: 4,
-          }}>
-          <Plus size={14} /> 新增
-        </button>
+        {employee?.can_store_audit && (
+          <button onClick={() => navigate('/store-audits/new')}
+            style={{
+              padding: '8px 12px', borderRadius: 8, border: 'none',
+              background: '#22c55e', color: '#fff', fontSize: 12, fontWeight: 700,
+              display: 'flex', alignItems: 'center', gap: 4,
+            }}>
+            <Plus size={14} /> 新增
+          </button>
+        )}
       </div>
 
       {/* 篩選 tabs */}
