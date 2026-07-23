@@ -192,7 +192,8 @@ export default function ApprovalStatus() {
           <div style={{ fontSize: 13, color: 'var(--t2)', marginLeft: 24 }}>
             {renderSummary(r)}
           </div>
-          {r._meta.rpcType !== 'expense' && (
+          {/* 經常性費用(expense)已補簽核鏈快照+RPC分支 → 也顯示「查看簽核進度」(原本排除是因RPC不支援) */}
+          {(
             <div style={{ marginLeft: 24, marginTop: 8 }}>
               <button
                 onClick={() => toggleChain(r)}
