@@ -42,7 +42,7 @@ export default function RecruitmentOffer() {
       })
       if (error) throw error
       if (!res?.ok) throw new Error(res?.error || '加簽失敗')
-      alert('已加簽，輪到該簽核人時會通知')
+      alert('已加簽，已通知該簽核人先審，簽完會再回到你')
       setShowAdd(false); setAddApprover('')
       await reload()
     } catch (e) { alert('加簽失敗：' + e.message) } finally { setAdding(false) }
@@ -128,16 +128,16 @@ export default function RecruitmentOffer() {
 
       {canAct && (
         <>
-          {/* 加簽 — 在自己這關之後插一位簽核人 */}
+          {/* 加簽 — 在自己這關之前插一位簽核人(先審,簽完再回到自己) */}
           <div style={{ marginBottom: 12 }}>
             {!showAdd ? (
               <button onClick={openAdd}
                 style={{ width: '100%', justifyContent: 'center', background: 'none', border: '1px dashed var(--border)', borderRadius: 8, padding: '9px 12px', color: 'var(--cyan)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <UserPlus size={15} /> 加簽（在你這關之後插一位）
+                <UserPlus size={15} /> 加簽（在你這關之前插一位先審）
               </button>
             ) : (
               <div style={{ padding: 12, background: 'var(--glass)', borderRadius: 8, border: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 6 }}>加簽人（排在你核准後、下一關之前）</div>
+                <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 6 }}>加簽人（排在你之前先審，簽完再回到你）</div>
                 <EmployeePicker value={addApprover} onChange={setAddApprover} employees={employees} placeholder="選擇加簽人" />
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button onClick={() => { setShowAdd(false); setAddApprover('') }}
