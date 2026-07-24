@@ -13,7 +13,9 @@ const STATUS = {
 }
 
 export default function Dashboard() {
-  const { lineProfile } = useAuth()
+  const { lineProfile, employee } = useAuth()
+  // 店長(manager,非admin/super_admin)只看「人力」tab;admin/super_admin 看全部4個
+  const isManagerOnly = employee?.role === 'manager'
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -28,6 +30,8 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
+    // 店長只看人力tab(用自己的RPC)→ 不載工作流程資料,避免沒 leave.approve 時整頁被擋
+    if (isManagerOnly) { setLoading(false); setError(null); return }
     const { data: resp, error: err } = await supabase.rpc('liff_list_dashboard', {
       p_line_user_id: lineProfile.lineUserId,
       p_days: 30,
@@ -42,7 +46,7 @@ export default function Dashboard() {
     setError(null)
     setData(resp)
     setLastRefresh(new Date())
-  }, [lineProfile?.lineUserId])
+  }, [lineProfile?.lineUserId, isManagerOnly])
 
   useEffect(() => { load() }, [load])
 
@@ -186,6 +190,9 @@ export default function Dashboard() {
     ? Math.round((stepStat.completed / stepStat.total) * 100)
     : 0
 
+  // 店長只看人力;若目前 tab 不在允許範圍(如預設 workflow)→ 顯示人力
+  const effTab = isManagerOnly ? 'hr' : mainTab
+
   return (
     <div className="page">
       <button className="back-btn" onClick={() => navigate('/')}><ChevronLeft size={16} /> 首頁</button>
@@ -222,15 +229,15 @@ export default function Dashboard() {
           { key: 'hr',          label: '人力' },
           { key: 'expense',     label: '費用' },
           { key: 'non_expense', label: '非費用' },
-        ].map(t => (
+        ].filter(t => !isManagerOnly || t.key === 'hr').map(t => (
           <button
             key={t.key}
             onClick={() => setMainTab(t.key)}
             style={{
               flex: 1, padding: '7px 4px', borderRadius: 7, border: 'none',
-              background: mainTab === t.key ? 'var(--cyan)' : 'transparent',
-              color: mainTab === t.key ? '#fff' : 'var(--t2)',
-              fontSize: 12, fontWeight: mainTab === t.key ? 700 : 400,
+              background: effTab === t.key ? 'var(--cyan)' : 'transparent',
+              color: effTab === t.key ? '#fff' : 'var(--t2)',
+              fontSize: 12, fontWeight: effTab === t.key ? 700 : 400,
               cursor: 'pointer', transition: 'all 0.2s',
             }}
           >
@@ -239,17 +246,17 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {mainTab === 'hr' && (
+      {effTab === 'hr' && (
         <HrDashboardTab lineUserId={lineProfile?.lineUserId} />
       )}
-      {mainTab === 'expense' && (
+      {effTab === 'expense' && (
         <ExpenseDashboardTab lineUserId={lineProfile?.lineUserId} />
       )}
-      {mainTab === 'non_expense' && (
+      {effTab === 'non_expense' && (
         <NonExpenseDashboardTab lineUserId={lineProfile?.lineUserId} />
       )}
 
-      {mainTab === 'workflow' && <>
+      {effTab === 'workflow' && <>
 
       {/* Overall progress */}
       <div className="list-item" style={{ padding: '14px 16px' }}>

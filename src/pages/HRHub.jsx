@@ -64,10 +64,10 @@ const MENU_GROUPS = [
 // 任務確認 (2026-05-09) 整合進「簽核中心 > 任務 tab」(/approve/task)，
 // 此處不再獨立列出。/task-confirmations 路由仍保留供 LINE deep link 用。
 // 每個主管功能各自的可見角色：
-//   儀表板 → 只有 super_admin/admin（後台分析數據）
+//   儀表板 → super_admin/admin 看全部;manager(店長)只看「人力」tab(鎖自己店,Dashboard.jsx 內濾)
 //   簽核中心 → super_admin/admin/manager（店長也是合法簽核人）
 const MANAGER_MENUS = [
-  { path: '/dashboard', icon: '📊', label: '儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)', roles: ['super_admin', 'admin'] },
+  { path: '/dashboard', icon: '📊', label: '儀表板', color: 'var(--cyan)', dim: 'var(--cyan-dim)', roles: ['super_admin', 'admin', 'manager'] },
   { path: '/approve', icon: '✅', label: '簽核中心', color: 'var(--green)', dim: 'var(--green-dim)', roles: ['super_admin', 'admin', 'manager'] },
 ]
 
