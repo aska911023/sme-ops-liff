@@ -38,7 +38,7 @@ export default function RecruitmentInterview() {
     : '—'
 
   return (
-    <div style={{ padding: 14, paddingBottom: 80 }}>
+    <div style={{ padding: 14, paddingBottom: 140 }}>
       <button onClick={() => navigate(-1)}
         style={{ background: 'none', border: 'none', color: 'var(--cyan)', padding: 0, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 12 }}>
         <ChevronLeft size={16} /> 返回
@@ -120,8 +120,10 @@ export default function RecruitmentInterview() {
 
       {/* 本場目前狀態 / CTA */}
       <div style={{
-        position: 'fixed', left: 0, right: 0, bottom: 0, padding: 14,
-        background: 'var(--bg)', borderTop: '1px solid var(--border)',
+        position: 'fixed', left: 0, right: 0,
+        /* 墊到全域 TabBar(fixed bottom:0, 高約 54px + 安全區)上方,否則按鈕被 hub tab 蓋住 */
+        bottom: 'calc(54px + env(safe-area-inset-bottom, 8px))', padding: 14,
+        background: 'var(--bg)', borderTop: '1px solid var(--border)', zIndex: 99,
       }}>
         {iv.result === '待定' ? (
           <button onClick={() => navigate(`/recruitment/interview/${iv.id}/eval`)}
