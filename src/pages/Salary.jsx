@@ -196,6 +196,9 @@ export default function Salary() {
     { label: '交通津貼', value: officialRecord.transport_allowance },
     { label: '全勤獎金', value: officialRecord.attendance_bonus_earned },
     { label: '加班費', value: officialRecord.overtime_pay },
+    { label: `未休特休折現${officialRecord.unused_leave_days ? `（${officialRecord.unused_leave_days} 天）` : ''}`, value: officialRecord.unused_leave_payout },
+    { label: '資遣費', value: officialRecord.severance_amount },
+    { label: '預告工資', value: officialRecord.notice_wage },
   ].filter(r => r.always || num(r.value) !== 0) : []
 
   const dedRows = officialRecord ? [
@@ -285,6 +288,9 @@ export default function Salary() {
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--purple)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                     📊 正式薪資單
                     <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(167,139,250,0.15)', color: 'var(--purple)' }}>HR 結算版</span>
+                    {officialRecord.is_final_settlement && (
+                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(251,146,60,0.15)', color: 'var(--orange)' }}>離職結算</span>
+                    )}
                   </div>
 
                   {/* 收入 */}
