@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import ActivityTimeline from '../components/ActivityTimeline'
 import { ExpenseDashboardTab, NonExpenseDashboardTab } from '../components/ExpenseDashboardTab'
+import HrDashboardTab from '../components/HrDashboardTab'
 
 const STATUS = {
   RUNNING: '進行中', COMPLETED: '已完成', PAUSED: '暫停',
@@ -218,6 +219,7 @@ export default function Dashboard() {
       <div style={{ display: 'flex', gap: 4, marginBottom: 14, background: 'rgba(255,255,255,0.05)', borderRadius: 10, padding: 4 }}>
         {[
           { key: 'workflow',    label: '工作流程' },
+          { key: 'hr',          label: '人力' },
           { key: 'expense',     label: '費用' },
           { key: 'non_expense', label: '非費用' },
         ].map(t => (
@@ -237,6 +239,9 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {mainTab === 'hr' && (
+        <HrDashboardTab lineUserId={lineProfile?.lineUserId} />
+      )}
       {mainTab === 'expense' && (
         <ExpenseDashboardTab lineUserId={lineProfile?.lineUserId} />
       )}
