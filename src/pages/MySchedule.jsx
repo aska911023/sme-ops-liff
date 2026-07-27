@@ -30,6 +30,8 @@ export default function MySchedule() {
   const [swapModal, setSwapModal] = useState(null) // { date, myShift }
   const [viewMode, setViewMode] = useState('mine')  // 'mine' | 'store'
   const [storeSchedules, setStoreSchedules] = useState([]) // 全店同事的班(本週)
+  const [managerStores, setManagerStores] = useState([])   // 主管可看的門市(>1 才顯示下拉;督導/店長多店/營運/admin)
+  const [pickedStore, setPickedStore] = useState(null)     // 全店檢視選定門市 id(null=未載入)
 
   const weekDates = getWeekDates(weekOffset)
   const today = new Date().toISOString().slice(0, 10)
@@ -58,12 +60,23 @@ export default function MySchedule() {
       })
   }, [lineProfile, weekOffset]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 全店檢視：撈同店同事本週的班（僅在切到「全店」時撈）
+  // 主管可看的門市清單（給全店檢視的門市下拉；督導課/店長多店/營運/admin）
   useEffect(() => {
-    if (!lineProfile?.lineUserId || viewMode !== 'store') return
-    supabase.rpc('liff_list_store_schedules', { p_line_user_id: lineProfile.lineUserId, p_start: weekDates[0], p_end: weekDates[6] })
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_manager_view_stores', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => {
+        const list = Array.isArray(data) ? data : []
+        setManagerStores(list)
+        setPickedStore(prev => prev ?? (list[0]?.id ?? null))  // 預設自己店（排最前）
+      })
+  }, [lineProfile])
+
+  // 全店檢視：撈「選定門市」本週的班（僅在切到「全店」且門市已定時撈）
+  useEffect(() => {
+    if (!lineProfile?.lineUserId || viewMode !== 'store' || !pickedStore) return
+    supabase.rpc('liff_view_store_schedule', { p_line_user_id: lineProfile.lineUserId, p_store_id: pickedStore, p_start: weekDates[0], p_end: weekDates[6] })
       .then(({ data }) => setStoreSchedules(Array.isArray(data) ? data : []))
-  }, [lineProfile, weekOffset, viewMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lineProfile, weekOffset, viewMode, pickedStore]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const getShift = (date) => schedules.find(s => s.date === date)?.shift || null
   const getShiftDef = (name) => shiftDefs.find(s => s.name === name)
@@ -110,6 +123,16 @@ export default function MySchedule() {
           }}>{t.l}</button>
         ))}
       </div>
+
+      {/* 門市下拉（全店模式 + 主管可看多店才顯示：督導/資深店長/營運/admin）*/}
+      {viewMode === 'store' && managerStores.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+          <select value={pickedStore ?? ''} onChange={e => setPickedStore(Number(e.target.value))}
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--t1)', fontSize: 13, fontWeight: 600, cursor: 'pointer', minWidth: 160 }}>
+            {managerStores.map(s => <option key={s.id} value={s.id}>🏢 {s.name}</option>)}
+          </select>
+        </div>
+      )}
 
       {/* Week nav */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 16 }}>
