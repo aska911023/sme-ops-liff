@@ -370,7 +370,8 @@ export default function Leave() {
     const formHourly = form.unit === 'hour' && (!form.end_date || form.end_date === form.start_date)
     const overlap = records.find(r => {
       if (r.id === editingId) return false // skip self when editing
-      if (r.status === '已拒絕') return false
+      // 已退回/已駁回/已取消的假不再佔用日期 → 不擋重新申請（原本只比對「已拒絕」是錯字串，實際是「已退回」）
+      if (['已退回', '已駁回', '已取消', '已拒絕'].includes(r.status)) return false
       const rStart = new Date(r.start_date)
       const rEnd = new Date(r.end_date || r.start_date)
       if (!(startD <= rEnd && endD >= rStart)) return false   // 日期段沒交集
