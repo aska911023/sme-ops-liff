@@ -9,6 +9,33 @@ const STATUS_STYLE = {
   '遲到': { bg: 'rgba(251,146,60,0.15)', color: 'var(--orange)', dot: 'var(--orange)' },
   '請假': { bg: 'var(--blue-dim)',   color: 'var(--blue)',  dot: 'var(--blue)' },
   '加班': { bg: 'rgba(251,146,60,0.15)', color: 'var(--orange)', dot: 'var(--orange)' },
+  // 異常/缺卡（紅色，提醒去補卡）
+  '缺下班卡': { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
+  '缺上班卡': { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
+  '缺卡':     { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
+  '未打卡':   { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
+}
+
+// 已知的正常狀態值（status 欄曾被打卡流程誤寫入 GPS 座標，非已知值一律用打卡狀況重推）
+const KNOWN_STATUS = new Set(['正常', '遲到', '外出', '未打卡', '補登', '加班', '請假', '上班中'])
+
+// 顯示用狀態：過去日子「有上班沒下班」= 缺卡（異常），提醒補卡；status 被污染時用打卡狀況推
+function computeDayStatus(r, dateStr, todayStr) {
+  if (!r) return null
+  const hasIn = !!r.clock_in, hasOut = !!r.clock_out
+  const isPast = dateStr < todayStr
+  const isOuting = r.clock_in_mode === 'outing' || r.status === '外出'
+  if (isPast && !isOuting) {
+    if (hasIn && !hasOut) return '缺下班卡'
+    if (!hasIn && hasOut) return '缺上班卡'
+  }
+  if (r.status && !KNOWN_STATUS.has(r.status)) {
+    // status 是被污染的髒值（如 GPS 座標）→ 依打卡狀況重推
+    if (hasIn && hasOut) return '正常'
+    if (hasIn || hasOut) return isPast ? '缺卡' : '上班中'
+    return '未打卡'
+  }
+  return r.status || (hasIn ? '正常' : null)
 }
 
 function getMonthGrid(year, month) {
@@ -150,7 +177,8 @@ export default function AttendanceHistory() {
             const dayOT = otByDate[cell.dateStr]
             const isToday = cell.dateStr === todayStr
             const isWeekend = i % 7 >= 5
-            const sty = r?.status ? (STATUS_STYLE[r.status] || null) : null
+            const dStatus = computeDayStatus(r, cell.dateStr, todayStr)
+            const sty = dStatus ? (STATUS_STYLE[dStatus] || null) : null
             return (
               <button
                 key={cell.dateStr}
@@ -170,7 +198,7 @@ export default function AttendanceHistory() {
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{cell.d}</div>
                 {r ? (
                   <div style={{ fontSize: 9, fontWeight: 600, color: sty?.color || 'var(--t3)', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {r.status || '?'}{dayOT ? <span style={{ color: 'var(--orange)' }}>⚡</span> : null}
+                    {dStatus || '?'}{dayOT ? <span style={{ color: 'var(--orange)' }}>⚡</span> : null}
                   </div>
                 ) : dayOT ? (
                   <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--orange)' }}>⚡加班</div>
@@ -214,20 +242,33 @@ export default function AttendanceHistory() {
               </button>
             </div>
 
-            <div style={{
-              padding: '10px 14px', borderRadius: 10, marginBottom: 10,
-              background: (STATUS_STYLE[selectedRecord.status] || { bg: 'var(--card)' }).bg,
-              color: (STATUS_STYLE[selectedRecord.status] || { color: 'var(--t1)' }).color,
-              fontWeight: 700, textAlign: 'center',
-            }}>
-              {selectedRecord.status || '—'}
-            </div>
+            {(() => {
+              const mStatus = computeDayStatus(selectedRecord, selectedRecord.date, todayStr)
+              const isMissing = mStatus === '缺下班卡' || mStatus === '缺上班卡' || mStatus === '缺卡' || mStatus === '未打卡'
+              return (
+                <>
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 10, marginBottom: isMissing ? 6 : 10,
+                    background: (STATUS_STYLE[mStatus] || { bg: 'var(--card)' }).bg,
+                    color: (STATUS_STYLE[mStatus] || { color: 'var(--t1)' }).color,
+                    fontWeight: 700, textAlign: 'center',
+                  }}>
+                    {mStatus || '—'}
+                  </div>
+                  {isMissing && (
+                    <div style={{ fontSize: 11, color: '#ef4444', textAlign: 'center', marginBottom: 10 }}>
+                      ⚠️ 打卡不完整，請至「補打卡」補上
+                    </div>
+                  )}
+                </>
+              )
+            })()}
 
             <div style={{ background: 'var(--card)', padding: '12px 14px', borderRadius: 10, marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <Clock size={14} style={{ color: 'var(--cyan)' }} />
                 <span style={{ fontSize: 13, fontFamily: 'monospace', fontWeight: 700, color: 'var(--t1)' }}>
-                  {selectedRecord.clock_in || '—'} → {selectedRecord.clock_out || '—'}
+                  {(selectedRecord.clock_in || '').slice(0, 5) || '—'} → {(selectedRecord.clock_out || '').slice(0, 5) || '—'}
                 </span>
                 {selectedRecord.total_hours > 0 && (
                   <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--t2)' }}>
