@@ -35,6 +35,7 @@ export default function ExpenseRequest() {
   const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
   const [lineItems, setLineItems] = useState([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
   const [settleForm, setSettleForm] = useState({ actual_amount: '', notes: '' })
+  const [settleEditMode, setSettleEditMode] = useState(false)  // true=編輯已送出、還沒人簽的待核銷單
   const [files, setFiles] = useState([])
   const [settleFiles, setSettleFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
@@ -240,10 +241,37 @@ export default function ExpenseRequest() {
     setTab('list')
   }
 
-  // Submit settlement
+  // Submit settlement（或編輯待核銷單）
   const handleSettle = async () => {
     if (!settleForm.actual_amount || !detail) return
     setSubmitting(true)
+
+    if (settleEditMode) {
+      // 編輯待核銷(還沒人簽):只改金額/備註 + 補收據,不重送、不動鏈
+      const { data: res, error } = await supabase.rpc('liff_update_pending_settle', {
+        p_line_user_id: lineProfile.lineUserId,
+        p_id: detail.id,
+        p_actual_amount: Number(settleForm.actual_amount),
+        p_notes: settleForm.notes || null,
+      })
+      if (settleFiles.length > 0) await uploadFiles(detail.id, settleFiles, 'settlement')
+      setSubmitting(false)
+      if (error || !res?.ok) {
+        const map = {
+          ALREADY_SIGNED: '已有人簽核,無法再編輯(請等簽核人退回後重送)',
+          NOT_PENDING_SETTLE: '此單狀態無法編輯驗收',
+          NOT_SETTLE_OWNER: '只有驗收/核銷負責人才能編輯此單',
+        }
+        alert('儲存失敗:' + (map[res?.error] || res?.error || error?.message || '未知錯誤'))
+        return
+      }
+      setSettleEditMode(false)
+      reload()
+      setTab('list')
+      setDetail(null)
+      return
+    }
+
     const { error } = await supabase.rpc('liff_settle_expense_request', {
       p_line_user_id: lineProfile.lineUserId,
       p_id: detail.id,
@@ -291,7 +319,17 @@ export default function ExpenseRequest() {
   // Open settle form
   const openSettle = (req) => {
     setDetail(req)
+    setSettleEditMode(false)
     setSettleForm({ actual_amount: req.estimated_amount, notes: '' })
+    setSettleFiles([])
+    setTab('settle')
+  }
+
+  // 編輯「已送出、還沒人簽」的待核銷單(不重送、不動鏈)
+  const openSettleEdit = (req) => {
+    setDetail(req)
+    setSettleEditMode(true)
+    setSettleForm({ actual_amount: req.actual_amount ?? req.estimated_amount, notes: req.notes || '' })
     setSettleFiles([])
     setTab('settle')
   }
@@ -712,7 +750,7 @@ export default function ExpenseRequest() {
       {/* ─── SETTLE FORM ─── */}
       {tab === 'settle' && detail && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>核銷：{detail.title}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{settleEditMode ? '編輯核銷' : '核銷'}：{detail.title}</div>
           <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 14 }}>預估金額：{fmt(detail.estimated_amount, detail.currency)}</div>
 
           <div className="form-group">
@@ -756,7 +794,7 @@ export default function ExpenseRequest() {
 
           <button className="btn btn-primary" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12, marginTop: 8 }}
             onClick={handleSettle} disabled={submitting}>
-            {submitting ? '提交中...' : '提交核銷'}
+            {submitting ? '處理中...' : (settleEditMode ? '儲存修改' : '提交核銷')}
           </button>
         </div>
       )}
@@ -853,6 +891,15 @@ export default function ExpenseRequest() {
             <button className="btn btn-primary" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12, marginTop: 14 }}
               onClick={() => openSettle(detail)}>
               <Send size={14} /> 提交核銷
+            </button>
+          )}
+
+          {/* 待核銷 + 還沒人簽(settle_current_step=0)→ 本人可就地編輯金額/備註/收據 */}
+          {detail.status === '待核銷' && (detail.settle_current_step ?? 0) === 0 && detail.is_expense !== false
+            && (detail.settle_assignee_id === employee?.id || (!detail.settle_assignee_id && detail.employee_id === employee?.id)) && (
+            <button className="btn" style={{ width: '100%', padding: '12px 0', fontWeight: 700, borderRadius: 12, marginTop: 14, background: 'var(--glass)', border: '1px solid var(--border)' }}
+              onClick={() => openSettleEdit(detail)}>
+              <Send size={14} /> 編輯核銷
             </button>
           )}
 
