@@ -120,6 +120,7 @@ export default function Leave() {
   const [annualEnt, setAnnualEnt] = useState(null)      // 特休額度單一真相(leave_annual_entitlement RPC)
   const [leaveSteps, setLeaveSteps] = useState({}) // 中文假別名稱 → {step, unit}
   const [compBalance, setCompBalance] = useState(null) // { total_remaining, ledgers: [...] }
+  const [netPreview, setNetPreview] = useState(null)   // 扣休息後淨時數(時數假即時預覽,對齊送出後 trigger 存的值);null=無資料→顯示毛值
 
   // 取目前選的假別 step（如 type='特休'，看 leaveSteps 有沒有 'annual' override）
   const currentStep = (() => {
@@ -138,6 +139,18 @@ export default function Leave() {
     if (!val || !step) return val
     return Math.ceil(val / step - 1e-9) * step
   }
+
+  // 時數假即時預覽:抓「扣休息後」的淨時數(對齊送出後 trigger 存的值)
+  useEffect(() => {
+    if (form.unit !== 'hour' || !form.start_time || !form.end_time || !form.start_date || !employee?.id) {
+      setNetPreview(null); return
+    }
+    let cancelled = false
+    supabase.rpc('preview_leave_net_hours', {
+      p_emp_id: employee.id, p_date: form.start_date, p_start: form.start_time, p_end: form.end_time,
+    }).then(({ data }) => { if (!cancelled) setNetPreview(data != null ? Number(data) : null) })
+    return () => { cancelled = true }
+  }, [form.unit, form.start_time, form.end_time, form.start_date, employee?.id])
 
   const reload = () => {
     if (!lineProfile?.lineUserId) return
@@ -708,7 +721,11 @@ export default function Leave() {
             const snapped = currentStep.unit === 'hour'
               ? snapToStep(naturalHours, currentStep.step)
               : naturalHours
-            const snapDelta = snapped - naturalHours
+            // 淨時數(扣休息)來自後端 preview_leave_net_hours;有值就以它為準(=送出後 trigger 存的值)
+            const net = netPreview
+            const hasBreak = net != null && net < naturalHours - 1e-6
+            const actual = net != null ? net : snapped
+            const showLine = Math.abs(actual - naturalHours) > 1e-6
             return (
               <div style={{
                 padding: '10px 14px', borderRadius: 10, marginBottom: 10,
@@ -716,9 +733,11 @@ export default function Leave() {
                 fontSize: 13, color: 'var(--t2)',
               }}>
                 實際請假 <b style={{ color: 'var(--cyan)' }}>{naturalHours.toFixed(1)} 小時</b>
-                {snapDelta > 0 && (
-                  <div style={{ marginTop: 4, fontSize: 12, color: 'var(--orange)' }}>
-                    ⚠️ 進位後實際扣 <b>{snapped} 小時</b>（本店此假別最小 {currentStep.step} 小時）
+                {showLine && (
+                  <div style={{ marginTop: 4, fontSize: 12, color: hasBreak ? 'var(--cyan)' : 'var(--orange)' }}>
+                    {hasBreak
+                      ? <>扣除休息後 <b>實際扣 {actual} 小時</b>（休息時間不計入請假）</>
+                      : <>⚠️ 進位後實際扣 <b>{actual} 小時</b>（本店此假別最小 {currentStep.step} 小時）</>}
                   </div>
                 )}
               </div>
