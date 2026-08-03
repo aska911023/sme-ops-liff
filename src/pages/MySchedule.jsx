@@ -99,6 +99,14 @@ export default function MySchedule() {
     return Math.max(0, (m - brk) / 60)
   }
   const netOf = (s) => segHours(s.actual_start, s.actual_end, s.rest_minutes) + segHours(s.actual_start_2, s.actual_end_2, null)
+  // 顯示用休息分鐘:跟計薪一致 — 排班的 rest_minutes(手動休息)優先,否則階梯公式;非時間班別回 null
+  const breakMinOf = (s) => {
+    if (!s || !s.actual_start || !s.actual_end) return null
+    const [sh, sm] = String(s.actual_start).split(':').map(Number)
+    const [eh, em] = String(s.actual_end).split(':').map(Number)
+    let m = (eh * 60 + em) - (sh * 60 + sm); if (m <= 0) m += 1440
+    return s.rest_minutes != null ? s.rest_minutes : (m >= 540 ? 60 : m >= 300 ? 30 : 0)
+  }
   const workDays = weekDates.filter(d => { const s = getShift(d); return s && !ABSENCE.has(s) }).length
   const restDays = weekDates.filter(d => REST.has(getShift(d))).length
   const weekHours = Math.round(schedules.reduce((sum, s) => sum + netOf(s), 0) * 10) / 10
@@ -174,6 +182,7 @@ export default function MySchedule() {
         const isToday = date === today
         const isHoliday = holidays[date]
         const def = shift && shift !== '休' ? getShiftDef(shift) : null
+        const sched = schedules.find(s => s.date === date)   // 當天排班列(取實際時間/休息)
         const colors = shift ? getShiftColor(shift) : { bg: 'var(--card)', color: 'var(--t3)', border: 'var(--border)' }
 
         return (
@@ -215,8 +224,10 @@ export default function MySchedule() {
                   </div>
                   {def && (
                     <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>
-                      {def.start_time?.slice(0, 5)} ~ {def.end_time?.slice(0, 5)}
-                      <span style={{ marginLeft: 8 }}>休息 {def.break_minutes || 60} 分鐘</span>
+                      {(sched?.actual_start ?? def.start_time)?.slice(0, 5)} ~ {(sched?.actual_end ?? def.end_time)?.slice(0, 5)}
+                      <span style={{ marginLeft: 8 }}>
+                        {breakMinOf(sched) > 0 ? `休息 ${breakMinOf(sched)} 分鐘` : '無休息'}
+                      </span>
                     </div>
                   )}
                   {shift === '休' && <div style={{ fontSize: 12, color: 'var(--t3)' }}>休息日</div>}
