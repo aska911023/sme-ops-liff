@@ -2109,6 +2109,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   const [extraAssignee, setExtraAssignee] = useState('')
   const [extraReason, setExtraReason] = useState('')
   const [extraBusy, setExtraBusy] = useState(false)
+  const [extraErr, setExtraErr] = useState(null)
 
   useEffect(() => {
     if (!expanded || !isPending || !sourceTable) return
@@ -2123,10 +2124,11 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
 
       if (extraEmployees.length === 0) {
         // anon 直查 employees 會被 RLS 擋成空 → 走 SECURITY DEFINER RPC（與 ExpenseRequestRow 一致）
-        const { data: emps } = await supabase.rpc('liff_list_employees_in_org', {
+        const { data: emps, error: empErr } = await supabase.rpc('liff_list_employees_in_org', {
           p_line_user_id: lineProfile?.lineUserId,
         })
         if (!cancelled) {
+          setExtraErr(empErr ? `${empErr.code || ''} ${empErr.message || ''}` : null)
           setExtraEmployees(Array.isArray(emps) ? emps : [])
         }
       }
@@ -2390,7 +2392,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--orange, #f97316)' }}>🪶 發起加簽</div>
           <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, wordBreak: 'break-all' }}>
-            診斷｜抓到 {extraEmployees.length} 人／濾後 {extraEmployees.filter(e => e.id !== me?.id && e.id !== item.employee_id).length} 人／我={String(me?.id)}／申請人={String(item.employee_id)}／line={String(lineProfile?.lineUserId).slice(0,8)}
+            診斷｜抓到 {extraEmployees.length} 人／濾後 {extraEmployees.filter(e => e.id !== me?.id && e.id !== item.employee_id).length} 人／我={String(me?.id)}／申請人={String(item.employee_id)}／line={String(lineProfile?.lineUserId).slice(0,8)}／err={String(extraErr).slice(0,80)}
           </div>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽人 *</label>
           <EmployeePicker
