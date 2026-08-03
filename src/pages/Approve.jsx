@@ -2097,6 +2097,30 @@ function fmtClock(c) {
   if (c.total_hours) t += ` · ${c.total_hours}h`
   return t
 }
+// 加班警示:單日加班上限 = 12h − 當天排定淨工時(排10h→2h;無排班以8h計→4h)。時數皆扣休息(rest_minutes 優先,否則≥9h→60、≥5h→30)。
+function otCapWarn(type, item, dayAtt) {
+  if (type !== 'overtime' || !dayAtt) return null
+  const toMin = t => { if (!t) return null; const m = String(t).match(/(\d{2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null }
+  const brkOf = m => (m >= 540 ? 60 : m >= 300 ? 30 : 0)
+  const otH = Number(item.ot_hours ?? item.hours ?? 0)
+  if (!otH) return null
+  const s = dayAtt.schedule
+  let schedH = 8, hasSched = false
+  if (s && s.actual_start && s.actual_end) {
+    hasSched = true
+    let ss = toMin(s.actual_start), se = toMin(s.actual_end); if (se <= ss) se += 1440
+    let seg = se - ss
+    if (s.actual_start_2 && s.actual_end_2) { let a = toMin(s.actual_start_2), b = toMin(s.actual_end_2); if (b <= a) b += 1440; seg += b - a }
+    const brk = s.rest_minutes != null ? s.rest_minutes : brkOf(seg)
+    schedH = Math.max(0, seg - brk) / 60
+  }
+  const cap = Math.max(0, 12 - schedH)
+  if (otH <= cap + 0.01) return null
+  const fmtH = h => (Number.isInteger(h) ? String(h) : h.toFixed(1))
+  return hasSched
+    ? `當天排定 ${fmtH(schedH)} 小時 → 單日加班上限約 ${fmtH(cap)} 小時,本次 ${fmtH(otH)} 小時已超過(單日總工時逾 12 小時)`
+    : `當天無排班(以標準 8 小時計)→ 單日加班上限約 4 小時,本次 ${fmtH(otH)} 小時已超過(單日總工時逾 12 小時)`
+}
 
 function Row({ item, type, processing, handle, statusBadge, body, approveLabel = '核准', extraExpanded = null }) {
   const { employee: me, lineProfile } = useAuth()
@@ -2285,6 +2309,9 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
             <span style={{ color: 'var(--t3)', minWidth: 40 }}>打卡</span>
             <span style={{ fontWeight: 600, color: dayAtt.clock ? 'var(--t1)' : 'var(--t3)' }}>{fmtClock(dayAtt.clock)}</span>
           </div>
+          {(() => { const wc = otCapWarn(type, item, dayAtt); return wc ? (
+            <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 6, background: 'rgba(239,68,68,0.12)', color: 'var(--red, #ef4444)', fontSize: 11, fontWeight: 600 }}>⚠️ {wc}</div>
+          ) : null })()}
         </div>
       )}
 
