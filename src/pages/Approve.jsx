@@ -1193,9 +1193,11 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
       .finally(() => setChainLoading(false))
   }, [tab, expanded, chainSteps, er.id])
 
-  // 展開時撈這張單的 pending 加簽 + 員工清單（供加簽人選擇）
+  // 撈這張單的 pending 加簽 + 員工清單（供加簽人選擇）
+  //   ⚠️ 不綁 expanded：加簽按鈕/表單在 isPending 就會出現、不需展開卡片，
+  //      若清單只在展開時抓 → 沒展開就點加簽 → 選單永遠空（老問題病灶）
   useEffect(() => {
-    if (!expanded || !isPending) return
+    if (!isPending || !lineProfile?.lineUserId) return
     let cancelled = false
     ;(async () => {
       const { data: extra } = await supabase.rpc('liff_get_pending_extra_step', {
@@ -1214,7 +1216,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
       }
     })()
     return () => { cancelled = true }
-  }, [expanded, isPending, er.id, extraEmployees.length, lineProfile?.lineUserId])
+  }, [isPending, er.id, extraEmployees.length, lineProfile?.lineUserId])
 
   // 我發起的加簽 / 我是被加簽的人
   const isMyExtraRequest = pendingExtra && me && pendingExtra.requested_by_id === me.id
@@ -2111,8 +2113,9 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   const [extraBusy, setExtraBusy] = useState(false)
   const [extraErr, setExtraErr] = useState(null)
 
+  // ⚠️ 不綁 expanded：加簽表單在 isPending 就會出現、不需展開卡片（見 ExpenseRequestRow 註解）
   useEffect(() => {
-    if (!expanded || !isPending || !sourceTable) return
+    if (!isPending || !sourceTable || !lineProfile?.lineUserId) return
     let cancelled = false
     ;(async () => {
       const { data: extra } = await supabase.rpc('liff_get_pending_extra_step', {
@@ -2134,7 +2137,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
       }
     })()
     return () => { cancelled = true }
-  }, [expanded, isPending, sourceTable, item.id, extraEmployees.length, lineProfile?.lineUserId])
+  }, [isPending, sourceTable, item.id, extraEmployees.length, lineProfile?.lineUserId])
 
   // 當天出勤（忘打卡/加班/請假）：展開時抓申請人當天班表 vs 打卡
   const [dayAtt, setDayAtt] = useState(null)
@@ -2391,9 +2394,6 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
           background: 'rgba(249,115,22,0.06)', border: '1.5px solid var(--orange, #f97316)',
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--orange, #f97316)' }}>🪶 發起加簽</div>
-          <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, wordBreak: 'break-all' }}>
-            診斷｜抓到 {extraEmployees.length} 人／濾後 {extraEmployees.filter(e => e.id !== me?.id && e.id !== item.employee_id).length} 人／我={String(me?.id)}／申請人={String(item.employee_id)}／line={String(lineProfile?.lineUserId).slice(0,8)}／err={String(extraErr).slice(0,80)}
-          </div>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽人 *</label>
           <EmployeePicker
             value={extraAssignee}
