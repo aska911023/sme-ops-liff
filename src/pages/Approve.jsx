@@ -2389,6 +2389,9 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
           background: 'rgba(249,115,22,0.06)', border: '1.5px solid var(--orange, #f97316)',
         }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: 'var(--orange, #f97316)' }}>🪶 發起加簽</div>
+          <div style={{ fontSize: 10, color: '#dc2626', marginBottom: 4, wordBreak: 'break-all' }}>
+            診斷｜抓到 {extraEmployees.length} 人／濾後 {extraEmployees.filter(e => e.id !== me?.id && e.id !== item.employee_id).length} 人／我={String(me?.id)}／申請人={String(item.employee_id)}／line={String(lineProfile?.lineUserId).slice(0,8)}
+          </div>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>加簽人 *</label>
           <EmployeePicker
             value={extraAssignee}
