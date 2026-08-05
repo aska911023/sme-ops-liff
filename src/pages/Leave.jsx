@@ -60,6 +60,12 @@ const LEAVE_CODE_MAP = {
   occupational: '公傷病假', nursing: '哺乳時間', prenatal: '產檢假',
 }
 
+// 需附證明的假別(對齊主系統 leavePolicy.PROOF_REQUIRED_LEAVE_CODES + DB _leave_requires_proof):
+// 病/喪/婚/產/陪產/產檢/育嬰/公傷病。form.type 是中文短名 → 用 LEAVE_CODE_MAP 轉出中文集合比對。
+const PROOF_REQUIRED_CODES = ['sick', 'bereavement', 'marriage', 'maternity', 'paternity', 'prenatal', 'parental', 'occupational']
+const PROOF_REQUIRED_TYPES = new Set(PROOF_REQUIRED_CODES.map(c => LEAVE_CODE_MAP[c]))
+const leaveRequiresProof = (typeLabel) => PROOF_REQUIRED_TYPES.has(typeLabel)
+
 // 取得特休年度區間（到職週年制）
 function getAnnualLeaveRange(joinDate) {
   const join = new Date(joinDate)
@@ -318,6 +324,12 @@ export default function Leave() {
   const handleSubmit = async () => {
     if (!form.start_date) return
 
+    // 證明必附:病/喪/婚/產/陪產/產檢/育嬰/公傷病 沒附附件擋下(後端 liff_insert_leave_request 亦守門;此為即時 UX)
+    if (leaveRequiresProof(form.type) && attachFiles.length === 0 && existingAttach.length === 0) {
+      alert('此假別需附上證明（診斷書／相關文件），以免被駁回。請上傳附件後再送出。')
+      return
+    }
+
     // 特休年資檢查（勞基法 §38：須滿 6 個月）
     if (form.type === '特休') {
       // 特休額度單一真相走 RPC(含修好第一年3天/PT實排比例),失敗 fallback 舊 client 算法
@@ -435,6 +447,7 @@ export default function Leave() {
       start_time: form.unit === 'hour' ? form.start_time : '',
       end_time: form.unit === 'hour' ? form.end_time : '',
       reason: form.reason,
+      attachment_count: attachFiles.length + existingAttach.length,  // 後端證明必附守門用
     }
 
     let error
@@ -749,10 +762,16 @@ export default function Leave() {
           </div>
           {/* Attachments */}
           <div className="form-group">
-            <label className="form-label">附件證明（選填）</label>
-            <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 6 }}>
-              喪假需附死亡證明、婚假需附結婚證書等，最多 5 張
-            </div>
+            <label className="form-label">附件證明{leaveRequiresProof(form.type) ? '（必附）' : '（選填）'}</label>
+            {leaveRequiresProof(form.type) ? (
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--orange)', marginBottom: 6 }}>
+                ⚠ 此假別請附上證明（診斷書／相關文件），以免被駁回
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 6 }}>
+                喪假需附死亡證明、婚假需附結婚證書等，最多 5 張
+              </div>
+            )}
             <label style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
               padding: '12px', borderRadius: 10, border: '2px dashed var(--border2)',
