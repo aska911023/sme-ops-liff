@@ -203,51 +203,91 @@ export default function Salary() {
   const num = v => Number(v || 0)
   const money = v => `NT$ ${num(v).toLocaleString()}`
 
-  // ── 薪資袋:引擎完整明細 → 加項/扣項(順序 津貼→加班費→其他;顏色對齊 web);實領以發布版為準,殘差吸收 ──
+  // ── 薪資袋:加項/減項(順序 津貼→加班費→其他;顏色對齊 web);實領以發布版為準,殘差吸收 ──
+  //   引擎現算對得回發布版 → 用引擎最細明細;對不回(舊月出勤/排班/員工資料事後被改,引擎算不回)
+  //   → 改讀發布版當下存的欄位(record,粗但正確、定版不漂)。實領一律以發布版 net 為準。
   const bagItems = (() => {
     if (!bag?.detail) return null
-    const d = bag.detail, adjs = bag.adjustments || [], N = v => Number(v) || 0
-    const add = [], ded = []
+    const N = v => Number(v) || 0
+    const adjs = bag.adjustments || []
+    const net = Math.round(N(bag.published_net))
+    // 殘差吸收 + 收尾(讓「本薪+加項−減項 = 實領」)
+    const finalize = (base, add, ded) => {
+      const gap = net - (base + add.reduce((s, i) => s + i.value, 0) - ded.reduce((s, i) => s + i.value, 0))
+      if (gap > 1) add.push({ label: '其他加項', value: gap, color: 'var(--green)' })
+      else if (gap < -1) ded.push({ label: '其他減項', value: -gap, color: 'var(--red)' })
+      return { base, add, ded, addTotal: base + add.reduce((s, i) => s + i.value, 0), dedTotal: ded.reduce((s, i) => s + i.value, 0), net }
+    }
+    // ── 引擎現算路徑(與 web SalaryTable 同源逐項) ──
+    const eng = (() => {
+      const d = bag.detail, add = [], ded = []
+      const pA = (label, v, o = {}) => { if (N(v) > 0) add.push({ label, value: Math.round(N(v)), color: o.color || 'var(--green)', note: o.note }) }
+      const pD = (label, v, o = {}) => { if (N(v) > 0) ded.push({ label, value: Math.round(N(v)), color: o.color || 'var(--red)', note: o.note }) }
+      const base = Math.round(N(d.base_salary))
+      ;[['主管加給', d.role_allowance], ['伙食津貼', d.meal_allowance], ['交通津貼', d.transport_allowance], ['夜班津貼', d.night_allowance], ['跨區津貼', d.cross_store_allowance]].forEach(([l, v]) => pA(l, v))
+      if (Array.isArray(d.custom_allowances)) d.custom_allowances.forEach(c => { if (N(c.amount) > 0 && !/夜班|夜間|跨店|跨區/.test(c.name || '')) pA(c.name || '自訂津貼', c.amount) })
+      ;[['平日加班', N(d.otWeekday) + N(d._ot_exc_weekday), N(d.otPayWeekday) + N(d._ot_exc_weekday_pay)], ['休息日加班', N(d.otRestday) + N(d._ot_exc_restday), N(d.otPayRestday) + N(d._ot_exc_restday_pay)], ['例假加班', N(d.otWeeklyOff) + N(d._ot_exc_weekly_off), N(d.otPayWeeklyOff) + N(d._ot_exc_weekly_off_pay)], ['國定加班', N(d.otHoliday) + N(d._ot_exc_holiday), N(d.otPayHoliday) + N(d._ot_exc_holiday_pay)]].forEach(([l, h, p]) => { if (N(p) > 0 || N(h) > 0) pA(l, p, { color: 'var(--cyan)', note: `${N(h)} 小時` }) })
+      if (N(d.comp_time_settled_pay) > 0) pA('補休兌現', d.comp_time_settled_pay, { color: 'var(--cyan)' })
+      if (N(d.holidayBonus) > 0) pA('國定假日出勤加給', d.holidayBonus, { color: 'var(--cyan)' })
+      pA('全勤獎金', d.attendance_bonus)
+      if (N(d.policyBonus) > 0) pA('獎金', d.policyBonus, { color: 'var(--purple)' })
+      pA('特休折現', d.unused_leave_payout, { note: N(d.unused_leave_days) ? `${N(d.unused_leave_days)} 天` : undefined })
+      pA('資遣費', d.severance_amount)
+      pA('預告工資', d.severance_notice_wage)
+      const bAdj = adjs.filter(a => a.source_type === 'manual_bonus' || a.source_type === 'manual_backpay')
+      const bSum = bAdj.reduce((s, a) => s + N(a.amount), 0)
+      if (bSum > 0) pA('微調加項', bSum, { note: bAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
+      pD('勞保自付', d.laborInsurance, { color: 'var(--orange)', note: N(d.insuredLabor) ? `投保級距 ${N(d.insuredLabor).toLocaleString()}` : undefined })
+      pD('健保自付', d.healthInsurance, { color: 'var(--orange)', note: N(d.insuredHealth) ? `投保級距 ${N(d.insuredHealth).toLocaleString()}` : undefined })
+      pD('勞退自提', d.pension, { color: 'var(--orange)' })
+      const absR = N(d.absenceDeduction) - N(d.unpaidDeduction) - N(d.halfPayDeduction) - N(d.awolDeduction)
+      if (absR > 0) pD('其他缺勤', absR)
+      pD('無薪假', d.unpaidDeduction)
+      pD('半薪假', d.halfPayDeduction)
+      if (N(d.awolDeduction) > 0) pD('曠職', d.awolDeduction, { note: (Array.isArray(d._awol_rows) && d._awol_rows.length) ? `${N(d.awolDays)} 天（${d._awol_rows.join('、')}）` : (N(d.awolDays) ? `${N(d.awolDays)} 天` : undefined) })
+      if (N(d.lateDeduction) > 0) pD('遲到', d.lateDeduction, { note: N(d.lateMins) ? `${N(d.lateMins)} 分鐘` : undefined })
+      if (N(d.earlyLeaveDeduction) > 0) pD('早退', d.earlyLeaveDeduction, { note: N(d.earlyLeaveMinutes) ? `${N(d.earlyLeaveMinutes)} 分鐘` : undefined })
+      pD('法定扣款', d.legal_deduction)
+      pD('補充保費', d.nhi_supplementary, { color: 'var(--orange)' })
+      pD('所得稅', d.incomeTax, { color: 'var(--orange)' })
+      const dAdj = adjs.filter(a => a.source_type === 'manual_deduction')
+      const dSum = dAdj.reduce((s, a) => s + N(a.amount), 0)
+      if (dSum > 0) pD('微調減項', dSum, { note: dAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
+      const gap = net - (base + add.reduce((s, i) => s + i.value, 0) - ded.reduce((s, i) => s + i.value, 0))
+      return { base, add, ded, gap }
+    })()
+
+    // 引擎對得回發布版(殘差在容忍內)→ 用引擎最細明細
+    const TOL = Math.max(100, Math.round(net * 0.01))
+    if (Math.abs(eng.gap) <= TOL || !bag.record) return finalize(eng.base, eng.add, eng.ded)
+
+    // 引擎對不回(舊月資料漂移)→ 改讀發布版存的欄位(粗但正確、定版不漂)
+    const r = bag.record, add = [], ded = []
     const pA = (label, v, o = {}) => { if (N(v) > 0) add.push({ label, value: Math.round(N(v)), color: o.color || 'var(--green)', note: o.note }) }
     const pD = (label, v, o = {}) => { if (N(v) > 0) ded.push({ label, value: Math.round(N(v)), color: o.color || 'var(--red)', note: o.note }) }
-    const base = Math.round(N(d.base_salary))
-    // 1) 津貼（往上）
-    ;[['主管加給', d.role_allowance], ['伙食津貼', d.meal_allowance], ['交通津貼', d.transport_allowance], ['夜班津貼', d.night_allowance], ['跨區津貼', d.cross_store_allowance]].forEach(([l, v]) => pA(l, v))
-    if (Array.isArray(d.custom_allowances)) d.custom_allowances.forEach(c => { if (N(c.amount) > 0 && !/夜班|夜間|跨店|跨區/.test(c.name || '')) pA(c.name || '自訂津貼', c.amount) })
-    // 2) 加班費（第二段）
-    ;[['平日加班', N(d.otWeekday) + N(d._ot_exc_weekday), N(d.otPayWeekday) + N(d._ot_exc_weekday_pay)], ['休息日加班', N(d.otRestday) + N(d._ot_exc_restday), N(d.otPayRestday) + N(d._ot_exc_restday_pay)], ['例假加班', N(d.otWeeklyOff) + N(d._ot_exc_weekly_off), N(d.otPayWeeklyOff) + N(d._ot_exc_weekly_off_pay)], ['國定加班', N(d.otHoliday) + N(d._ot_exc_holiday), N(d.otPayHoliday) + N(d._ot_exc_holiday_pay)]].forEach(([l, h, p]) => { if (N(p) > 0 || N(h) > 0) pA(l, p, { color: 'var(--cyan)', note: `${N(h)} 小時` }) })
-    if (N(d.comp_time_settled_pay) > 0) pA('補休兌現', d.comp_time_settled_pay, { color: 'var(--cyan)' })
-    if (N(d.holidayBonus) > 0) pA('國定假日出勤加給', d.holidayBonus, { color: 'var(--cyan)' })
-    // 3) 其他加項（最下面）
-    pA('全勤獎金', d.attendance_bonus)
-    if (N(d.policyBonus) > 0) pA('獎金', d.policyBonus, { color: 'var(--purple)' })
-    pA('特休折現', d.unused_leave_payout, { note: N(d.unused_leave_days) ? `${N(d.unused_leave_days)} 天` : undefined })
-    pA('資遣費', d.severance_amount)
-    pA('預告工資', d.severance_notice_wage)
+    const base = Math.round(N(r.base_salary))
+    pA('主管加給', r.role_allowance); pA('伙食津貼', r.meal_allowance); pA('交通津貼', r.transport_allowance)
+    pA('津貼', r.allowance)
+    pA('加班費', N(r.overtime_pay) || N(r.overtime), { color: 'var(--cyan)' })
+    pA('全勤獎金', r.attendance_bonus)
+    if (N(r.bonus) > 0) pA('獎金', r.bonus, { color: 'var(--purple)' })
+    pA('特休折現', r.unused_leave_payout)
+    if (Array.isArray(r.custom_allowances)) r.custom_allowances.forEach(c => pA(c.name || '自訂津貼', c.amount))
     const bAdj = adjs.filter(a => a.source_type === 'manual_bonus' || a.source_type === 'manual_backpay')
     const bSum = bAdj.reduce((s, a) => s + N(a.amount), 0)
     if (bSum > 0) pA('微調加項', bSum, { note: bAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
-    // 扣項
-    pD('勞保自付', d.laborInsurance, { color: 'var(--orange)', note: N(d.insuredLabor) ? `投保級距 ${N(d.insuredLabor).toLocaleString()}` : undefined })
-    pD('健保自付', d.healthInsurance, { color: 'var(--orange)', note: N(d.insuredHealth) ? `投保級距 ${N(d.insuredHealth).toLocaleString()}` : undefined })
-    pD('勞退自提', d.pension, { color: 'var(--orange)' })
-    const absR = N(d.absenceDeduction) - N(d.unpaidDeduction) - N(d.halfPayDeduction) - N(d.awolDeduction)
-    if (absR > 0) pD('其他缺勤扣', absR)
-    pD('無薪假', d.unpaidDeduction)
-    pD('半薪假', d.halfPayDeduction)
-    if (N(d.awolDeduction) > 0) pD('曠職', d.awolDeduction, { note: (Array.isArray(d._awol_rows) && d._awol_rows.length) ? `${N(d.awolDays)} 天（${d._awol_rows.join('、')}）` : (N(d.awolDays) ? `${N(d.awolDays)} 天` : undefined) })
-    if (N(d.lateDeduction) > 0) pD('遲到', d.lateDeduction, { note: N(d.lateMins) ? `${N(d.lateMins)} 分鐘` : undefined })
-    if (N(d.earlyLeaveDeduction) > 0) pD('早退', d.earlyLeaveDeduction, { note: N(d.earlyLeaveMinutes) ? `${N(d.earlyLeaveMinutes)} 分鐘` : undefined })
-    pD('法定扣款', d.legal_deduction)
+    if (N(r.labor_insurance) > 0 || N(r.health_insurance) > 0) {
+      pD('勞保自付', r.labor_insurance, { color: 'var(--orange)' })
+      pD('健保自付', r.health_insurance, { color: 'var(--orange)' })
+    } else pD('勞健保自付', r.insurance, { color: 'var(--orange)' })
+    pD('勞退自提', r.pension_self, { color: 'var(--orange)' })
+    pD('遲到', r.late_deduction)
+    pD('缺勤', r.absence_deduction)
+    pD('所得稅', r.income_tax, { color: 'var(--orange)' })
     const dAdj = adjs.filter(a => a.source_type === 'manual_deduction')
     const dSum = dAdj.reduce((s, a) => s + N(a.amount), 0)
-    if (dSum > 0) pD('微調扣款', dSum, { note: dAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
-    // 實領以發布版為準;殘差吸收讓「底薪+加項−扣項 = 實領」(舊月份引擎重算漂移也吸收)
-    const net = Math.round(N(bag.published_net))
-    const gap = net - (base + add.reduce((s, i) => s + i.value, 0) - ded.reduce((s, i) => s + i.value, 0))
-    if (gap > 1) add.push({ label: '其他加項', value: gap, color: 'var(--green)' })
-    else if (gap < -1) ded.push({ label: '其他扣款', value: -gap, color: 'var(--red)' })
-    return { base, add, ded, addTotal: base + add.reduce((s, i) => s + i.value, 0), dedTotal: ded.reduce((s, i) => s + i.value, 0), net }
+    if (dSum > 0) pD('微調減項', dSum, { note: dAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
+    return finalize(base, add, ded)
   })()
 
   return (
@@ -317,9 +357,9 @@ export default function Salary() {
                       <span style={{ fontWeight: 600, color: it.color }}>+{money(it.value)}</span>
                     </div>
                   ))}
-                  {/* － 扣項（點開展細項） */}
+                  {/* － 減項（點開展細項） */}
                   <div className="info-row" onClick={() => setExpandDed(v => !v)} style={{ cursor: 'pointer', borderTop: '1px dashed var(--border)', paddingTop: 10, marginTop: 4 }}>
-                    <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>{expandDed ? '▾' : '▸'} － 扣項</span>
+                    <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>{expandDed ? '▾' : '▸'} － 減項</span>
                     <span style={{ fontWeight: 700, color: 'var(--orange)' }}>−{money(bagItems.dedTotal)}</span>
                   </div>
                   {expandDed && bagItems.ded.map((it, i) => (
