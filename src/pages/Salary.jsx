@@ -28,6 +28,21 @@ export default function Salary() {
   const [expenses, setExpenses] = useState([])
   const [payrollRecords, setPayrollRecords] = useState([])
   const [bonusRecords, setBonusRecords] = useState([])   // 門市業績獎金（已發布）
+  const [bag, setBag] = useState(null)          // liff_get_my_salary_detail(引擎明細+微調+發布實領)
+  const [bagLoading, setBagLoading] = useState(false)
+  const [expandAdd, setExpandAdd] = useState(false)  // 加項收合
+  const [expandDed, setExpandDed] = useState(false)  // 扣項收合
+
+  // 選定月份 → 抓引擎完整明細(跟 web 同源;實領以發布版為準)
+  useEffect(() => {
+    if (!lineProfile?.lineUserId || !unlocked || !selectedMonth) { setBag(null); return }
+    let cancelled = false
+    setBagLoading(true)
+    supabase.rpc('liff_get_my_salary_detail', { p_line_user_id: lineProfile.lineUserId, p_period: selectedMonth })
+      .then(({ data }) => { if (!cancelled) { setBag(data?.ok ? data : null); setExpandAdd(false); setExpandDed(false) } })
+      .finally(() => { if (!cancelled) setBagLoading(false) })
+    return () => { cancelled = true }
+  }, [lineProfile, unlocked, selectedMonth])
 
   // 閘門：查 has_pin（未解鎖時）
   useEffect(() => {
@@ -188,25 +203,52 @@ export default function Salary() {
   const num = v => Number(v || 0)
   const money = v => `NT$ ${num(v).toLocaleString()}`
 
-  // 收入/扣項列（金額 0 的非主要欄位自動隱藏）
-  const incomeRows = officialRecord ? [
-    { label: '底薪', value: officialRecord.base_salary, always: true },
-    { label: '職務津貼', value: officialRecord.role_allowance },
-    { label: '伙食津貼', value: officialRecord.meal_allowance },
-    { label: '交通津貼', value: officialRecord.transport_allowance },
-    { label: '全勤獎金', value: officialRecord.attendance_bonus_earned },
-    { label: '加班費', value: officialRecord.overtime_pay },
-    { label: `未休特休折現${officialRecord.unused_leave_days ? `（${officialRecord.unused_leave_days} 天）` : ''}`, value: officialRecord.unused_leave_payout },
-    { label: '資遣費', value: officialRecord.severance_amount },
-    { label: '預告工資', value: officialRecord.notice_wage },
-  ].filter(r => r.always || num(r.value) !== 0) : []
-
-  const dedRows = officialRecord ? [
-    { label: '請假扣款', value: officialRecord.leave_deduction },
-    { label: '遲到扣款', value: officialRecord.late_deduction },
-    { label: '勞保', value: officialRecord.labor_ins_employee },
-    { label: '健保', value: officialRecord.health_ins_employee },
-  ].filter(r => num(r.value) !== 0) : []
+  // ── 薪資袋:引擎完整明細 → 加項/扣項(順序 津貼→加班費→其他;顏色對齊 web);實領以發布版為準,殘差吸收 ──
+  const bagItems = (() => {
+    if (!bag?.detail) return null
+    const d = bag.detail, adjs = bag.adjustments || [], N = v => Number(v) || 0
+    const add = [], ded = []
+    const pA = (label, v, o = {}) => { if (N(v) > 0) add.push({ label, value: Math.round(N(v)), color: o.color || 'var(--green)', note: o.note }) }
+    const pD = (label, v, o = {}) => { if (N(v) > 0) ded.push({ label, value: Math.round(N(v)), color: o.color || 'var(--red)', note: o.note }) }
+    const base = Math.round(N(d.base_salary))
+    // 1) 津貼（往上）
+    ;[['主管加給', d.role_allowance], ['伙食津貼', d.meal_allowance], ['交通津貼', d.transport_allowance], ['夜班津貼', d.night_allowance], ['跨區津貼', d.cross_store_allowance]].forEach(([l, v]) => pA(l, v))
+    if (Array.isArray(d.custom_allowances)) d.custom_allowances.forEach(c => { if (N(c.amount) > 0 && !/夜班|夜間|跨店|跨區/.test(c.name || '')) pA(c.name || '自訂津貼', c.amount) })
+    // 2) 加班費（第二段）
+    ;[['平日加班', N(d.otWeekday) + N(d._ot_exc_weekday), N(d.otPayWeekday) + N(d._ot_exc_weekday_pay)], ['休息日加班', N(d.otRestday) + N(d._ot_exc_restday), N(d.otPayRestday) + N(d._ot_exc_restday_pay)], ['例假加班', N(d.otWeeklyOff) + N(d._ot_exc_weekly_off), N(d.otPayWeeklyOff) + N(d._ot_exc_weekly_off_pay)], ['國定加班', N(d.otHoliday) + N(d._ot_exc_holiday), N(d.otPayHoliday) + N(d._ot_exc_holiday_pay)]].forEach(([l, h, p]) => { if (N(p) > 0 || N(h) > 0) pA(l, p, { color: 'var(--cyan)', note: `${N(h)} 小時` }) })
+    if (N(d.comp_time_settled_pay) > 0) pA('補休兌現', d.comp_time_settled_pay, { color: 'var(--cyan)' })
+    if (N(d.holidayBonus) > 0) pA('國定假日出勤加給', d.holidayBonus, { color: 'var(--cyan)' })
+    // 3) 其他加項（最下面）
+    pA('全勤獎金', d.attendance_bonus)
+    if (N(d.policyBonus) > 0) pA('獎金', d.policyBonus, { color: 'var(--purple)' })
+    pA('特休折現', d.unused_leave_payout, { note: N(d.unused_leave_days) ? `${N(d.unused_leave_days)} 天` : undefined })
+    pA('資遣費', d.severance_amount)
+    pA('預告工資', d.severance_notice_wage)
+    const bAdj = adjs.filter(a => a.source_type === 'manual_bonus' || a.source_type === 'manual_backpay')
+    const bSum = bAdj.reduce((s, a) => s + N(a.amount), 0)
+    if (bSum > 0) pA('微調加項', bSum, { note: bAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
+    // 扣項
+    pD('勞保自付', d.laborInsurance, { color: 'var(--orange)', note: N(d.insuredLabor) ? `投保級距 ${N(d.insuredLabor).toLocaleString()}` : undefined })
+    pD('健保自付', d.healthInsurance, { color: 'var(--orange)', note: N(d.insuredHealth) ? `投保級距 ${N(d.insuredHealth).toLocaleString()}` : undefined })
+    pD('勞退自提', d.pension, { color: 'var(--orange)' })
+    const absR = N(d.absenceDeduction) - N(d.unpaidDeduction) - N(d.halfPayDeduction) - N(d.awolDeduction)
+    if (absR > 0) pD('其他缺勤扣', absR)
+    pD('無薪假扣', d.unpaidDeduction)
+    pD('半薪假扣', d.halfPayDeduction)
+    if (N(d.awolDeduction) > 0) pD('曠職扣', d.awolDeduction, { note: (Array.isArray(d._awol_rows) && d._awol_rows.length) ? `${N(d.awolDays)} 天（${d._awol_rows.join('、')}）` : (N(d.awolDays) ? `${N(d.awolDays)} 天` : undefined) })
+    if (N(d.lateDeduction) > 0) pD('遲到扣', d.lateDeduction, { note: N(d.lateMins) ? `${N(d.lateMins)} 分鐘` : undefined })
+    if (N(d.earlyLeaveDeduction) > 0) pD('早退扣', d.earlyLeaveDeduction, { note: N(d.earlyLeaveMinutes) ? `${N(d.earlyLeaveMinutes)} 分鐘` : undefined })
+    pD('法定扣款', d.legal_deduction)
+    const dAdj = adjs.filter(a => a.source_type === 'manual_deduction')
+    const dSum = dAdj.reduce((s, a) => s + N(a.amount), 0)
+    if (dSum > 0) pD('微調扣款', dSum, { note: dAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
+    // 實領以發布版為準;殘差吸收讓「底薪+加項−扣項 = 實領」(舊月份引擎重算漂移也吸收)
+    const net = Math.round(N(bag.published_net))
+    const gap = net - (base + add.reduce((s, i) => s + i.value, 0) - ded.reduce((s, i) => s + i.value, 0))
+    if (gap > 1) add.push({ label: '其他加項', value: gap, color: 'var(--green)' })
+    else if (gap < -1) ded.push({ label: '其他扣款', value: -gap, color: 'var(--red)' })
+    return { base, add, ded, addTotal: base + add.reduce((s, i) => s + i.value, 0), dedTotal: ded.reduce((s, i) => s + i.value, 0), net }
+  })()
 
   return (
     <div className="page">
@@ -242,7 +284,7 @@ export default function Salary() {
 
           {current && (
             <>
-              {/* 實發大數字 */}
+              {/* 💰 薪資袋:實發大數字 + 本薪→加項→扣項→實領(收合) */}
               <div style={{
                 background: 'linear-gradient(135deg, rgba(52,211,153,0.12), rgba(34,211,238,0.08))',
                 border: '1px solid rgba(52,211,153,0.2)',
@@ -250,103 +292,54 @@ export default function Salary() {
               }}>
                 <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 6 }}>實發薪資</div>
                 <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--green)' }}>
-                  {money(officialRecord?.net_salary ?? current.net_salary)}
+                  {money(bagItems ? bagItems.net : (officialRecord?.net_salary ?? current.net_salary))}
                 </div>
-                {officialRecord && (
-                  <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>（依 HR 結算版正式薪資單）</div>
-                )}
+                {bag?.published_at && <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>已發布</div>}
               </div>
 
-              {/* 簡版明細（沒有結算版時） */}
-              {!officialRecord && (
+              {bagLoading ? (
+                <div className="card" style={{ textAlign: 'center', padding: 24 }}><div className="spinner" style={{ margin: '0 auto' }} /></div>
+              ) : bagItems && (
                 <div className="card">
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', marginBottom: 12 }}>薪資明細</div>
-                  {[
-                    { label: '底薪', value: current.base_salary, color: 'var(--t1)' },
-                    { label: '津貼', value: current.allowance, color: 'var(--green)', sign: '+' },
-                    { label: '加班費', value: current.overtime, color: 'var(--cyan)', sign: '+' },
-                    { label: '績效獎金', value: current.bonus, color: 'var(--purple)', sign: '+' },
-                    { label: '事假扣薪', value: current.absence_deduction, color: 'var(--red)', sign: '-' },
-                    { label: '遲到扣薪', value: current.late_deduction, color: 'var(--red)', sign: '-' },
-                    { label: `其他扣款${current.deduction_note ? `（${current.deduction_note}）` : ''}`, value: current.other_deduction, color: 'var(--red)', sign: '-' },
-                    { label: '勞健保', value: current.insurance, color: 'var(--orange)', sign: '-' },
-                    { label: '報帳退款', value: expenseTotal, color: 'var(--cyan)', sign: '+' },
-                  ].map((item, i) => (
-                    <div key={i} className="info-row">
-                      <span className="info-label">{item.label}</span>
-                      <span style={{ fontWeight: 600, color: num(item.value) === 0 ? 'var(--t3)' : item.color }}>
-                        {num(item.value) === 0 ? '—' : `${item.sign || ''}${money(item.value)}`}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 📊 正式薪資單：完整明細 */}
-              {officialRecord && (
-                <div className="card" style={{ borderColor: 'rgba(167,139,250,0.25)' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--purple)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    📊 正式薪資單
-                    <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(167,139,250,0.15)', color: 'var(--purple)' }}>HR 結算版</span>
-                    {officialRecord.is_final_settlement && (
-                      <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: 'rgba(251,146,60,0.15)', color: 'var(--orange)' }}>離職結算</span>
-                    )}
+                  {/* 本薪 */}
+                  <div className="info-row" style={{ fontWeight: 700 }}>
+                    <span className="info-label" style={{ color: 'var(--t1)' }}>本薪</span>
+                    <span style={{ fontWeight: 700 }}>{money(bagItems.base)}</span>
                   </div>
-
-                  {/* 收入 */}
-                  <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginBottom: 6 }}>+ 收入</div>
-                  {incomeRows.map((r, i) => (
-                    <div key={i} className="info-row" style={{ paddingLeft: 12 }}>
-                      <span className="info-label">{r.label}</span>
-                      <span style={{ fontWeight: 600 }}>{money(r.value)}</span>
-                    </div>
-                  ))}
-                  {Array.isArray(officialRecord.custom_allowances_breakdown) && officialRecord.custom_allowances_breakdown.map((c, i) => (
-                    <div key={`ca${i}`} className="info-row" style={{ paddingLeft: 12 }}>
-                      <span className="info-label">{c.name}</span>
-                      <span style={{ fontWeight: 600, color: 'var(--green)' }}>+{money(c.amount)}</span>
-                    </div>
-                  ))}
-                  <div className="info-row" style={{ paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
-                    <span className="info-label" style={{ fontWeight: 700 }}>應發合計</span>
-                    <span style={{ fontWeight: 700, color: 'var(--green)' }}>{money(officialRecord.gross_salary)}</span>
+                  {/* ＋ 加項（點開展細項） */}
+                  <div className="info-row" onClick={() => setExpandAdd(v => !v)} style={{ cursor: 'pointer', borderTop: '1px dashed var(--border)', paddingTop: 10, marginTop: 4 }}>
+                    <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>{expandAdd ? '▾' : '▸'} ＋ 加項</span>
+                    <span style={{ fontWeight: 700, color: 'var(--green)' }}>+{money(bagItems.addTotal - bagItems.base)}</span>
                   </div>
-
-                  {/* 扣項 */}
-                  <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700, margin: '14px 0 6px' }}>- 扣項</div>
-                  {dedRows.map((r, i) => (
-                    <div key={i} className="info-row" style={{ paddingLeft: 12 }}>
-                      <span className="info-label">{r.label}</span>
-                      <span style={{ fontWeight: 600, color: 'var(--red)' }}>-{money(r.value)}</span>
+                  {expandAdd && bagItems.add.map((it, i) => (
+                    <div key={'a' + i} className="info-row" style={{ paddingLeft: 18 }}>
+                      <span className="info-label" style={{ fontSize: 12 }}>{it.label}{it.note && <span style={{ color: 'var(--t3)', marginLeft: 4, fontSize: 11 }}>{it.note}</span>}</span>
+                      <span style={{ fontWeight: 600, color: it.color }}>+{money(it.value)}</span>
                     </div>
                   ))}
-                  {Array.isArray(officialRecord.legal_deduction_breakdown) && officialRecord.legal_deduction_breakdown.map((d, i) => (
-                    <div key={`ld${i}`} className="info-row" style={{ paddingLeft: 12 }}>
-                      <span className="info-label">
-                        {d.title}
-                        {d.shortfall > 0 && <span style={{ marginLeft: 4, fontSize: 10, color: 'var(--orange)' }}>⚠️ 餘額不足</span>}
-                      </span>
-                      <span style={{ fontWeight: 600, color: 'var(--red)' }}>-{money(d.amount)}</span>
-                    </div>
-                  ))}
-                  <div className="info-row" style={{ paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
-                    <span className="info-label" style={{ fontWeight: 700 }}>扣除合計</span>
-                    <span style={{ fontWeight: 700, color: 'var(--red)' }}>-{money(officialRecord.total_deductions)}</span>
+                  {/* － 扣項（點開展細項） */}
+                  <div className="info-row" onClick={() => setExpandDed(v => !v)} style={{ cursor: 'pointer', borderTop: '1px dashed var(--border)', paddingTop: 10, marginTop: 4 }}>
+                    <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700 }}>{expandDed ? '▾' : '▸'} － 扣項</span>
+                    <span style={{ fontWeight: 700, color: 'var(--orange)' }}>−{money(bagItems.dedTotal)}</span>
                   </div>
-
-                  {officialRecord.legal_deduction_breakdown?.some(d => d.shortfall > 0) && (
-                    <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'rgba(251,146,60,0.1)', color: 'var(--orange)', fontSize: 11 }}>
-                      ⚠️ 部分法扣金額本月薪水不夠扣，未扣部分將自動延後到下月
+                  {expandDed && bagItems.ded.map((it, i) => (
+                    <div key={'d' + i} className="info-row" style={{ paddingLeft: 18 }}>
+                      <span className="info-label" style={{ fontSize: 12 }}>{it.label}{it.note && <span style={{ color: 'var(--t3)', marginLeft: 4, fontSize: 11 }}>{it.note}</span>}</span>
+                      <span style={{ fontWeight: 600, color: it.color }}>−{money(it.value)}</span>
                     </div>
-                  )}
-
-                  {/* 實發 */}
-                  <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>實發薪資</span>
-                    <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--green)' }}>{money(officialRecord.net_salary)}</span>
+                  ))}
+                  {/* ＝ 實領（最下面） */}
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700 }}>＝ 實領薪資</span>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--green)' }}>{money(bagItems.net)}</span>
                   </div>
                 </div>
               )}
+              {!bagLoading && !bagItems && (
+                <div className="card" style={{ textAlign: 'center', padding: 18, fontSize: 12, color: 'var(--t3)' }}>此月正式薪資明細尚未發布</div>
+              )}
+
+
 
               {/* 🏆 門市業績獎金（已發布） */}
               {monthBonus && (
