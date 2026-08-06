@@ -432,7 +432,7 @@ export default function ClockPage() {
               cursor: 'pointer',
             }}
           >
-            <AlertTriangle size={12} /> SOS
+            例外打卡
           </button>
           <button
             onClick={() => navigate('/attendance-history')}
