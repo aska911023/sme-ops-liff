@@ -1,8 +1,16 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { MapPin, Wifi, AlertTriangle, CheckCircle, XCircle, CalendarDays, RefreshCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import liff from '@line/liff'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+
+// LIFF 打卡定位失敗時的備援:導去 web 系統員工打卡頁(GPS 用系統瀏覽器較穩)
+const SYSTEM_CLOCK_URL = 'https://sme-ops-system.vercel.app/employee-portal'
+const openSystemClock = () => {
+  try { liff.openWindow({ url: SYSTEM_CLOCK_URL, external: true }) }
+  catch { window.open(SYSTEM_CLOCK_URL, '_blank', 'noreferrer') }
+}
 
 const GPS_ACCURACY_THRESHOLD = 200
 
@@ -410,18 +418,35 @@ export default function ClockPage() {
           <div className="header-title">打卡</div>
           <div className="header-sub">{today}</div>
         </div>
-        <button
-          onClick={() => navigate('/attendance-history')}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '6px 10px', borderRadius: 8, flexShrink: 0,
-            background: 'var(--cyan-dim)', color: 'var(--cyan)',
-            border: '1px solid var(--cyan)', fontSize: 12, fontWeight: 700,
-            cursor: 'pointer',
-          }}
-        >
-          <CalendarDays size={12} /> 紀錄
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {/* 🆘 SOS:定位失敗備援 → 導去 web 系統打卡頁 */}
+          <button
+            type="button"
+            onClick={openSystemClock}
+            title="定位失敗時改用網頁打卡"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '6px 10px', borderRadius: 8,
+              background: 'var(--red)', color: '#fff',
+              border: '1px solid var(--red)', fontSize: 12, fontWeight: 800,
+              cursor: 'pointer',
+            }}
+          >
+            <AlertTriangle size={12} /> SOS
+          </button>
+          <button
+            onClick={() => navigate('/attendance-history')}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '6px 10px', borderRadius: 8,
+              background: 'var(--cyan-dim)', color: 'var(--cyan)',
+              border: '1px solid var(--cyan)', fontSize: 12, fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            <CalendarDays size={12} /> 紀錄
+          </button>
+        </div>
       </div>
 
       {/* Clock Display */}
