@@ -528,7 +528,9 @@ function rowsForType(type, rec) {
     if (rec.start_time && rec.end_time) {
       push('日期', fmtDate(rec.start_date)); push('時段', `${rec.start_time}–${rec.end_time}`)
     } else { push('期間', fmtRange(rec.start_date, rec.end_date)) }
-    push('天數', rec.days != null ? `${rec.days} 天` : null)
+    // 時數為單位(整天假已讀班表淨時數);_disp_hours 由 buildApprovalCardBubble 算好
+    const dispH = rec._disp_hours != null ? rec._disp_hours : (rec.hours != null ? rec.hours : (rec.days != null ? rec.days * 8 : null))
+    push('時數', dispH != null ? `${dispH} 小時` : null)
   } else if (type === 'overtime') {
     push('日期', fmtDate(rec.date)); push('時數', rec.hours != null ? `${rec.hours} 小時` : null)
   } else if (type === 'trip') {
@@ -598,6 +600,12 @@ async function buildApprovalCardBubble(type, requestId, applicantEmpId) {
 
   const { data: rec } = await supabase.from(table).select('*').eq('id', requestId).maybeSingle()
   if (!rec) return null
+
+  // 請假：算顯示時數(整天假讀班表淨時數,與計薪/LIFF/LINE 卡一致) → 卡片以小時為單位
+  if (type === 'leave') {
+    const { data: dh } = await supabase.rpc('leave_display_hours', { p_leave_id: requestId })
+    if (dh != null) rec._disp_hours = Number(dh)
+  }
 
   // 申請人 + 部門/門市（走 SECURITY DEFINER RPC，避免 anon 被 RLS 擋）
   let applicantName = rec.employee || '員工'
