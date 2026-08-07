@@ -824,14 +824,20 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {l.attachments.map((url, i) => {
                   const isImg = /\.(jpe?g|png|gif|webp|heic|heif)(\?|$)/i.test(String(url))
+                  // 檔名:URL 最後一段去掉「單號-時間-」前綴(對齊 LINE 卡 deriveFileName)
+                  let fname = ''
+                  try { fname = decodeURIComponent(new URL(url).pathname.split('/').pop() || '').replace(/^\d+-\d+-/, '') } catch { fname = '' }
+                  fname = fname || `附件 ${i + 1}`
                   return isImg ? (
-                    <a key={i} href={url} target="_blank" rel="noreferrer">
-                      <img src={url} alt={`證明${i + 1}`} loading="lazy"
+                    <a key={i} href={url} target="_blank" rel="noreferrer" title={fname}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, maxWidth: 66, textDecoration: 'none' }}>
+                      <img src={url} alt={fname} loading="lazy"
                         style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border2)' }} />
+                      <span style={{ fontSize: 9, color: 'var(--t3)', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fname}</span>
                     </a>
                   ) : (
                     <a key={i} href={url} target="_blank" rel="noreferrer"
-                      style={{ fontSize: 12, color: 'var(--cyan)', textDecoration: 'underline' }}>附件 {i + 1}</a>
+                      style={{ fontSize: 12, color: 'var(--cyan)', textDecoration: 'underline' }}>📄 {fname}</a>
                   )
                 })}
               </div>

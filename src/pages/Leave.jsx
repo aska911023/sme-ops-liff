@@ -266,8 +266,10 @@ export default function Leave() {
     if (attachFiles.length === 0) return []
     const urls = []
     for (const { file } of attachFiles) {
-      const ext = file.name.split('.').pop()
-      const path = `emp-${employee.id}/${leaveId}-${Date.now()}.${ext}`
+      // 把原始檔名放進路徑 → 之後 LINE 卡/LIFF 都能顯示「他們上傳的檔名」(不用改附件格式)。
+      //   去掉會壞路徑/URL 的字元;前綴 單號-時間 確保不撞名。
+      const safeName = (file.name || 'file').replace(/[\/\\?#%]+/g, '_').replace(/\s+/g, '_')
+      const path = `emp-${employee.id}/${leaveId}-${Date.now()}-${safeName}`
       const { error } = await supabase.storage.from('leave-attachments').upload(path, file, {
         cacheControl: '3600',
         upsert: true,
