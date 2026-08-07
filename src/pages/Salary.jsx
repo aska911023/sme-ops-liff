@@ -30,8 +30,8 @@ export default function Salary() {
   const [bonusRecords, setBonusRecords] = useState([])   // 門市業績獎金（已發布）
   const [bag, setBag] = useState(null)          // liff_get_my_salary_detail(引擎明細+微調+發布實領)
   const [bagLoading, setBagLoading] = useState(false)
-  const [expandAdd, setExpandAdd] = useState(false)  // 加項收合
-  const [expandDed, setExpandDed] = useState(false)  // 扣項收合
+  const [expandAdd, setExpandAdd] = useState(true)  // 加項預設展開
+  const [expandDed, setExpandDed] = useState(true)  // 減項預設展開
 
   // 選定月份 → 抓引擎完整明細(跟 web 同源;實領以發布版為準)
   useEffect(() => {
