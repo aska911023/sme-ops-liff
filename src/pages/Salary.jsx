@@ -207,7 +207,7 @@ export default function Salary() {
   //   引擎現算對得回發布版 → 用引擎最細明細;對不回(舊月出勤/排班/員工資料事後被改,引擎算不回)
   //   → 改讀發布版當下存的欄位(record,粗但正確、定版不漂)。實領一律以發布版 net 為準。
   const bagItems = (() => {
-    if (!bag?.detail) return null
+    if (!bag || (!bag.detail && !bag.record)) return null   // 引擎沒回也沒 record 才放棄;有 record 仍可顯示
     const N = v => Number(v) || 0
     const adjs = bag.adjustments || []
     const net = Math.round(N(bag.published_net))
@@ -220,7 +220,7 @@ export default function Salary() {
     }
     // ── 引擎現算路徑(與 web SalaryTable 同源逐項) ──
     const eng = (() => {
-      const d = bag.detail, add = [], ded = []
+      const d = bag.detail || {}, add = [], ded = []
       const pA = (label, v, o = {}) => { if (N(v) > 0) add.push({ label, value: Math.round(N(v)), color: o.color || 'var(--green)', note: o.note }) }
       const pD = (label, v, o = {}) => { if (N(v) > 0) ded.push({ label, value: Math.round(N(v)), color: o.color || 'var(--red)', note: o.note }) }
       const base = Math.round(N(d.base_salary))
@@ -267,12 +267,14 @@ export default function Salary() {
     const pD = (label, v, o = {}) => { if (N(v) > 0) ded.push({ label, value: Math.round(N(v)), color: o.color || 'var(--red)', note: o.note }) }
     const base = Math.round(N(r.base_salary))
     pA('主管加給', r.role_allowance); pA('伙食津貼', r.meal_allowance); pA('交通津貼', r.transport_allowance)
-    pA('津貼', r.allowance)
+    if (Array.isArray(r.custom_allowances)) r.custom_allowances.forEach(c => pA(c.name || '自訂津貼', c.amount))
+    // r.allowance 是各津貼「合計」欄:只有在沒逐項(舊格式只填合計)時才用,避免與上面逐項重複計
+    const itemizedAllow = N(r.role_allowance) + N(r.meal_allowance) + N(r.transport_allowance) + (Array.isArray(r.custom_allowances) ? r.custom_allowances.reduce((s, c) => s + N(c.amount), 0) : 0)
+    if (itemizedAllow === 0) pA('津貼', r.allowance)
     pA('加班費', N(r.overtime_pay) || N(r.overtime), { color: 'var(--cyan)' })
     pA('全勤獎金', r.attendance_bonus)
     if (N(r.bonus) > 0) pA('獎金', r.bonus, { color: 'var(--purple)' })
     pA('特休折現', r.unused_leave_payout)
-    if (Array.isArray(r.custom_allowances)) r.custom_allowances.forEach(c => pA(c.name || '自訂津貼', c.amount))
     const bAdj = adjs.filter(a => a.source_type === 'manual_bonus' || a.source_type === 'manual_backpay')
     const bSum = bAdj.reduce((s, a) => s + N(a.amount), 0)
     if (bSum > 0) pA('微調加項', bSum, { note: bAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
