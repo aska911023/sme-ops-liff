@@ -814,7 +814,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
             <span className="badge badge-cyan" style={{ marginRight: 6 }}>{l.type}</span>
             {l.start_date}{l.end_date !== l.start_date ? ` ~ ${l.end_date}` : ''}
             <span style={{ marginLeft: 8, color: 'var(--t3)' }}>
-              {l.hours && l.hours < 8 ? `${l.hours}h` : `${l.days}天`}
+              {(Number(l.hours) || (Number(l.days) || 0) * 8)} 小時
             </span>
           </div>
           {l.reason && <div style={{ fontSize: 12, color: 'var(--t3)' }}>{l.reason}</div>}
