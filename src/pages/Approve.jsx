@@ -240,6 +240,14 @@ function PendingApprovalsView() {
       const laMap = {}
       for (const row of (la || [])) laMap[row.id] = row.attachments
       leavesEnriched = leavesEnriched.map(l => (laMap[l.id] ? { ...l, attachments: laMap[l.id] } : l))
+
+      // 整天請假顯示時數:讀班表實際淨時數(對齊計薪,非固定 8h)— 加法小 RPC
+      const { data: lh } = await supabase.rpc('liff_leave_display_hours_for_ids', {
+        p_line_user_id: lineProfile.lineUserId, p_ids: leaveIds,
+      })
+      const lhMap = {}
+      for (const row of (lh || [])) lhMap[row.id] = row.disp_hours
+      leavesEnriched = leavesEnriched.map(l => (lhMap[l.id] != null ? { ...l, disp_hours: lhMap[l.id] } : l))
     }
 
     // 自訂表單:pending RPC 的 read-snapshot 改寫把 data_resolved 洗掉了(picker id 沒換成名字)
@@ -814,7 +822,7 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
             <span className="badge badge-cyan" style={{ marginRight: 6 }}>{l.type}</span>
             {l.start_date}{l.end_date !== l.start_date ? ` ~ ${l.end_date}` : ''}
             <span style={{ marginLeft: 8, color: 'var(--t3)' }}>
-              {(Number(l.hours) || (Number(l.days) || 0) * 8)} 小時
+              {(() => { const h = Number(l.disp_hours ?? l.hours ?? (Number(l.days) || 0) * 8); return Number.isInteger(h) ? h : Number(h.toFixed(1)) })()} 小時
             </span>
           </div>
           {l.reason && <div style={{ fontSize: 12, color: 'var(--t3)' }}>{l.reason}</div>}
