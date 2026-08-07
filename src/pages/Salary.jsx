@@ -39,7 +39,7 @@ export default function Salary() {
     let cancelled = false
     setBagLoading(true)
     supabase.rpc('liff_get_my_salary_detail', { p_line_user_id: lineProfile.lineUserId, p_period: selectedMonth })
-      .then(({ data }) => { if (!cancelled) { setBag(data?.ok ? data : null); setExpandAdd(false); setExpandDed(false) } })
+      .then(({ data }) => { if (!cancelled) { setBag(data?.ok ? data : null); setExpandAdd(true); setExpandDed(true) } })
       .finally(() => { if (!cancelled) setBagLoading(false) })
     return () => { cancelled = true }
   }, [lineProfile, unlocked, selectedMonth])
