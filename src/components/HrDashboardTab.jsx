@@ -62,6 +62,11 @@ export default function HrDashboardTab({ lineUserId }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))', gap: 8 }}>
             {today.special.map((p, i) => {
               const m = STATUS_META[p.status] || STATUS_META.leave
+              // 請假/病假/事假類:標實際假別(特休/婚假/喪假…),申請中補「·申請中」;其餘用通用標籤
+              const isLeave = ['leave', 'sick', 'personal', 'leave_pending', 'sick_pending', 'personal_pending'].includes(p.status)
+              const label = isLeave && p.type
+                ? (m.pending ? `${p.type}·申請中` : p.type)
+                : m.label
               return (
                 <div key={i} style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: 8, borderRadius: 10,
@@ -76,7 +81,7 @@ export default function HrDashboardTab({ lineUserId }) {
                     <span style={{ position: 'absolute', bottom: -3, right: -3, fontSize: 11 }}>{m.icon}</span>
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--t1)', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
-                  <div style={{ fontSize: 9, color: m.color, fontWeight: 600, textAlign: 'center' }}>{m.label}</div>
+                  <div style={{ fontSize: 9, color: m.color, fontWeight: 600, textAlign: 'center' }}>{label}</div>
                 </div>
               )
             })}
