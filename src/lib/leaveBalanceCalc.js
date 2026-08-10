@@ -50,9 +50,18 @@ export const LEAVE_CODE_MAP = {
   occupational: '公傷病假', nursing: '哺乳時間', prenatal: '產檢假',
 }
 
-// 特休年度區間（到職週年制）
-export function getAnnualLeaveRange(joinDate) {
+// 特休年度區間（到職週年制）。帶 refYear → 該年的週年期(對齊 web:第一年=到職+6月起,之後=週年日);
+//   不帶 → 當期(今天基準)。
+export function getAnnualLeaveRange(joinDate, refYear = null) {
   const join = new Date(joinDate)
+  if (refYear != null) {
+    const isFirst = refYear === join.getFullYear()
+    const start = isFirst
+      ? new Date(join.getFullYear(), join.getMonth() + 6, join.getDate())
+      : new Date(refYear, join.getMonth(), join.getDate())
+    const end = new Date(refYear + 1, join.getMonth(), join.getDate())
+    return { start, end }
+  }
   const now = new Date()
   const thisAnniv = new Date(now.getFullYear(), join.getMonth(), join.getDate())
   if (thisAnniv > now) {
@@ -103,7 +112,7 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
 
   // 特休：到職週年制。額度單一真相走後端 leave_annual_entitlement RPC(含修好的第一年3天/PT實排比例);
   //   RPC 失敗才 fallback 舊 client 算法(weekly_hours/40)。
-  const annualRange = joinDate ? getAnnualLeaveRange(joinDate) : null
+  const annualRange = joinDate ? getAnnualLeaveRange(joinDate, calendarYear) : null
   const annualLegal = (annualEnt?.ok && annualEnt.ft_days != null)
     ? Number(annualEnt.ft_days)
     : calcAnnualLeave(joinDate)
@@ -119,36 +128,26 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     const dailyHours = (Number(weeklyHours) || 0) / 5 || 8
     const ptExtraHours = Math.round(annualExtra * 8 * Math.min(1, (Number(weeklyHours) || 0) / 40) * 10) / 10
     const ptLegalTotal = Math.round((ptBaseHours + ptExtraHours) * 10) / 10
-    annualTotal = annualDB?.notStarted
-      ? 0  // 特休期間未生效(未滿6月)→ 當下可休 0
-      : (annualDB && annualDB.total > 0
-        ? Math.max(annualDB.total * 8, ptLegalTotal) + annualDB.carry * 8
-        : ptLegalTotal)
-    // 已休：有 DB(104)餘額 → 讀 used_days×8(小時)；否則從請假單算
-    annualUsed = annualDB
-      ? Math.round(annualDB.used * 8 * 10) / 10
-      : (annualRange
-        ? approved
-            .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-            .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
-        : 0)
+    // 特休單一真相 = §38 RPC(ptLegalTotal);不再被 leave_balances 舊存量蓋、未生效也照顯示額度。carry 另計。
+    annualTotal = ptLegalTotal + (annualDB?.carry || 0) * 8
+    // 已休一律算請假單(當期週年範圍),不讀舊表 used(舊表半數已飄掉)
+    annualUsed = annualRange
+      ? approved
+          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
+      : 0
     annualExtraDisplay = ptExtraHours
     annualIsHours = true
   } else {
     const legalTotal = annualLegal + annualExtra
-    annualTotal = annualDB?.notStarted
-      ? 0  // 特休期間未生效(未滿6月)→ 當下可休 0
-      : (annualDB && annualDB.total > 0
-        ? Math.max(annualDB.total, legalTotal) + annualDB.carry
-        : legalTotal)
-    // 已休：有 DB(104)餘額 → 讀 used_days(天)；否則從請假單算
-    annualUsed = annualDB
-      ? annualDB.used
-      : (annualRange
-        ? approved
-            .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-            .reduce((s, r) => s + (r.days || 0), 0)
-        : 0)
+    // 特休單一真相 = §38 RPC(legalTotal);不再被 leave_balances 舊存量蓋、未生效也照顯示額度。carry 另計。
+    annualTotal = legalTotal + (annualDB?.carry || 0)
+    // 已休一律算請假單(當期週年範圍),不讀舊表 used(舊表半數已飄掉)
+    annualUsed = annualRange
+      ? approved
+          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+          .reduce((s, r) => s + (r.days || 0), 0)
+      : 0
     annualExtraDisplay = annualExtra
     annualIsHours = false
   }
