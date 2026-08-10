@@ -14,6 +14,7 @@ const STATUS_STYLE = {
   '缺上班卡': { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
   '缺卡':     { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
   '未打卡':   { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
+  '打卡異常': { bg: 'rgba(239,68,68,0.15)', color: '#ef4444', dot: '#ef4444' },
 }
 
 // 已知的正常狀態值（status 欄曾被打卡流程誤寫入 GPS 座標，非已知值一律用打卡狀況重推）
@@ -29,6 +30,9 @@ function computeDayStatus(r, dateStr, todayStr) {
     if (hasIn && !hasOut) return '缺下班卡'
     if (!hasIn && hasOut) return '缺上班卡'
   }
+  // 跟班表不同 = 異常:上下班同一時間(0 工時,多半誤點兩下)、或遲到(打卡晚於班表);外出不算
+  if (!isOuting && hasIn && hasOut && r.clock_in === r.clock_out) return '打卡異常'
+  if (!isOuting && r.is_late) return '遲到'
   if (r.status && !KNOWN_STATUS.has(r.status)) {
     // status 是被污染的髒值（如 GPS 座標）→ 依打卡狀況重推
     if (hasIn && hasOut) return '正常'
