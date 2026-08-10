@@ -104,11 +104,18 @@ export default function StoreAudit() {
       p_line_user_id: lineProfile.lineUserId, p_item_id: item.id, p_deduct_score: v,
     })
   }
-  // 群組說明（存群組首項）
+  // 群組說明（存群組首項；新範本改存「其他」列 → 大項集中說明）
   const setGroupNote = async (leadItemId, text) => {
     patchItem(leadItemId, { group_note: text })
     await supabase.rpc('liff_update_store_audit_item', {
       p_line_user_id: lineProfile.lineUserId, p_item_id: leadItemId, p_group_note: text,
+    })
+  }
+  // 「其他」列名稱（可自由填）
+  const setItemText = async (itemId, text) => {
+    patchItem(itemId, { item_text: text })
+    await supabase.rpc('liff_update_store_audit_item', {
+      p_line_user_id: lineProfile.lineUserId, p_item_id: itemId, p_item_text: text,
     })
   }
   // 打字題內容
@@ -355,6 +362,8 @@ export default function StoreAudit() {
           subtitle={catMax(cat) > 0 ? `${catScore(cat)} / ${catMax(cat)}` : undefined}>
           {cat.order.map(gName => {
             const grp = cat.groups[gName]
+            // 「其他」群組移到大項底部集中處理
+            if (grp.items.some(i => i.input_type === 'other')) return null
             const isBonusGroup = grp.items.some(i => i.input_type === 'bonus')
             const gd = groupDeduct(grp)
             const bonusPts = isBonusGroup ? grp.items.reduce((s, i) => s + (i.deduct_score || 0), 0) : 0
@@ -367,7 +376,7 @@ export default function StoreAudit() {
                     ? (bonusPts > 0 && <span style={{ color: '#22c55e' }}>已加 {bonusPts}</span>)
                     : <span style={{ color: gd > 0 ? '#ef4444' : 'var(--t3)' }}>配分 {grp.allot}{gd > 0 ? ` · 已扣 ${gd}` : ''}</span>}
                 </div>
-                {!isBonusGroup && (canEdit ? (
+                {!isBonusGroup && !cat.groups['其他']?.items?.some(i => i.input_type === 'other') && (canEdit ? (
                   <input value={lead?.group_note || ''} onChange={e => setGroupNote(lead.id, e.target.value)}
                     placeholder="此區說明（可留白）"
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginBottom: 6 }} />
@@ -383,6 +392,33 @@ export default function StoreAudit() {
               </div>
             )
           })}
+          {/* 其他（自由填寫,扣分計入本區）+ 大項集中說明 — 僅新範本 */}
+          {(() => {
+            const oItem = cat.groups['其他']?.items?.find(i => i.input_type === 'other')
+            if (!oItem) return null
+            return (
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', padding: '4px 6px', background: 'var(--bg)', borderRadius: 6, marginBottom: 4 }}>其他（自由填寫，扣分計入本區）</div>
+                {canEdit ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                    <input value={oItem.item_text || ''} onChange={e => setItemText(oItem.id, e.target.value)} placeholder="項目名稱（可自由填）"
+                      style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 13 }} />
+                    <span style={{ fontSize: 12, color: 'var(--t3)' }}>扣</span>
+                    <input type="number" inputMode="numeric" min="0" value={oItem.deduct_score || 0} onChange={e => setDeduct(oItem, e.target.value, 100)}
+                      style={{ width: 58, padding: '8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 13, textAlign: 'right' }} />
+                  </div>
+                ) : ((oItem.item_text || oItem.deduct_score > 0) && (
+                  <div style={{ fontSize: 12, color: 'var(--t2)', padding: '6px 8px', background: 'var(--glass)', borderRadius: 6, marginBottom: 6 }}>{oItem.item_text || '其他'}{oItem.deduct_score > 0 ? ` — 扣 ${oItem.deduct_score}` : ''}</div>
+                ))}
+                {canEdit ? (
+                  <textarea value={oItem.group_note || ''} onChange={e => setGroupNote(oItem.id, e.target.value)} placeholder="本大項集中說明（可留白）" rows={2}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, resize: 'vertical' }} />
+                ) : (oItem.group_note && (
+                  <div style={{ fontSize: 12, color: 'var(--t2)', padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>說明：{oItem.group_note}</div>
+                ))}
+              </div>
+            )
+          })()}
         </Section>
       ))}
 
