@@ -39,10 +39,13 @@ function lateEarly(r, sched) {
 
 // 顯示用狀態：過去日子「有上班沒下班」= 缺卡（異常），提醒補卡；跟班表不同（遲到/早退/0工時）= 異常；status 被污染時用打卡狀況推
 function computeDayStatus(r, dateStr, todayStr, sched) {
-  if (!r) return null
-  const hasIn = !!r.clock_in, hasOut = !!r.clock_out
   const isPast = dateStr < todayStr
+  // 沒打卡紀錄:有排班上班班(過去日) = 未打卡(異常);沒排班 = 無資料
+  if (!r) return (sched && isPast) ? '未打卡' : null
+  const hasIn = !!r.clock_in, hasOut = !!r.clock_out
   const isOuting = r.clock_in_mode === 'outing' || r.status === '外出'
+  // 有列但整天沒打卡 + 有排班(過去) = 未打卡
+  if (isPast && !isOuting && !hasIn && !hasOut && sched) return '未打卡'
   if (isPast && !isOuting) {
     if (hasIn && !hasOut) return '缺下班卡'
     if (!hasIn && hasOut) return '缺上班卡'
@@ -215,24 +218,25 @@ export default function AttendanceHistory() {
             const isWeekend = i % 7 >= 5
             const dStatus = computeDayStatus(r, cell.dateStr, todayStr, schedByDate[cell.dateStr])
             const sty = dStatus ? (STATUS_STYLE[dStatus] || null) : null
+            const clickable = !!(r || dayOT || dStatus)   // 未打卡(有排班沒紀錄)也可點看詳情
             return (
               <button
                 key={cell.dateStr}
-                onClick={() => (r || dayOT) && setSelectedRecord(r || { date: cell.dateStr })}
-                disabled={!r && !dayOT}
+                onClick={() => clickable && setSelectedRecord(r || { date: cell.dateStr })}
+                disabled={!clickable}
                 style={{
                   aspectRatio: '1', padding: 0,
-                  background: r ? (sty?.bg || 'var(--card-hover)') : 'transparent',
+                  background: (r || dStatus) ? (sty?.bg || 'var(--card-hover)') : 'transparent',
                   border: isToday ? '2px solid var(--cyan)' : '1px solid var(--border)',
                   borderRadius: 8,
-                  cursor: r ? 'pointer' : 'default',
+                  cursor: clickable ? 'pointer' : 'default',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                   gap: 2, transition: 'all 0.15s',
                   color: isWeekend ? 'var(--orange)' : 'var(--t1)',
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{cell.d}</div>
-                {r ? (
+                {(r || dStatus) ? (
                   <div style={{ fontSize: 9, fontWeight: 600, color: sty?.color || 'var(--t3)', display: 'flex', alignItems: 'center', gap: 1 }}>
                     {dStatus || '?'}{dayOT ? <span style={{ color: 'var(--orange)' }}>⚡</span> : null}
                   </div>
