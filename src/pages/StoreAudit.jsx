@@ -427,21 +427,31 @@ export default function StoreAudit() {
         <Section title={`稽核照片（${photos.length}/20）`}>
           {canEdit && photos.length < 20 && (
             <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, height: 52, border: '1px dashed var(--border)', borderRadius: 8, cursor: photoUploading ? 'default' : 'pointer', fontSize: 12, color: 'var(--t3)', marginBottom: photos.length ? 8 : 0 }}>
-              <Paperclip size={14} /> {photoUploading ? '上傳中…' : '點此拍照或選圖（最多 20 張）'}
-              <input type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handlePhotoFiles} disabled={photoUploading} />
+              <Paperclip size={14} /> {photoUploading ? '上傳中…' : '點此拍照 / 選檔案（最多 20）'}
+              <input type="file" multiple style={{ display: 'none' }} onChange={handlePhotoFiles} disabled={photoUploading} />
             </label>
           )}
           {photos.length > 0 && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
-              {photos.map((url, i) => (
+              {photos.map((url, i) => {
+                const isImg = /\.(jpe?g|png|webp|heic|heif|gif|bmp|svg)(\?|$)/i.test(url)
+                const ext = ((url.split('?')[0].split('.').pop() || '檔').toUpperCase()).slice(0, 5)
+                return (
                 <div key={url} style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', background: 'var(--glass)' }}>
-                  <img src={url} alt={`照片 ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onClick={() => window.open(url, '_blank')} />
+                  {isImg ? (
+                    <img src={url} alt={`照片 ${i + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onClick={() => window.open(url, '_blank')} />
+                  ) : (
+                    <a href={url} target="_blank" rel="noreferrer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', gap: 4, textDecoration: 'none', color: 'var(--t1)' }}>
+                      <Paperclip size={20} />
+                      <span style={{ fontSize: 10, fontWeight: 700 }}>{ext}</span>
+                    </a>
+                  )}
                   {canEdit && (
                     <button onClick={() => removePhoto(url)}
                       style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 14, lineHeight: '20px', padding: 0, cursor: 'pointer' }}>×</button>
                   )}
                 </div>
-              ))}
+                )})}
             </div>
           )}
         </Section>
