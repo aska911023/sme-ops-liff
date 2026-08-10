@@ -7,6 +7,7 @@ const STATUS_STYLE = {
   '正常': { bg: 'var(--green-dim)', color: 'var(--green)', dot: 'var(--green)' },
   '外出': { bg: 'var(--green-dim)', color: 'var(--green)', dot: 'var(--green)' },
   '遲到': { bg: 'rgba(251,146,60,0.15)', color: 'var(--orange)', dot: 'var(--orange)' },
+  '早退': { bg: 'rgba(251,146,60,0.15)', color: 'var(--orange)', dot: 'var(--orange)' },
   '請假': { bg: 'var(--blue-dim)',   color: 'var(--blue)',  dot: 'var(--blue)' },
   '加班': { bg: 'rgba(251,146,60,0.15)', color: 'var(--orange)', dot: 'var(--orange)' },
   // 異常/缺卡（紅色，提醒去補卡）
@@ -20,8 +21,24 @@ const STATUS_STYLE = {
 // 已知的正常狀態值（status 欄曾被打卡流程誤寫入 GPS 座標，非已知值一律用打卡狀況重推）
 const KNOWN_STATUS = new Set(['正常', '遲到', '外出', '未打卡', '補登', '加班', '請假', '上班中'])
 
-// 顯示用狀態：過去日子「有上班沒下班」= 缺卡（異常），提醒補卡；status 被污染時用打卡狀況推
-function computeDayStatus(r, dateStr, todayStr) {
+// 遲到/早退：跟當天班表時段比。上班晚於班表=遲到、下班早於班表=早退（分鐘）；跨午夜班(end<=start)自動 +1440。
+// 對齊主系統 Attendance.jsx 的 lateEarly()。加班單的打卡是加班時段，不拿去比班表。
+const toMin = (t) => { if (!t) return null; const [h, m] = String(t).split(':'); return Number(h) * 60 + Number(m) }
+function lateEarly(r, sched) {
+  if (!r || !sched) return null
+  if (r.overtime_request_id || r.clock_in_mode === 'overtime' || r.status === '加班') return null
+  let start = toMin(sched.start), end = toMin(sched.end)
+  if (start == null || end == null) return null
+  if (end <= start) end += 1440
+  const ci = toMin(r.clock_in), coRaw = toMin(r.clock_out)
+  let late = 0, early = 0
+  if (ci != null && ci > start) late = ci - start
+  if (coRaw != null) { let co = coRaw; if (co < start) co += 1440; if (co < end) early = end - co }
+  return (late > 0 || early > 0) ? { late, early } : null
+}
+
+// 顯示用狀態：過去日子「有上班沒下班」= 缺卡（異常），提醒補卡；跟班表不同（遲到/早退/0工時）= 異常；status 被污染時用打卡狀況推
+function computeDayStatus(r, dateStr, todayStr, sched) {
   if (!r) return null
   const hasIn = !!r.clock_in, hasOut = !!r.clock_out
   const isPast = dateStr < todayStr
@@ -30,9 +47,14 @@ function computeDayStatus(r, dateStr, todayStr) {
     if (hasIn && !hasOut) return '缺下班卡'
     if (!hasIn && hasOut) return '缺上班卡'
   }
-  // 跟班表不同 = 異常:上下班同一時間(0 工時,多半誤點兩下)、或遲到(打卡晚於班表);外出不算
-  if (!isOuting && hasIn && hasOut && r.clock_in === r.clock_out) return '打卡異常'
-  if (!isOuting && r.is_late) return '遲到'
+  // 跟班表不同 = 異常;外出不算
+  if (!isOuting && hasIn && hasOut && r.clock_in === r.clock_out) return '打卡異常'  // 上下班同一時間(0 工時,多半誤點兩下)
+  if (!isOuting) {
+    const le = lateEarly(r, sched)
+    if (le?.late > 0) return '遲到'      // 上班晚於班表
+    if (le?.early > 0) return '早退'     // 下班早於班表
+    if (!sched && r.is_late) return '遲到'  // 沒抓到班表時退回 server 端 is_late
+  }
   if (r.status && !KNOWN_STATUS.has(r.status)) {
     // status 是被污染的髒值（如 GPS 座標）→ 依打卡狀況重推
     if (hasIn && hasOut) return '正常'
@@ -63,6 +85,7 @@ export default function AttendanceHistory() {
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth() + 1)
   const [records, setRecords] = useState([])
+  const [schedules, setSchedules] = useState([])   // 當月排班時段（比對遲到/早退）
   const [overtimes, setOvertimes] = useState([])   // 已核准加班單 → 當天加班紀錄
   const [loading, setLoading] = useState(true)
   const [selectedRecord, setSelectedRecord] = useState(null)
@@ -76,10 +99,12 @@ export default function AttendanceHistory() {
     Promise.all([
       supabase.rpc('liff_get_my_attendance_month', { p_line_user_id: lineUserId, p_year_month: ym }),
       supabase.rpc('liff_list_overtime_requests', { p_line_user_id: lineUserId }),
-    ]).then(([att, ot]) => {
+      supabase.rpc('liff_get_my_schedule_month', { p_line_user_id: lineUserId, p_year_month: ym }),
+    ]).then(([att, ot, sch]) => {
       setRecords(Array.isArray(att.data) ? att.data : [])
       setOvertimes((Array.isArray(ot.data) ? ot.data : [])
         .filter(o => o.status === '已核准' && String(o.date || '').startsWith(ym)))
+      setSchedules(Array.isArray(sch.data) ? sch.data : [])
       setLoading(false)
     })
   }, [lineUserId, ym])
@@ -90,6 +115,13 @@ export default function AttendanceHistory() {
     for (const r of records) m[r.date] = r
     return m
   }, [records])
+
+  // dateStr → 班表時段 { start, end }（HH:MM:SS）
+  const schedByDate = useMemo(() => {
+    const m = {}
+    for (const s of schedules) m[s.sched_date] = { start: s.start_time, end: s.end_time }
+    return m
+  }, [schedules])
 
   // dateStr → 加班單陣列（一天可能多筆）
   const otByDate = useMemo(() => {
@@ -181,7 +213,7 @@ export default function AttendanceHistory() {
             const dayOT = otByDate[cell.dateStr]
             const isToday = cell.dateStr === todayStr
             const isWeekend = i % 7 >= 5
-            const dStatus = computeDayStatus(r, cell.dateStr, todayStr)
+            const dStatus = computeDayStatus(r, cell.dateStr, todayStr, schedByDate[cell.dateStr])
             const sty = dStatus ? (STATUS_STYLE[dStatus] || null) : null
             return (
               <button
@@ -247,7 +279,7 @@ export default function AttendanceHistory() {
             </div>
 
             {(() => {
-              const mStatus = computeDayStatus(selectedRecord, selectedRecord.date, todayStr)
+              const mStatus = computeDayStatus(selectedRecord, selectedRecord.date, todayStr, schedByDate[selectedRecord.date])
               const isMissing = mStatus === '缺下班卡' || mStatus === '缺上班卡' || mStatus === '缺卡' || mStatus === '未打卡'
               return (
                 <>
