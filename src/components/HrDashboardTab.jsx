@@ -4,11 +4,13 @@ import { supabase } from '../lib/supabase'
 // 特殊狀態 meta（含申請中變體：pending → 虛線＋半透明）
 const STATUS_META = {
   leave:            { icon: '🌴', label: '休假',      color: 'var(--cyan)' },
-  sick:             { icon: '🏥', label: '請假',      color: 'var(--orange)' },
+  sick:             { icon: '🏥', label: '病假',      color: 'var(--orange)' },
+  personal:         { icon: '📋', label: '事假',      color: 'var(--yellow)' },
   overtime:         { icon: '⚡', label: '加班',      color: 'var(--purple)' },
   trip:             { icon: '✈️', label: '出差',      color: 'var(--blue)' },
   leave_pending:    { icon: '🌴', label: '休假·申請中', color: 'var(--cyan)',   pending: true },
-  sick_pending:     { icon: '🏥', label: '請假·申請中', color: 'var(--orange)', pending: true },
+  sick_pending:     { icon: '🏥', label: '病假·申請中', color: 'var(--orange)', pending: true },
+  personal_pending: { icon: '📋', label: '事假·申請中', color: 'var(--yellow)', pending: true },
   overtime_pending: { icon: '⚡', label: '加班·申請中', color: 'var(--purple)', pending: true },
   trip_pending:     { icon: '✈️', label: '出差·申請中', color: 'var(--blue)',   pending: true },
 }
