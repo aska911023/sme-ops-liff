@@ -27,12 +27,13 @@ export default function ExpenseRequest() {
   const [requests, setRequests] = useState([])
   const [accounts, setAccounts] = useState([])
   const [currencies, setCurrencies] = useState([])
-  const [departments, setDepartments] = useState([])  // 驗收單位下拉
-  const [stores, setStores] = useState([])             // 營運部→門市下拉
+  const [departments, setDepartments] = useState([])  // (舊)驗收單位下拉
+  const [stores, setStores] = useState([])             // (舊)營運部→門市下拉
+  const [employees, setEmployees] = useState([])       // 驗收人選單(在職員工,含自己)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('list') // list / new / settle / detail
   const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
+  const [form, setForm] = useState({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_assignee_id: '', settle_department_id: '', settle_store_id: '' })
   const [lineItems, setLineItems] = useState([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
   const [settleForm, setSettleForm] = useState({ actual_amount: '', notes: '' })
   const [settleEditMode, setSettleEditMode] = useState(false)  // true=編輯已送出、還沒人簽的待核銷單
@@ -60,12 +61,14 @@ export default function ExpenseRequest() {
       supabase.rpc('list_currencies'),
       supabase.rpc('liff_list_departments', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_stores', { p_line_user_id: lineProfile.lineUserId }),
-    ]).then(([r, a, c, d, s]) => {
+      supabase.rpc('liff_list_employees', { p_line_user_id: lineProfile.lineUserId }),
+    ]).then(([r, a, c, d, s, e]) => {
       setRequests(Array.isArray(r.data) ? r.data : [])
       setAccounts(Array.isArray(a.data) ? a.data : [])
       setCurrencies(Array.isArray(c.data) ? c.data : [])
       setDepartments(Array.isArray(d.data) ? d.data : [])
       setStores(Array.isArray(s.data) ? s.data : [])
+      setEmployees(Array.isArray(e.data?.list) ? e.data.list : [])
       setLoading(false)
     })
   }
@@ -135,6 +138,7 @@ export default function ExpenseRequest() {
       supplier: r.supplier || '',
       is_expense: r.is_expense !== false,
       currency: r.currency || 'TWD',
+      settle_assignee_id: r.settle_assignee_id ? String(r.settle_assignee_id) : '',
       settle_department_id: r.settle_department_id ? String(r.settle_department_id) : '',
       settle_store_id: r.settle_store_id ? String(r.settle_store_id) : '',
     })
@@ -165,7 +169,6 @@ export default function ExpenseRequest() {
 
     // ── 編輯模式 ──
     if (editingId) {
-      const opsDeptEdit = departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部'
       const { error } = await supabase.rpc('liff_update_expense_request', {
         p_line_user_id: lineProfile.lineUserId,
         p_id: editingId,
@@ -176,10 +179,10 @@ export default function ExpenseRequest() {
           account_code: form.account_code || null,
           store: form.store || null,
           supplier: form.supplier || null,
-          settle_department_id: form.settle_department_id || null,
-          settle_store_id: form.settle_store_id && form.settle_store_id !== '__HQ__'
-            ? form.settle_store_id
-            : (opsDeptEdit && form.settle_store_id === '__HQ__' ? '__CLEAR__' : null),
+          // 驗收人直接選人;順手清掉舊制部門/門市(避免 fallback 蓋掉)
+          settle_assignee_id: form.settle_assignee_id || '__CLEAR__',
+          settle_department_id: '__CLEAR__',
+          settle_store_id: '__CLEAR__',
           notes: null,
         },
       })
@@ -189,7 +192,7 @@ export default function ExpenseRequest() {
       reload()
       setEditingId(null)
       setEditingAtts([])
-      setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
+      setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_assignee_id: '', settle_department_id: '', settle_store_id: '' })
       setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
       setFiles([])
       setSubmitting(false)
@@ -200,11 +203,9 @@ export default function ExpenseRequest() {
     // ── 新增模式 ──
     const validItems = lineItems.filter(li => li.name && li.qty > 0)
     const total = validItems.length > 0 ? validItems.reduce((s, li) => s + (li.subtotal || 0), 0) : Number(form.estimated_amount)
-    const opsDept = departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部'
     if (form.is_expense) {
       if (!form.account_code || !total) { alert('請填寫科目與金額'); setSubmitting(false); return }
-      if (!form.settle_department_id) { alert('請選擇驗收單位'); setSubmitting(false); return }
-      if (opsDept && !form.settle_store_id) { alert('營運部請選擇門市（或總部）'); setSubmitting(false); return }
+      if (!form.settle_assignee_id) { alert('請選擇驗收人'); setSubmitting(false); return }
     }
     const acc = form.is_expense ? accounts.find(a => a.code === form.account_code) : null
     const bindingIdParam = searchParams.get('binding_id')
@@ -221,8 +222,9 @@ export default function ExpenseRequest() {
         store: form.is_expense ? (form.store || null) : null,
         supplier: form.is_expense ? (form.supplier || null) : null,
         items: form.is_expense ? validItems : null,
-        settle_department_id: form.is_expense ? (form.settle_department_id || null) : null,
-        settle_store_id: form.is_expense && form.settle_store_id && form.settle_store_id !== '__HQ__' ? form.settle_store_id : null,
+        settle_assignee_id: form.is_expense ? (form.settle_assignee_id || null) : null,
+        settle_department_id: null,
+        settle_store_id: null,
       },
       p_binding_id: bindingIdParam ? Number(bindingIdParam) : null,
     })
@@ -235,7 +237,7 @@ export default function ExpenseRequest() {
     if (data?.auto_approved) alert('✅ 已自動核准（無更上層簽核者）')
 
     reload()
-    setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_department_id: '', settle_store_id: '' })
+    setForm({ account_code: '', title: '', description: '', estimated_amount: '', store: '', supplier: '', is_expense: true, currency: 'TWD', settle_assignee_id: '', settle_department_id: '', settle_store_id: '' })
     setLineItems([{ name: '', qty: '', unit_price: '', subtotal: 0 }])
     setFiles([])
     setTab('list')
@@ -468,20 +470,12 @@ export default function ExpenseRequest() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">驗收單位</label>
-                <select className="form-input" value={form.settle_department_id}
-                  onChange={e => setForm(f => ({ ...f, settle_department_id: e.target.value, settle_store_id: '' }))}>
-                  <option value="">— 請選擇部門 —</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <label className="form-label">驗收人</label>
+                <select className="form-input" value={form.settle_assignee_id}
+                  onChange={e => set('settle_assignee_id', e.target.value)}>
+                  <option value="">— 請選擇驗收人（可選自己）—</option>
+                  {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}{emp.store ? `（${emp.store}）` : emp.dept ? `（${emp.dept}）` : ''}</option>)}
                 </select>
-                {departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部' && (
-                  <select className="form-input" style={{ marginTop: 6 }} value={form.settle_store_id}
-                    onChange={e => set('settle_store_id', e.target.value)}>
-                    <option value="">— 請選擇門市 —</option>
-                    <option value="__HQ__">總部（營運部經理）</option>
-                    {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                )}
               </div>
             </>
           )}
@@ -637,22 +631,14 @@ export default function ExpenseRequest() {
                 </select>
               </div>
 
-              {/* 驗收單位:選部門→部門主管;營運部→門市(店長)或總部(營運部經理) */}
+              {/* 驗收人:直接指定一位員工(可含自己),存 settle_assignee_id */}
               <div className="form-group">
-                <label className="form-label">驗收單位 *</label>
-                <select className="form-input" value={form.settle_department_id}
-                  onChange={e => setForm(f => ({ ...f, settle_department_id: e.target.value, settle_store_id: '' }))}>
-                  <option value="">— 請選擇部門 —</option>
-                  {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                <label className="form-label">驗收人 *</label>
+                <select className="form-input" value={form.settle_assignee_id}
+                  onChange={e => set('settle_assignee_id', e.target.value)}>
+                  <option value="">— 請選擇驗收人（可選自己）—</option>
+                  {employees.map(emp => <option key={emp.id} value={emp.id}>{emp.name}{emp.store ? `（${emp.store}）` : emp.dept ? `（${emp.dept}）` : ''}</option>)}
                 </select>
-                {departments.find(d => String(d.id) === String(form.settle_department_id))?.name === '營運部' && (
-                  <select className="form-input" style={{ marginTop: 6 }} value={form.settle_store_id}
-                    onChange={e => set('settle_store_id', e.target.value)}>
-                    <option value="">— 請選擇門市 —</option>
-                    <option value="__HQ__">總部（營運部經理）</option>
-                    {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                )}
               </div>
 
               {/* Line items */}
