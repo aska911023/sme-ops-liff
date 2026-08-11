@@ -77,12 +77,16 @@ export default function HRHub() {
   const { employee, lineProfile } = useAuth()
   // UI 閘門：逐項按 roles 判斷（儀表板限 admin、簽核中心含 manager）
   const managerMenus = MANAGER_MENUS.filter(m => m.roles.includes(employee?.role))
-  // 裝潢報價：吃 renovation.manage 權限碼（admin 預設有、權限頁可逐人開）— 走 RPC 查(方案A)
+  // 業務工程卡片：裝潢報價(renovation.manage)、收款(collection.manage)— 走 RPC 查權限碼(方案A)
   const [canRenovation, setCanRenovation] = useState(false)
+  const [canCollection, setCanCollection] = useState(false)
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
-    supabase.rpc('liff_has_permission', { p_line_user_id: lineProfile.lineUserId, p_perm_code: 'renovation.manage' })
+    const luid = lineProfile.lineUserId
+    supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'renovation.manage' })
       .then(({ data }) => setCanRenovation(data === true))
+    supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'collection.manage' })
+      .then(({ data }) => setCanCollection(data === true))
   }, [lineProfile?.lineUserId])
   // 門市稽核入口：能「填寫」(can_store_audit) 或能「查看」(can_view_store_audit：店長/督導/營運/稽核室/admin) 都顯示。
   // can_store_audit=填寫權限 liff.store_audit；can_view_store_audit=後端算(view_all/店長/督導/稽核室/admin)。
@@ -119,14 +123,22 @@ export default function HRHub() {
         </>
       )}
 
-      {canRenovation && (
+      {(canRenovation || canCollection) && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--orange)', marginBottom: 10 }}>業務工程</div>
           <div className="menu-grid" style={{ marginBottom: 20 }}>
-            <Link to="/renovation-quotes" className="menu-item">
-              <div className="menu-icon" style={{ background: 'rgba(251,146,60,0.15)', border: '1.5px solid rgba(251,146,60,0.25)' }}>🔨</div>
-              <div className="menu-label">裝潢報價</div>
-            </Link>
+            {canRenovation && (
+              <Link to="/renovation-quotes" className="menu-item">
+                <div className="menu-icon" style={{ background: 'rgba(251,146,60,0.15)', border: '1.5px solid rgba(251,146,60,0.25)' }}>🔨</div>
+                <div className="menu-label">裝潢報價</div>
+              </Link>
+            )}
+            {canCollection && (
+              <Link to="/collections" className="menu-item">
+                <div className="menu-icon" style={{ background: 'rgba(52,211,153,0.15)', border: '1.5px solid rgba(52,211,153,0.25)' }}>💵</div>
+                <div className="menu-label">收款</div>
+              </Link>
+            )}
           </div>
         </>
       )}
