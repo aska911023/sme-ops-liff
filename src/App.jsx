@@ -18,6 +18,7 @@ import TaskNew from './pages/TaskNew'
 import Dashboard from './pages/Dashboard'
 import Todo from './pages/Todo'
 import Expenses from './pages/Expenses'
+import RenovationQuotes from './pages/RenovationQuotes'
 import OffRequest from './pages/OffRequest'
 import BusinessTrip from './pages/BusinessTrip'
 import LeaveOfAbsence from './pages/LeaveOfAbsence'
@@ -95,7 +96,7 @@ function TabBar() {
   const { pathname } = useLocation()
 
   const tabs = [
-    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/leave-of-absence', '/overtime', '/approve', '/task-confirmations', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance', '/resignation', '/personnel-transfer', '/store-repair'] },
+    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/leave-of-absence', '/overtime', '/approve', '/task-confirmations', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance', '/resignation', '/personnel-transfer', '/store-repair', '/renovation-quotes'] },
     { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer'] },
     { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
     { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
@@ -204,6 +205,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/todo" element={<Todo />} />
         <Route path="/expenses" element={<Expenses />} />
+        <Route path="/renovation-quotes" element={<RenovationQuotes />} />
         <Route path="/off-request" element={<OffRequest />} />
         <Route path="/business-trip" element={<BusinessTrip />} />
         <Route path="/leave-of-absence" element={<LeaveOfAbsence />} />
