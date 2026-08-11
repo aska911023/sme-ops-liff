@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, Plus, X, Trash2, Pencil } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { toast } from '../lib/toast'
 
 const fmt = (n) => `NT$ ${Number(n || 0).toLocaleString()}`
 const round0 = (n) => Math.round(Number(n) || 0)
@@ -95,7 +94,7 @@ export default function RenovationQuotes() {
   const delPay = (i) => setForm(f => ({ ...f, payments: f.payments.filter((_, idx) => idx !== i) }))
 
   const save = async () => {
-    if (!form.store_name.trim()) { toast.error('請填門市'); return }
+    if (!form.store_name.trim()) { alert('請填門市'); return }
     setSaving(true)
     const payload = {
       id: form.id || null, store_name: form.store_name.trim(), address: form.address.trim(), vendor: form.vendor.trim(),
@@ -110,15 +109,15 @@ export default function RenovationQuotes() {
     }
     const { data, error } = await supabase.rpc('liff_upsert_renovation_quote', { p_line_user_id: luid, p_payload: payload })
     setSaving(false)
-    if (error || !data?.ok) { toast.error('儲存失敗：' + (data?.error || error?.message || '')); return }
-    toast.success(form.id ? '已更新' : '已新增'); setShowForm(false); load()
+    if (error || !data?.ok) { alert('儲存失敗：' + (data?.error || error?.message || '')); return }
+    alert(form.id ? '已更新' : '已新增'); setShowForm(false); load()
   }
 
   const remove = async (r) => {
     if (!window.confirm(`刪除「${r.store_name}」這筆裝潢報價?`)) return
     const { data } = await supabase.rpc('liff_delete_renovation_quote', { p_line_user_id: luid, p_id: r.id })
-    if (!data?.ok) { toast.error('刪除失敗'); return }
-    toast.success('已刪除'); load()
+    if (!data?.ok) { alert('刪除失敗'); return }
+    alert('已刪除'); load()
   }
 
   const inp = { width: '100%', padding: '9px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--t1)', fontSize: 14, boxSizing: 'border-box' }
