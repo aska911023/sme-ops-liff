@@ -190,8 +190,8 @@ export default function RenovationQuotes() {
       )}
 
       {showForm && (
-        <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 100, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: 14 }}>
-          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: 'var(--bg)', borderRadius: 14, padding: 16, marginTop: 10 }}>
+        <div onClick={() => setShowForm(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 100, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '0 12px' }}>
+          <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 480, background: 'var(--bg)', borderRadius: 14, padding: 16, margin: '12px auto 120px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div style={{ fontSize: 16, fontWeight: 800 }}>{form.id ? '編輯' : '新增'}裝潢報價</div>
               <button onClick={() => setShowForm(false)} style={{ background: 'none', border: 'none', color: 'var(--t3)' }}><X size={20} /></button>
