@@ -116,6 +116,8 @@ export default function ClockPage() {
   const [gpsRetrying, setGpsRetrying] = useState(false)     // 距離 151–1800m 時自動重抓一次
   const retriedRef = useRef(false)                          // 同次 mount 只重試 1 次
   const watchdogRef = useRef(null)                          // 定位看門狗 timer（8s 沒結果就解卡）
+  const loggedRef = useRef(new Set())                       // 失敗診斷:同原因每次進頁只記一次(不洗版)
+  const ctxRef = useRef({})                                 // 給 log 用的最新值(避開 geolocation callback 的 stale closure)
   const [clientIp, setClientIp] = useState(null)
   const [ipError, setIpError] = useState(false)
   const [wifiMatch, setWifiMatch] = useState(null) // null=checking, true/false
@@ -132,6 +134,31 @@ export default function ClockPage() {
     return d.toISOString().slice(0, 10)
   })()
 
+  // 打卡失敗診斷 log:分辨「按不允許/定位沒開/逾時/太遠/精度差」寫進後台(clock_attempts)。
+  //   同一原因每次進頁只記一次;讀 ctxRef 最新值避開 geolocation callback 的 stale closure。
+  const logClockFailure = useCallback(async (reason, extra = {}) => {
+    try {
+      const c = ctxRef.current
+      if (!c.employeeId) return
+      if (loggedRef.current.has(reason)) return
+      loggedRef.current.add(reason)
+      let perm = extra.perm
+      if (!perm) {
+        try { perm = navigator.permissions?.query ? (await navigator.permissions.query({ name: 'geolocation' })).state : 'unsupported' }
+        catch { perm = 'unsupported' }
+      }
+      await supabase.rpc('liff_log_clock_attempt', {
+        p_employee_id: c.employeeId, p_line_user_id: c.lineUserId || null,
+        p_action: 'clock_in', p_result: 'failed', p_reason: reason,
+        p_geo_code: extra.code ?? null, p_perm_state: perm,
+        p_lat: c.location?.lat ?? null, p_lng: c.location?.lng ?? null,
+        p_accuracy: c.gpsAccuracy ?? null, p_ip: c.clientIp || null,
+        p_distance: extra.distance ?? null, p_store: c.storeName || null,
+        p_detail: extra.detail || null, p_client: 'liff',
+      })
+    } catch { /* log 失敗絕不影響打卡流程 */ }
+  }, [])
+
   // 取一次 GPS — 頁面載入 + 手動「重新定位」按鈕共用。
   // 第一次失敗自動 retry 一次（放寬 timeout + 容忍 60s 快取）避免單次 race。
   // gpsRetrying 當「定位進行中」旗標：卡住時使用者可再按按鈕重觸發。
@@ -147,6 +174,7 @@ export default function ClockPage() {
     watchdogRef.current = setTimeout(() => {
       setGpsRetrying(false)
       setGpsError('定位逾時，請按「重新定位」重試，或改用「外出」打卡')
+      logClockFailure('timeout', { code: 3, detail: '看門狗 8s 無回應（WebView 卡住或訊號差）' })
     }, 8000)
     const clearWatchdog = () => {
       if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null }
@@ -159,6 +187,7 @@ export default function ClockPage() {
       if (accuracy > GPS_ACCURACY_THRESHOLD) {
         setGpsWeak(true)
         setGpsError(`GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考`)
+        logClockFailure('weak_accuracy', { detail: `GPS 精度 ${Math.round(accuracy)}m（門檻 ${GPS_ACCURACY_THRESHOLD}m）` })
       } else {
         setGpsWeak(false)
         setGpsError('')
@@ -167,8 +196,16 @@ export default function ClockPage() {
     }
     const onFinalError = (err) => {
       clearWatchdog()
-      setGpsError(err.code === 1 ? '請開啟定位權限' : '無法取得定位')
+      const code = err?.code
+      // 錯誤碼分細:1=拒絕權限、2=定位服務關/抓不到、3=逾時
+      const msg = code === 1 ? '你拒絕了定位權限，請到手機或瀏覽器設定重新開啟位置存取'
+                : code === 2 ? '請開啟手機定位服務（抓不到你的位置）'
+                : code === 3 ? '定位逾時，請按「重新定位」重試，或改用「外出」打卡'
+                : '無法取得定位'
+      setGpsError(msg)
       setGpsRetrying(false)
+      const reason = code === 1 ? 'permission_denied' : code === 2 ? 'position_unavailable' : code === 3 ? 'timeout' : 'unknown'
+      logClockFailure(reason, { code: code ?? null, detail: msg })
     }
     navigator.geolocation.getCurrentPosition(
       onSuccess,
@@ -181,7 +218,7 @@ export default function ClockPage() {
       },
       { enableHighAccuracy: true, timeout: 25000 }
     )
-  }, [])
+  }, [logClockFailure])
 
   // 離開頁面時清掉看門狗 timer（反覆進出不累積、不對已卸載元件 setState）
   useEffect(() => () => { if (watchdogRef.current) clearTimeout(watchdogRef.current) }, [])
@@ -279,6 +316,11 @@ export default function ClockPage() {
     if (!location || !store?.lat || !store?.lng) return
     const d = Math.round(getDistance(location.lat, location.lng, store.lat, store.lng))
     setDistance(d)
+    // 人不在店:超出範圍且(明顯太遠 or 已重試過)→ 記 log(別在 151–1800m 首測就誤記,等重試定案)
+    const _radius = store.clock_radius || 150
+    if (d > _radius && (d > 1800 || retriedRef.current) && store._matched !== false && clockMode !== 'outing') {
+      logClockFailure('out_of_range', { distance: d, detail: `距 ${store.name} ${d} 公尺（允許 ${_radius}m）` })
+    }
     if (d > 150 && d <= 1800 && !retriedRef.current && navigator.geolocation) {
       retriedRef.current = true
       setGpsRetrying(true)
@@ -301,7 +343,7 @@ export default function ClockPage() {
       }, 1500)
       return () => clearTimeout(timer)
     }
-  }, [location, store])
+  }, [location, store, clockMode, logClockFailure])
 
   // Check WiFi IP match (proper CIDR)
   useEffect(() => {
@@ -311,6 +353,11 @@ export default function ClockPage() {
     }
     setWifiMatch(store.allowed_wifi.some(rule => ipMatchesCIDR(clientIp, rule)))
   }, [clientIp, store])
+
+  // 保持 log 用的最新值(每次 render 後更新,geolocation callback 讀 ctxRef 才不會拿到舊值)
+  useEffect(() => {
+    ctxRef.current = { employeeId: employee?.id, lineUserId, storeName: store?.name || null, location, gpsAccuracy, clientIp, distance }
+  })
 
   const radius = store?.clock_radius || 150
   const isInRange = distance !== null && distance <= radius && !gpsWeak
