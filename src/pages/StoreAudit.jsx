@@ -198,8 +198,16 @@ export default function StoreAudit() {
 
   // ─── 送出 ───
   const doSubmit = async () => {
-    const bonusMissing = (data?.items || []).find(i => i.input_type === 'bonus' && (i.deduct_score || 0) > 0 && !i.remark?.trim())
-    if (bonusMissing) { alert('有加分的項目需填「加分原因」'); return }
+    // 加分改整組一格說明:任一加分群組有加分(合計>0)就需填該組 group_note(存在該組第一列)
+    const bg = {}
+    for (const i of (data?.items || []).filter(i => i.input_type === 'bonus')) {
+      const k = `${i.category_code}|${i.relation_group}`
+      bg[k] = bg[k] || { pts: 0, note: '' }
+      bg[k].pts += (i.deduct_score || 0)
+      if (i.group_note?.trim()) bg[k].note = i.group_note.trim()
+    }
+    const bonusMissing = Object.values(bg).some(g => g.pts > 0 && !g.note)
+    if (bonusMissing) { alert('有加分時，需填該加分區的「加分原因」'); return }
     if (draftOnDuty.length === 0) { alert('請至少選 1 名當班人員'); return }
     const unsigned = draftOnDuty.filter(d => !d.signature_data_url)
     if (unsigned.length > 0) { alert(`還有 ${unsigned.length} 位當班人員未簽名`); return }
@@ -389,6 +397,14 @@ export default function StoreAudit() {
                     onDeduct={(v, max) => setDeduct(item, v, max)}
                     onRemark={(t) => setItemRemark(item.id, t)} />
                 ))}
+                {/* 加分群組:整組一格說明(有加分才必填) */}
+                {isBonusGroup && (canEdit ? (
+                  <input value={lead?.group_note || ''} onChange={e => setGroupNote(lead.id, e.target.value)}
+                    placeholder="加分原因（有加分則必填，整組填一次即可）"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: (bonusPts > 0 && !lead?.group_note?.trim()) ? '1px solid #ef4444' : '1px solid var(--border)', background: 'rgba(34,197,94,0.10)', color: 'var(--t1)', fontSize: 12, marginTop: 6 }} />
+                ) : (lead?.group_note && (
+                  <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 6, padding: '6px 8px', background: 'rgba(34,197,94,0.10)', borderRadius: 6 }}>加分原因：{lead.group_note}</div>
+                )))}
               </div>
             )
           })}
@@ -548,13 +564,13 @@ function ItemRow({ item, canEdit, maxDeduct, onDeduct, onRemark }) {
           }}>{isBonus ? (active ? `加 ${val}` : '—') : (active ? `扣 ${val}` : '✓')}</span>
         )}
       </div>
-      {(item.input_type === 'text' || isBonus) && (
+      {item.input_type === 'text' && (
         canEdit ? (
           <input value={item.remark || ''} onChange={e => onRemark(e.target.value)}
-            placeholder={isBonus ? '加分原因（有加分則必填）' : '請填寫抽查 / 內容'}
-            style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: needRemark ? '1px solid #ef4444' : '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginTop: 6 }} />
+            placeholder="請填寫抽查 / 內容"
+            style={{ width: '100%', padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--glass)', color: 'var(--t1)', fontSize: 12, marginTop: 6 }} />
         ) : (
-          item.remark && <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4, padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{isBonus ? '加分原因：' : ''}{item.remark}</div>
+          item.remark && <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 4, padding: '6px 8px', background: 'var(--glass)', borderRadius: 6 }}>{item.remark}</div>
         )
       )}
     </div>
