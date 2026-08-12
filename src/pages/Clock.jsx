@@ -198,7 +198,7 @@ export default function ClockPage() {
       clearWatchdog()
       const code = err?.code
       // 錯誤碼分細:1=拒絕權限、2=定位服務關/抓不到、3=逾時
-      const msg = code === 1 ? '你拒絕了定位權限，請到手機或瀏覽器設定重新開啟位置存取'
+      const msg = code === 1 ? '無法定位：請確認①已「允許」此頁使用定位、②手機「定位服務」已開啟'
                 : code === 2 ? '請開啟手機定位服務（抓不到你的位置）'
                 : code === 3 ? '定位逾時，請按「重新定位」重試，或改用「外出」打卡'
                 : '無法取得定位'
