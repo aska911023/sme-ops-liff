@@ -130,24 +130,30 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     const ptLegalTotal = Math.round((ptBaseHours + ptExtraHours) * 10) / 10
     // 特休單一真相 = §38 RPC(ptLegalTotal);不再被 leave_balances 舊存量蓋、未生效也照顯示額度。carry 另計。
     annualTotal = ptLegalTotal + (annualDB?.carry || 0) * 8
-    // 已休一律算請假單(當期週年範圍),不讀舊表 used(舊表半數已飄掉)
-    annualUsed = annualRange
-      ? approved
-          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
-      : 0
+    // 已休:有 104 匯入的 leave_balances(used_days 已對齊)→ 讀它(含舊系統已休,與 web 一致);
+    //   否則 fallback 從請假單算(週年範圍)
+    annualUsed = annualDB
+      ? annualDB.used * 8
+      : (annualRange
+        ? approved
+            .filter(r => (r.type === '特休' || r.type === 'annual') && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+            .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
+        : 0)
     annualExtraDisplay = ptExtraHours
     annualIsHours = true
   } else {
     const legalTotal = annualLegal + annualExtra
     // 特休單一真相 = §38 RPC(legalTotal);不再被 leave_balances 舊存量蓋、未生效也照顯示額度。carry 另計。
     annualTotal = legalTotal + (annualDB?.carry || 0)
-    // 已休一律算請假單(當期週年範圍),不讀舊表 used(舊表半數已飄掉)
-    annualUsed = annualRange
-      ? approved
-          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-          .reduce((s, r) => s + (r.days || 0), 0)
-      : 0
+    // 已休:有 104 匯入的 leave_balances(used_days 已對齊)→ 讀它(含舊系統已休,與 web 一致);
+    //   否則 fallback 從請假單算(週年範圍)
+    annualUsed = annualDB
+      ? annualDB.used
+      : (annualRange
+        ? approved
+            .filter(r => (r.type === '特休' || r.type === 'annual') && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+            .reduce((s, r) => s + (r.days || 0), 0)
+        : 0)
     annualExtraDisplay = annualExtra
     annualIsHours = false
   }
@@ -171,8 +177,9 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
         const effectiveTotal = db?.notStarted
           ? 0  // 期間未生效 → 當下可休 0
           : (db && db.total > 0 ? Math.max(db.total, legalMax + extra) + db.carry : legalMax + extra)
-        // 已休：有 DB(104)→讀 used_days；否則從請假單算
-        return { label: type, total: effectiveTotal, used: db ? db.used : usedByType(type), extra }
+        // 已休：法定假別的 leave_balances.used_days 未維護(=0)→ 一律從請假單算
+        //   (特休另在上方 annualUsed 處理,讀匯入 used_days)
+        return { label: type, total: effectiveTotal, used: usedByType(type), extra }
       }),
     // 殘骸/非標準假別（104 舊系統結算/謀職假等，不在 LEAVE_LIMITS）→ 直接顯示 DB 值
     ...Object.entries(dbMap)
