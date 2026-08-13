@@ -8,6 +8,8 @@ import { supabase } from '../lib/supabase'
 // (sme-ops-system: 20260508130000_hr_a_chain_db_trigger.sql)
 
 const TYPES = ['特休', '事假', '病假', '補休', '公假', '天災', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '產檢假', '家庭照顧假', '公傷病假']
+// 女性專屬假別(leave_types.gender='female'):男性員工下拉不顯示(後端 liff_insert_leave_request 亦有守門)
+const FEMALE_ONLY_TYPES = new Set(['生理假', '產假', '產檢假'])
 
 // 特休天數依年資計算（勞基法 §38）
 function calcAnnualLeave(joinDate) {
@@ -632,7 +634,7 @@ export default function Leave() {
             <label className="form-label">假別</label>
             <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
               {/* 標準假別 + 員工有 DB 餘額的非標準假別(如「特休假2025結算」「舊人資系統補休結算」等結餘) */}
-              {[...TYPES, ...dbBalances
+              {[...TYPES.filter(t => !(employee?.gender === '男' && FEMALE_ONLY_TYPES.has(t))), ...dbBalances
                 .filter(b => !TYPES.includes(b.leave_type) && !LEAVE_CODE_MAP[b.leave_type]
                   && (Number(b.total_days || 0) + Number(b.carry_over_days || 0) - Number(b.used_days || 0)) > 0)
                 .map(b => b.leave_type)
