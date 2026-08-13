@@ -902,15 +902,24 @@ export default function Leave() {
           .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
           .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * 8), 0)
 
+        // 簽核中(待審核):可申請 = 剩餘 − 簽核中(對齊 web/額度頁)
+        const pendingReqs = records.filter(r => ['待審核', '審核中'].includes(r.status))
+        const annualPending = pendingReqs
+          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
+        const pendingByType = (type) => pendingReqs
+          .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
+          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * 8), 0)
+
         const allBalances = [
-          { label: '特休', total: annualTotal, used: annualUsed, extra: 0, isHours: true },
+          { label: '特休', total: annualTotal, used: annualUsed, extra: 0, isHours: true, pending: annualPending },
           // onDemand 假別（產假/陪產/產檢/育嬰）不顯示在「假期餘額」— 不是每人每年固定有
           ...Object.entries(LEAVE_LIMITS)
             .filter(([type]) => !LEAVE_INFO[type]?.onDemand)
             .filter(([type]) => !(type === '生理假' && employee?.gender === '男'))  // 生理假限女性
             .map(([type, legalMax]) => {
               const extra = benefitExtras[type]?.extra_days || 0
-              return { label: type, total: (legalMax + extra) * 8, used: usedByType(type), extra: extra * 8, isHours: true }
+              return { label: type, total: (legalMax + extra) * 8, used: usedByType(type), extra: extra * 8, isHours: true, pending: pendingByType(type) }
             }),
         ]
         const mainBalances = allBalances.filter(b => ['特休', '事假', '病假'].includes(b.label))
@@ -973,6 +982,11 @@ export default function Leave() {
                       transition: 'width 0.3s',
                     }} />
                   </div>
+                  {(b.pending || 0) > 0 && (
+                    <div style={{ fontSize: 10, color: 'var(--orange)', marginTop: 3 }}>
+                      簽核中 {Math.round((b.pending || 0) * 10) / 10} 小時 · 可申請 {Math.max(0, Math.round((remaining - (b.pending || 0)) * 10) / 10)} 小時
+                    </div>
+                  )}
                   {info?.note && showAllBalances && (
                     <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 2 }}>{info.note}</div>
                   )}

@@ -269,6 +269,11 @@ export default function LeaveBalance() {
                   <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.05)', overflow: 'hidden', marginTop: 4 }}>
                     <div style={{ height: '100%', width: `${Math.min(100, usedPct)}%`, background: c }} />
                   </div>
+                  {(b.pending || 0) > 0 && (
+                    <div style={{ fontSize: 10, color: 'var(--orange)', marginTop: 4 }}>
+                      簽核中 {Math.round((b.pending || 0) * 10) / 10} {b.isHours ? '小時' : '天'} · 可申請 {Math.max(0, Math.round((remaining - (b.pending || 0)) * 10) / 10)} {b.isHours ? '小時' : '天'}
+                    </div>
+                  )}
                   {info?.note && (
                     <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>{info.note}</div>
                   )}

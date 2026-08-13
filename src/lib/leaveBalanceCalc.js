@@ -170,8 +170,20 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
       .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
       .reduce((s, r) => s + (r.days || 0), 0)
 
+  // 簽核中(待審核/審核中):可申請 = 剩餘 − 簽核中(對齊 web 的「可申請」欄)。一律換小時。
+  const pendingReqs = leaveRequests.filter(r => ['待審核', '審核中'].includes(r.status))
+  const _annualDaily = isPartTime ? ((Number(weeklyHours) || 0) / 5 || 8) : 8
+  const annualPending = annualRange
+    ? pendingReqs
+        .filter(r => (r.type === '特休' || r.type === 'annual') && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+        .reduce((s, r) => s + (r.hours != null ? Number(r.hours) : (Number(r.days) || 0) * _annualDaily), 0)
+    : 0
+  const pendingByType = (type) => pendingReqs
+    .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
+    .reduce((s, r) => s + (r.hours != null ? Number(r.hours) : (Number(r.days) || 0) * 8), 0)
+
   return [
-    { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtraDisplay, isHours: annualIsHours },
+    { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtraDisplay, isHours: annualIsHours, pending: annualPending },
     // onDemand 假別（產假/陪產/產檢/育嬰）不灌進預設額度 — 不是每人每年固定有
     // 員工真要申請時 Leave.jsx 的下拉選單仍可選到，LEAVE_INFO 上限仍可驗證
     ...Object.entries(LEAVE_LIMITS)
@@ -187,12 +199,12 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
         // 已休：法定假別的 leave_balances.used_days 未維護(=0)→ 一律從請假單算
         //   (特休另在上方 annualUsed 處理,讀匯入 used_days)
         // 全站改小時:天數 ×8(對齊 web)
-        return { label: type, total: effectiveTotal * 8, used: usedByType(type) * 8, extra: extra * 8, isHours: true }
+        return { label: type, total: effectiveTotal * 8, used: usedByType(type) * 8, extra: extra * 8, isHours: true, pending: pendingByType(type) }
       }),
     // 殘骸/非標準假別（104 舊系統結算/謀職假等，不在 LEAVE_LIMITS）→ 直接顯示 DB 值(×8 換小時)
     ...Object.entries(dbMap)
       .filter(([label]) => label !== '特休' && label !== '補休' && !LEAVE_LIMITS[label])  // 補休有專屬 ledger 卡,排除殘骸區的髒 leave_balances 補休列(免重複顯示)
-      .map(([label, v]) => ({ label, total: (v.notStarted ? 0 : (v.total + v.carry)) * 8, used: (v.used || 0) * 8, extra: 0, isHours: true }))
+      .map(([label, v]) => ({ label, total: (v.notStarted ? 0 : (v.total + v.carry)) * 8, used: (v.used || 0) * 8, extra: 0, isHours: true, pending: 0 }))
       .filter(r => r.total > 0 || r.used > 0),
   ]
 }
