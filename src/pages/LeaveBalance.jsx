@@ -75,6 +75,7 @@ export default function LeaveBalance() {
         weeklyHours: Number(ctxEmployee?.weekly_hours) || 0,
         dbBalances,
         annualEnt: entRes?.data || null,
+        gender: ctxEmployee?.gender,
       })
       setBalances(all)
       const total = all.reduce((s, b) => s + (b.total || 0), 0)

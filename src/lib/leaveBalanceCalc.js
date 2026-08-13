@@ -89,7 +89,7 @@ export function getCalendarYearRange(year) {
  *                 有 DB 記錄時 total = Math.max(dbTotal, 法定+加給) + carry_over
  * @returns Array<{ label, total, used, extra }>
  */
-export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0, dbBalances = [], annualEnt = null }) {
+export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0, dbBalances = [], annualEnt = null, gender = null }) {
   const approved = leaveRequests.filter(r => r.status !== '已拒絕')
 
   // 今天(YYYY-MM-DD)：可休期間起日 > 今天(未生效)→ 可休算 0，只看當下能休的
@@ -173,6 +173,8 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     // 員工真要申請時 Leave.jsx 的下拉選單仍可選到，LEAVE_INFO 上限仍可驗證
     ...Object.entries(LEAVE_LIMITS)
       .filter(([type]) => !LEAVE_INFO[type]?.onDemand)
+      // 生理假限女性(對齊 web LeaveBalances 的 gender==='男' 過濾;男生匯入也有menstrual列但不該顯示)
+      .filter(([type]) => !(type === '生理假' && gender === '男'))
       .map(([type, legalMax]) => {
         const extra = benefitExtras[type]?.extra_days || 0
         const db = dbMap[type]
