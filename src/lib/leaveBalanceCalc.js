@@ -128,8 +128,9 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     const dailyHours = (Number(weeklyHours) || 0) / 5 || 8
     const ptExtraHours = Math.round(annualExtra * 8 * Math.min(1, (Number(weeklyHours) || 0) / 40) * 10) / 10
     const ptLegalTotal = Math.round((ptBaseHours + ptExtraHours) * 10) / 10
-    // 特休單一真相 = §38 RPC(ptLegalTotal);不再被 leave_balances 舊存量蓋、未生效也照顯示額度。carry 另計。
-    annualTotal = ptLegalTotal + (annualDB?.carry || 0) * 8
+    // 104對齊後:leave_balances 才是單一真相 → 有實際存量(>0)用存量(×8 換時數),無才用 §38 RPC。carry 另計。
+    //   (王澤昇等刻意算掛的餘額 / 104>§38 者顯示才對得上後端上限;離職/未匯入 total=0 → fallback §38)
+    annualTotal = (annualDB && annualDB.total > 0 ? annualDB.total * 8 : ptLegalTotal) + (annualDB?.carry || 0) * 8
     // 已休:有 104 匯入的 leave_balances(used_days 已對齊)→ 讀它(含舊系統已休,與 web 一致);
     //   否則 fallback 從請假單算(週年範圍)
     annualUsed = annualDB
@@ -143,8 +144,9 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     annualIsHours = true
   } else {
     const legalTotal = annualLegal + annualExtra
-    // 特休單一真相 = §38 RPC(legalTotal);不再被 leave_balances 舊存量蓋、未生效也照顯示額度。carry 另計。
-    annualTotal = legalTotal + (annualDB?.carry || 0)
+    // 104對齊後:leave_balances 才是單一真相 → 有實際存量(>0)用存量,無才用 §38 RPC。carry 另計。
+    //   (楊學文80h/陳佩璇61.5h 等 104>§38 者顯示才對得上後端上限;離職/未匯入 total=0 → fallback §38)
+    annualTotal = (annualDB && annualDB.total > 0 ? annualDB.total : legalTotal) + (annualDB?.carry || 0)
     // 已休:有 104 匯入的 leave_balances(used_days 已對齊)→ 讀它(含舊系統已休,與 web 一致);
     //   否則 fallback 從請假單算(週年範圍)
     annualUsed = annualDB
