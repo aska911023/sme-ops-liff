@@ -187,7 +187,7 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
       }),
     // 殘骸/非標準假別（104 舊系統結算/謀職假等，不在 LEAVE_LIMITS）→ 直接顯示 DB 值
     ...Object.entries(dbMap)
-      .filter(([label]) => label !== '特休' && !LEAVE_LIMITS[label])
+      .filter(([label]) => label !== '特休' && label !== '補休' && !LEAVE_LIMITS[label])  // 補休有專屬 ledger 卡,排除殘骸區的髒 leave_balances 補休列(免重複顯示)
       .map(([label, v]) => ({ label, total: v.notStarted ? 0 : (v.total + v.carry), used: v.used, extra: 0 }))
       .filter(r => r.total > 0 || r.used > 0),
   ]

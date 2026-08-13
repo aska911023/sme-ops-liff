@@ -299,6 +299,11 @@ export default function Leave() {
   }
 
   const handleEdit = (r) => {
+    // 補休不准直接編輯:補休是 insert 時 FIFO 扣 comp_time_ledger,改時數不重扣會讓補休帳漂移 → 要撤回再重新申請(對齊 web)
+    if (r.type === '補休') {
+      alert('補休請假不能直接編輯，請先撤回再重新申請')
+      return
+    }
     setForm({
       type: r.type,
       start_date: r.start_date,
