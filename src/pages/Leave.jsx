@@ -235,7 +235,7 @@ export default function Leave() {
     if (!lineProfile?.lineUserId) return
     supabase.rpc('liff_get_my_comp_time_balance', { p_line_user_id: lineProfile.lineUserId })
       .then(({ data }) => {
-        if (data?.ok) setCompBalance({ total_remaining: Number(data.total_remaining || 0), ledgers: data.ledgers || [] })
+        if (data?.ok) setCompBalance({ total_remaining: Number(data.total_remaining || 0), total_reserved: Number(data.total_reserved || 0), ledgers: data.ledgers || [] })
       })
   }
   useEffect(() => { reloadCompBalance() }, [lineProfile])
@@ -945,6 +945,9 @@ export default function Leave() {
                     剩 {compBalance.total_remaining} 小時
                   </span>
                 </div>
+                <div style={{ fontSize: 10, color: Number(compBalance.total_reserved || 0) > 0 ? 'var(--orange)' : 'var(--t3)', marginTop: 4 }}>
+                  簽核中 {Number(compBalance.total_reserved || 0).toFixed(1)} 小時 · 可申請 {Math.max(0, Number(compBalance.total_remaining || 0) - Number(compBalance.total_reserved || 0)).toFixed(1)} 小時
+                </div>
                 {compBalance.ledgers.some(l => l.days_to_expire <= 30) && (
                   <div style={{ fontSize: 10, color: 'var(--orange)', marginTop: 4 }}>
                     ⚠️ 有 {compBalance.ledgers.filter(l => l.days_to_expire <= 30).length} 筆 30 天內到期，未用會自動兌換加班費
@@ -982,11 +985,10 @@ export default function Leave() {
                       transition: 'width 0.3s',
                     }} />
                   </div>
-                  {(b.pending || 0) > 0 && (
-                    <div style={{ fontSize: 10, color: 'var(--orange)', marginTop: 3 }}>
-                      簽核中 {Math.round((b.pending || 0) * 10) / 10} 小時 · 可申請 {Math.max(0, Math.round((remaining - (b.pending || 0)) * 10) / 10)} 小時
-                    </div>
-                  )}
+                  {/* 固定顯示簽核中 + 可申請(對齊 web 欄位) */}
+                  <div style={{ fontSize: 10, color: (b.pending || 0) > 0 ? 'var(--orange)' : 'var(--t3)', marginTop: 3 }}>
+                    簽核中 {Math.round((b.pending || 0) * 10) / 10} 小時 · 可申請 {Math.max(0, Math.round((remaining - (b.pending || 0)) * 10) / 10)} 小時
+                  </div>
                   {info?.note && showAllBalances && (
                     <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 2 }}>{info.note}</div>
                   )}

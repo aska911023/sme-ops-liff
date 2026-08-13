@@ -226,6 +226,10 @@ export default function LeaveBalance() {
                   <div style={{ fontSize: 10, color: 'var(--t3)' }}>小時</div>
                 </div>
               </div>
+              {/* 簽核中(待審核預留)+ 可申請 = 剩餘 − 簽核中(對齊 web 補休管理) */}
+              <div style={{ fontSize: 11, fontWeight: 600, color: Number(compBalance.total_reserved || 0) > 0 ? 'var(--orange)' : 'var(--t3)', marginBottom: 8 }}>
+                簽核中 {Number(compBalance.total_reserved || 0).toFixed(1)} 小時 · 可申請 {Math.max(0, Number(compBalance.total_remaining || 0) - Number(compBalance.total_reserved || 0)).toFixed(1)} 小時
+              </div>
               {compBalance.ledgers.length > 0 && (
                 <div style={{ fontSize: 11, color: 'var(--t3)', lineHeight: 1.6, paddingTop: 8, borderTop: '1px dashed rgba(167,139,250,0.25)' }}>
                   {compBalance.ledgers.slice(0, 5).map(l => (
@@ -287,11 +291,10 @@ export default function LeaveBalance() {
                   <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.05)', overflow: 'hidden', marginTop: 4 }}>
                     <div style={{ height: '100%', width: `${Math.min(100, usedPct)}%`, background: c }} />
                   </div>
-                  {(b.pending || 0) > 0 && (
-                    <div style={{ fontSize: 10, color: 'var(--orange)', marginTop: 4 }}>
-                      簽核中 {Math.round((b.pending || 0) * 10) / 10} {b.isHours ? '小時' : '天'} · 可申請 {Math.max(0, Math.round((remaining - (b.pending || 0)) * 10) / 10)} {b.isHours ? '小時' : '天'}
-                    </div>
-                  )}
+                  {/* 固定顯示簽核中 + 可申請(對齊 web 欄位);未生效那期可申請=0(還不能申請) */}
+                  <div style={{ fontSize: 10, color: (b.pending || 0) > 0 || b.notStarted ? 'var(--orange)' : 'var(--t3)', marginTop: 4 }}>
+                    簽核中 {Math.round((b.pending || 0) * 10) / 10} {b.isHours ? '小時' : '天'} · 可申請 {b.notStarted ? 0 : Math.max(0, Math.round((remaining - (b.pending || 0)) * 10) / 10)} {b.isHours ? '小時' : '天'}
+                  </div>
                   {info?.note && (
                     <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 4 }}>{info.note}</div>
                   )}
