@@ -332,36 +332,57 @@ export default function Leave() {
       return
     }
 
-    // 特休年資檢查（勞基法 §38：須滿 6 個月）
+    // 特休上限:有 104 現在期餘額(>0)吃它、無才 §38(對齊後端 liff_insert_leave_request)
     if (form.type === '特休') {
-      // 特休額度單一真相走 RPC(含修好第一年3天/PT實排比例),失敗 fallback 舊 client 算法
-      const entitlement = (annualEnt?.ok && annualEnt.ft_days != null)
-        ? Number(annualEnt.ft_days) : calcAnnualLeave(employee?.join_date)
-      if (entitlement === 0) {
-        alert('未滿 6 個月年資，尚無特休資格，無法申請特休')
-        return
-      }
-      // 兼職：用時數上限驗證
-      if (employee?.salary_type === 'hourly') {
-        const empWeeklyHours = Number(employee?.weekly_hours) || 0
-        const ptEntitleHours = (annualEnt?.ok && annualEnt.is_pt && annualEnt.pt_hours != null)
-          ? Number(annualEnt.pt_hours) : calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours).hours
-        const annualRange = getAnnualLeaveRange(employee.join_date)
-        const dailyHours = empWeeklyHours / 5 || 8
-        const usedHoursThisYear = records
-          .filter(r => r.status !== '已拒絕' && r.type === '特休' && r.id !== editingId &&
-            new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
-        const requestHours = form.unit === 'hour'
-          ? (() => {
-              const [sh, sm] = form.start_time.split(':').map(Number)
-              const [eh, em] = form.end_time.split(':').map(Number)
-              return Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
-            })()
-          : countWorkDays(form.start_date, form.end_date || form.start_date, holidays) * dailyHours
-        if (usedHoursThisYear + requestHours > ptEntitleHours) {
-          alert(`特休時數不足：本期可用 ${ptEntitleHours} 小時，已用 ${usedHoursThisYear} 小時，本次申請 ${requestHours} 小時`)
+      const todayStr = new Date().toISOString().slice(0, 10)
+      // dbBalances 的 annual 已由 RPC 改期間制 → 即現在期(週年制跨曆年也對)
+      const curBal = (dbBalances || []).find(b => b.leave_type === 'annual' && Number(b.total_days) > 0
+        && (!b.period_start || String(b.period_start).slice(0, 10) <= todayStr)
+        && (!b.expires_at || String(b.expires_at).slice(0, 10) >= todayStr))
+      // 本次申請時數(day 單位一律 ×8,對齊後端 days*8 與 leave_balances 的時數換算)
+      const reqHours = form.unit === 'hour'
+        ? (() => {
+            const [sh, sm] = form.start_time.split(':').map(Number)
+            const [eh, em] = form.end_time.split(':').map(Number)
+            return Math.max(0.5, (eh + em / 60) - (sh + sm / 60))
+          })()
+        : countWorkDays(form.start_date, form.end_date || form.start_date, holidays) * 8
+      if (curBal) {
+        // 有 104 實際餘額:上限=剩餘,扣本期在飛「待審核」特休(尚未計入 used_days)。不套 §38 閘門。
+        const remH = Math.max(0, (Number(curBal.total_days) - Number(curBal.used_days || 0)) * 8)
+        const ps = String(curBal.period_start || '').slice(0, 10), ex = String(curBal.expires_at || '').slice(0, 10)
+        const pendH = records.filter(r => (r.type === '特休' || r.type === 'annual') && r.status === '待審核' && r.id !== editingId
+          && (!ps || r.start_date >= ps) && (!ex || r.start_date <= ex))
+          .reduce((s, r) => s + (r.hours != null ? Number(r.hours) : (Number(r.days) || 0) * 8), 0)
+        const avail = remH - pendH
+        if (reqHours > avail + 0.01) {
+          alert(`特休餘額不足：本期剩 ${remH} 小時，待審核 ${pendH} 小時，可再申請 ${Math.max(0, avail)} 小時，本次要 ${reqHours} 小時`)
           return
+        }
+      } else {
+        // 無 104 實際餘額 → §38 6個月閘門 +（PT）年度時數上限（原行為）
+        const entitlement = (annualEnt?.ok && annualEnt.ft_days != null)
+          ? Number(annualEnt.ft_days) : calcAnnualLeave(employee?.join_date)
+        if (entitlement === 0) {
+          alert('未滿 6 個月年資，尚無特休資格，無法申請特休')
+          return
+        }
+        if (employee?.salary_type === 'hourly') {
+          const empWeeklyHours = Number(employee?.weekly_hours) || 0
+          const ptEntitleHours = (annualEnt?.ok && annualEnt.is_pt && annualEnt.pt_hours != null)
+            ? Number(annualEnt.pt_hours) : calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours).hours
+          const annualRange = getAnnualLeaveRange(employee.join_date)
+          const dailyHours = empWeeklyHours / 5 || 8
+          const usedHoursThisYear = records
+            .filter(r => r.status !== '已拒絕' && r.type === '特休' && r.id !== editingId &&
+              new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+            .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
+          const requestHoursPt = form.unit === 'hour' ? reqHours
+            : countWorkDays(form.start_date, form.end_date || form.start_date, holidays) * dailyHours
+          if (usedHoursThisYear + requestHoursPt > ptEntitleHours) {
+            alert(`特休時數不足：本期可用 ${ptEntitleHours} 小時，已用 ${usedHoursThisYear} 小時，本次申請 ${requestHoursPt} 小時`)
+            return
+          }
         }
       }
     }
