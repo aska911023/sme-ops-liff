@@ -376,7 +376,7 @@ export default function Leave() {
           const annualRange = getAnnualLeaveRange(employee.join_date)
           const dailyHours = empWeeklyHours / 5 || 8
           const usedHoursThisYear = records
-            .filter(r => r.status !== '已拒絕' && r.type === '特休' && r.id !== editingId &&
+            .filter(r => !['已退回', '已駁回', '已取消', '已拒絕'].includes(r.status) && r.type === '特休' && r.id !== editingId &&
               new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
             .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
           const requestHoursPt = form.unit === 'hour' ? reqHours
@@ -867,7 +867,7 @@ export default function Leave() {
         const annualLegal = (annualEnt?.ok && annualEnt.ft_days != null)
           ? Number(annualEnt.ft_days) : calcAnnualLeave(employee.join_date)
         const annualExtra = benefitExtras['特休']?.extra_days || 0
-        const approved = records.filter(r => r.status !== '已拒絕')
+        const approved = records.filter(r => !['已退回', '已駁回', '已取消', '已拒絕'].includes(r.status))
 
         // 特休：到職週年制
         const annualRange = getAnnualLeaveRange(employee.join_date)

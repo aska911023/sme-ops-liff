@@ -9,6 +9,9 @@ const STATUS_STYLE = {
   '待審核': { bg: 'rgba(251,146,60,0.15)', color: 'var(--orange)' },
   '已核准': { bg: 'var(--green-dim)',     color: 'var(--green)' },
   '已拒絕': { bg: 'rgba(248,113,113,0.15)', color: 'var(--red)' },
+  '已退回': { bg: 'rgba(248,113,113,0.15)', color: 'var(--red)' },
+  '已駁回': { bg: 'rgba(248,113,113,0.15)', color: 'var(--red)' },
+  '已取消': { bg: 'rgba(148,163,184,0.15)', color: 'var(--text-secondary)' },
 }
 
 function getMonthDates(year, month) {

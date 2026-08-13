@@ -90,7 +90,7 @@ export function getCalendarYearRange(year) {
  * @returns Array<{ label, total, used, extra }>
  */
 export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras = {}, calendarYear, isPartTime = false, weeklyHours = 0, dbBalances = [], annualEnt = null, gender = null }) {
-  const approved = leaveRequests.filter(r => r.status !== '已拒絕')
+  const approved = leaveRequests.filter(r => !['已退回', '已駁回', '已取消', '已拒絕'].includes(r.status))
 
   // 今天(YYYY-MM-DD)：可休期間起日 > 今天(未生效)→ 可休算 0，只看當下能休的
   const _t = new Date()
