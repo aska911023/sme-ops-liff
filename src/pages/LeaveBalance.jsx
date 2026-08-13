@@ -75,6 +75,7 @@ export default function LeaveBalance() {
       if (ctRes.data?.ok) {
         setCompBalance({
           total_remaining: Number(ctRes.data.total_remaining || 0),
+          total_reserved: Number(ctRes.data.total_reserved || 0),
           ledgers: ctRes.data.ledgers || [],
         })
       }
