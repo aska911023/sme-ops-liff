@@ -107,6 +107,7 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
       used: Number(b.used_days || 0),
       carry: Number(b.carry_over_days || 0),
       notStarted,
+      periodStart: b.period_start || null,
     }
   }
 
@@ -183,7 +184,7 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     .reduce((s, r) => s + (r.hours != null ? Number(r.hours) : (Number(r.days) || 0) * 8), 0)
 
   return [
-    { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtraDisplay, isHours: annualIsHours, pending: annualPending },
+    { label: '特休', total: annualTotal, used: annualUsed, extra: annualExtraDisplay, isHours: annualIsHours, pending: annualPending, notStarted: annualDB?.notStarted || false, effectiveFrom: annualDB?.notStarted ? annualDB.periodStart : null },
     // onDemand 假別（產假/陪產/產檢/育嬰）不灌進預設額度 — 不是每人每年固定有
     // 員工真要申請時 Leave.jsx 的下拉選單仍可選到，LEAVE_INFO 上限仍可驗證
     ...Object.entries(LEAVE_LIMITS)

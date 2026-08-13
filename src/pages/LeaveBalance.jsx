@@ -46,6 +46,19 @@ export default function LeaveBalance() {
 
   const employee = ctxEmployee
 
+  // 默認年份落在「現在期特休」那年(對齊 web;週年月在下半年者現在期存前一年,如劉家君現在期在 2025 而非日曆年 2026)
+  const [yearInit, setYearInit] = useState(false)
+  useEffect(() => {
+    if (!lineProfile?.lineUserId || yearInit) return
+    supabase.rpc('liff_get_my_leave_balances', { p_line_user_id: lineProfile.lineUserId })  // 不傳 p_year → 回含今天的現在期
+      .then(({ data }) => {
+        const ann = (data || []).find(b => b.leave_type === 'annual' && b.period_start)
+        if (ann?.period_start) setYear(new Date(ann.period_start).getFullYear())
+        setYearInit(true)
+      })
+      .catch(() => setYearInit(true))
+  }, [lineProfile, yearInit])
+
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
     setLoading(true)
@@ -245,7 +258,7 @@ export default function LeaveBalance() {
               const usedPct = total > 0 ? ((b.used || 0) / total * 100) : 0
               const info = LEAVE_INFO[b.label]
               const isAnnual = b.label === '特休'
-              const c = remaining <= 0 ? 'var(--red)' : isAnnual ? 'var(--cyan)' : 'var(--green)'
+              const c = b.notStarted ? 'var(--orange)' : remaining <= 0 ? 'var(--red)' : isAnnual ? 'var(--cyan)' : 'var(--green)'
               return (
                 <div key={b.label} style={{
                   padding: '14px 16px', marginBottom: 8, borderRadius: 14,
@@ -254,6 +267,11 @@ export default function LeaveBalance() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>
                       {b.label}
+                      {b.notStarted && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--orange)', background: 'rgba(251,146,60,0.15)', padding: '1px 6px', borderRadius: 8, marginLeft: 6 }}>
+                          未生效{b.effectiveFrom ? ` · ${String(b.effectiveFrom).slice(5).replace('-', '/')} 生效` : ''}
+                        </span>
+                      )}
                       {info && (
                         <span style={{ fontSize: 10, color: 'var(--t3)', fontWeight: 400, marginLeft: 6 }}>
                           {info.paid} · {info.law}
