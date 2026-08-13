@@ -381,9 +381,14 @@ export function ExpenseDashboardTab({ lineUserId }) {
   const repairRows     = data.repair_rows || []
   const repairBkts     = bucketRaw(repairRows)
 
-  // 經常性費用
+  // 經常性費用(expenses 表:核准後直接「已核銷」為完成態 → 顯示成「已驗收」對齊 web/其他 block)
   const regExpRows     = data.regular_expense_rows || []
-  const regExpBkts     = bucketRaw(regExpRows)
+  const _regSum        = (pred) => regExpRows.filter(pred).reduce((s, r) => s + (r.count || 0), 0)
+  const regExpBkts     = {
+    '待審核': _regSum(r => ['待審核', '申請中', '待核銷', '未送核銷'].includes(r.status)),
+    '已驗收': _regSum(r => ['已核准', '已核銷', '已完成'].includes(r.status)),
+    '已駁回': _regSum(r => r.status === '已駁回'),
+  }
   const regExpAmts     = { TWD: regExpRows.filter(r => r.status !== '已駁回').reduce((s, r) => s + Number(r.amount_sum || 0), 0) }
 
   // 頂部摘要（總申請 / 待處理 / 核准率 / 本期費用估算 TWD）
@@ -433,7 +438,7 @@ export function ExpenseDashboardTab({ lineUserId }) {
 
         <SectionTitle>💸 經常性費用</SectionTitle>
         <Block title="費用狀態" buckets={regExpBkts}
-          statuses={['待審核', '已核准', '已駁回']}
+          statuses={['待審核', '已驗收', '已駁回']}
           amounts={regExpAmts} amountLabel="費用金額（TWD）" isActual={true} />
 
       </div>
