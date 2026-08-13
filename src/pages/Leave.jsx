@@ -877,43 +877,40 @@ export default function Leave() {
         // 特休：到職週年制
         const annualRange = getAnnualLeaveRange(employee.join_date)
 
-        // 兼職改用時數；正職用天數
+        // 全站一律「小時」顯示(對齊 web / 額度頁)。1天=8h。
+        const dailyHours = isEmpPT ? (empWeeklyHours / 5 || 8) : 8
+        // DB 餘額 map(leave_balances 匯入值,key=code 如 annual)
+        const dbMap = {}
+        for (const b of dbBalances) dbMap[b.leave_type] = { total: Number(b.total_days || 0), used: Number(b.used_days || 0), carry: Number(b.carry_over_days || 0) }
+        const annualDB = dbMap['annual']
+
+        // 特休(小時):有匯入存量(>0)用它×8;無才 §38(PT實排時數 / FT法定天×8)。carry 另計。
         const ptBaseHours = isEmpPT
           ? ((annualEnt?.ok && annualEnt.is_pt && annualEnt.pt_hours != null)
             ? Number(annualEnt.pt_hours) : calcPTAnnualLeaveHours(employee.join_date, empWeeklyHours).hours)
-          : 0
-        const ptExtraHours = isEmpPT ? (annualExtra * 8 * Math.min(1, empWeeklyHours / 40)) : 0
-        const annualTotal = isEmpPT
-          ? Math.round((ptBaseHours + ptExtraHours) * 10) / 10
-          : annualLegal + annualExtra
-        const dailyHours = isEmpPT ? (empWeeklyHours / 5 || 8) : 8
-        const annualUsed = approved
-          .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
-          .reduce((s, r) => isEmpPT
-            ? s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours)
-            : s + (r.days || 0), 0)
+          : (annualLegal + annualExtra) * 8
+        const annualTotal = (annualDB && annualDB.total > 0 ? annualDB.total * 8 : ptBaseHours) + (annualDB?.carry || 0) * 8
+        const annualUsed = annualDB
+          ? annualDB.used * 8
+          : approved
+              .filter(r => r.type === '特休' && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
+              .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * dailyHours), 0)
 
-        // 其他假別：曆年制（法定 + 加給）
+        // 其他假別：曆年制（法定 + 加給），一律小時
         const calRange = getCalendarYearRange()
         const usedByType = (type) => approved
           .filter(r => r.type === type && new Date(r.start_date) >= calRange.start && new Date(r.start_date) < calRange.end)
-          .reduce((s, r) => s + (r.days || 0), 0)
-        // DB 餘額 map（與 leaveBalanceCalc 邏輯一致）
-        const dbMap = {}
-        for (const b of dbBalances) dbMap[b.leave_type] = { total: Number(b.total_days || 0), carry: Number(b.carry_over_days || 0) }
+          .reduce((s, r) => s + (r.hours != null ? r.hours : (r.days || 0) * 8), 0)
 
         const allBalances = [
-          { label: '特休', total: annualTotal, used: annualUsed, extra: isEmpPT ? ptExtraHours : annualExtra },
+          { label: '特休', total: annualTotal, used: annualUsed, extra: 0, isHours: true },
           // onDemand 假別（產假/陪產/產檢/育嬰）不顯示在「假期餘額」— 不是每人每年固定有
           ...Object.entries(LEAVE_LIMITS)
             .filter(([type]) => !LEAVE_INFO[type]?.onDemand)
+            .filter(([type]) => !(type === '生理假' && employee?.gender === '男'))  // 生理假限女性
             .map(([type, legalMax]) => {
               const extra = benefitExtras[type]?.extra_days || 0
-              const db = dbMap[type]
-              const effectiveTotal = db && db.total > 0
-                ? Math.max(db.total, legalMax + extra) + db.carry
-                : legalMax + extra
-              return { label: type, total: effectiveTotal, used: usedByType(type), extra }
+              return { label: type, total: (legalMax + extra) * 8, used: usedByType(type), extra: extra * 8, isHours: true }
             }),
         ]
         const mainBalances = allBalances.filter(b => ['特休', '事假', '病假'].includes(b.label))
@@ -964,16 +961,14 @@ export default function Leave() {
                       )}
                     </span>
                     <span style={{ color: remaining <= 0 ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
-                      {b.label === '特休' && isEmpPT
-                        ? `剩 ${Math.round((remaining) * 10) / 10} / ${b.total} 小時`
-                        : `剩 ${remaining} / ${b.total} 天`}
+                      剩 {Math.round(remaining * 10) / 10} / {Math.round(b.total * 10) / 10} {b.isHours ? '小時' : '天'}
                       {b.extra > 0 && <span style={{ color: 'var(--cyan)', fontSize: 10, fontWeight: 500 }}> (+{b.extra})</span>}
                     </span>
                   </div>
                   <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
                     <div style={{
                       height: '100%', borderRadius: 3,
-                      width: `${Math.min(100, (b.used / b.total) * 100)}%`,
+                      width: `${b.total > 0 ? Math.min(100, (b.used / b.total) * 100) : 0}%`,
                       background: remaining <= 0 ? 'var(--red)' : b.label === '特休' ? 'var(--cyan)' : 'var(--green)',
                       transition: 'width 0.3s',
                     }} />

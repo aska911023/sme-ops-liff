@@ -182,17 +182,17 @@ export default function LeaveBalance() {
               <div>
                 <div style={{ fontSize: 11, color: 'var(--t3)' }}>總可用</div>
                 <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--t1)' }}>{Number(totals.total || 0).toFixed(1)}</div>
-                <div style={{ fontSize: 10, color: 'var(--t3)' }}>天</div>
+                <div style={{ fontSize: 10, color: 'var(--t3)' }}>小時</div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--t3)' }}>已用</div>
                 <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--orange)' }}>{Number(totals.used || 0).toFixed(1)}</div>
-                <div style={{ fontSize: 10, color: 'var(--t3)' }}>天</div>
+                <div style={{ fontSize: 10, color: 'var(--t3)' }}>小時</div>
               </div>
               <div>
                 <div style={{ fontSize: 11, color: 'var(--t3)' }}>剩餘</div>
                 <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--green)' }}>{Number(totals.remaining || 0).toFixed(1)}</div>
-                <div style={{ fontSize: 10, color: 'var(--t3)' }}>天</div>
+                <div style={{ fontSize: 10, color: 'var(--t3)' }}>小時</div>
               </div>
             </div>
           </div>

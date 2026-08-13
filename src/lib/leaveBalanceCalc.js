@@ -146,18 +146,21 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
     const legalTotal = annualLegal + annualExtra
     // 104對齊後:leave_balances 才是單一真相 → 有實際存量(>0)用存量,無才用 §38 RPC。carry 另計。
     //   (楊學文80h/陳佩璇61.5h 等 104>§38 者顯示才對得上後端上限;離職/未匯入 total=0 → fallback §38)
-    annualTotal = (annualDB && annualDB.total > 0 ? annualDB.total : legalTotal) + (annualDB?.carry || 0)
+    const totalDays = (annualDB && annualDB.total > 0 ? annualDB.total : legalTotal) + (annualDB?.carry || 0)
     // 已休:有 104 匯入的 leave_balances(used_days 已對齊)→ 讀它(含舊系統已休,與 web 一致);
     //   否則 fallback 從請假單算(週年範圍)
-    annualUsed = annualDB
+    const usedDays = annualDB
       ? annualDB.used
       : (annualRange
         ? approved
             .filter(r => (r.type === '特休' || r.type === 'annual') && new Date(r.start_date) >= annualRange.start && new Date(r.start_date) < annualRange.end)
             .reduce((s, r) => s + (r.days || 0), 0)
         : 0)
-    annualExtraDisplay = annualExtra
-    annualIsHours = false
+    // 正職特休也一律用「小時」顯示(對齊 web / PT / 全站)。1天=8h。
+    annualTotal = totalDays * 8
+    annualUsed = usedDays * 8
+    annualExtraDisplay = annualExtra * 8
+    annualIsHours = true
   }
 
   // 其他假別：曆年制
@@ -183,12 +186,13 @@ export function computeAllBalances({ joinDate, leaveRequests = [], benefitExtras
           : (db && db.total > 0 ? Math.max(db.total, legalMax + extra) + db.carry : legalMax + extra)
         // 已休：法定假別的 leave_balances.used_days 未維護(=0)→ 一律從請假單算
         //   (特休另在上方 annualUsed 處理,讀匯入 used_days)
-        return { label: type, total: effectiveTotal, used: usedByType(type), extra }
+        // 全站改小時:天數 ×8(對齊 web)
+        return { label: type, total: effectiveTotal * 8, used: usedByType(type) * 8, extra: extra * 8, isHours: true }
       }),
-    // 殘骸/非標準假別（104 舊系統結算/謀職假等，不在 LEAVE_LIMITS）→ 直接顯示 DB 值
+    // 殘骸/非標準假別（104 舊系統結算/謀職假等，不在 LEAVE_LIMITS）→ 直接顯示 DB 值(×8 換小時)
     ...Object.entries(dbMap)
       .filter(([label]) => label !== '特休' && label !== '補休' && !LEAVE_LIMITS[label])  // 補休有專屬 ledger 卡,排除殘骸區的髒 leave_balances 補休列(免重複顯示)
-      .map(([label, v]) => ({ label, total: v.notStarted ? 0 : (v.total + v.carry), used: v.used, extra: 0 }))
+      .map(([label, v]) => ({ label, total: (v.notStarted ? 0 : (v.total + v.carry)) * 8, used: (v.used || 0) * 8, extra: 0, isHours: true }))
       .filter(r => r.total > 0 || r.used > 0),
   ]
 }
