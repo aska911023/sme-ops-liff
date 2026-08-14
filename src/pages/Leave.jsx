@@ -10,6 +10,13 @@ import { supabase } from '../lib/supabase'
 const TYPES = ['特休', '事假', '病假', '補休', '公假', '天災', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '產檢假', '家庭照顧假', '公傷病假']
 // 女性專屬假別(leave_types.gender='female'):男性員工下拉不顯示(後端 liff_insert_leave_request 亦有守門)
 const FEMALE_ONLY_TYPES = new Set(['生理假', '產假', '產檢假'])
+// 產假情形(對齊後端 maternity_max_days:56/28/7/5,依性平法)
+const MATERNITY_SITUATIONS = [
+  { code: 'childbirth', label: '分娩', days: 56 },
+  { code: 'miscarriage_ge3m', label: '妊娠滿3個月以上流產', days: 28 },
+  { code: 'miscarriage_2to3m', label: '妊娠2個月以上未滿3個月流產', days: 7 },
+  { code: 'miscarriage_lt2m', label: '妊娠未滿2個月流產', days: 5 },
+]
 
 // 特休天數依年資計算（勞基法 §38）
 function calcAnnualLeave(joinDate) {
@@ -478,6 +485,7 @@ export default function Leave() {
       end_time: form.unit === 'hour' ? form.end_time : '',
       reason: form.reason,
       attachment_count: attachFiles.length + existingAttach.length,  // 後端證明必附守門用
+      maternity_type: form.type === '產假' ? (form.maternity_type || 'childbirth') : null,  // 產假情形→上限56/28/7/5
     }
 
     let error
@@ -650,6 +658,19 @@ export default function Leave() {
               本店此假別最小單位：<b style={{ color: 'var(--cyan)' }}>{currentStep.step} {currentStep.unit === 'day' ? '天' : '小時'}</b>
               <span style={{ marginLeft: 4 }}>· 不滿一個單位會自動進位</span>
             </div>
+            {form.type === '產假' && (
+              <div style={{ marginTop: 8 }}>
+                <label className="form-label">產假情形</label>
+                <select className="form-input" value={form.maternity_type || 'childbirth'} onChange={e => set('maternity_type', e.target.value)}>
+                  {MATERNITY_SITUATIONS.map(m => (
+                    <option key={m.code} value={m.code}>{m.label}（上限 {m.days} 天）</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+                  依《性別平等工作法》，不同情形有不同天數上限；超過會被擋下。
+                </div>
+              </div>
+            )}
             {form.type === '補休' && compBalance && (
               <div style={{
                 marginTop: 8, padding: '10px 12px', borderRadius: 10,
@@ -740,6 +761,19 @@ export default function Leave() {
               ? snapToStep(wd, currentStep.step)
               : wd
             const snapDelta = snapped - wd
+            // 產假法定以「曆日」計(含例假),對齊後端 → 顯示曆日不扣週末不套 step
+            if (form.type === '產假') {
+              return (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 10, marginBottom: 10,
+                  background: 'var(--cyan-dim)', border: '1px solid rgba(34,211,238,0.15)',
+                  fontSize: 13, color: 'var(--t2)',
+                }}>
+                  實際請假 <b style={{ color: 'var(--cyan)' }}>{calDays} 天</b>
+                  <span style={{ color: 'var(--t3)', fontSize: 12 }}> （產假以曆日計，含例假／國定假日）</span>
+                </div>
+              )
+            }
             return (
               <div style={{
                 padding: '10px 14px', borderRadius: 10, marginBottom: 10,
