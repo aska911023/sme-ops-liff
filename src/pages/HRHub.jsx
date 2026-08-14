@@ -28,7 +28,6 @@ const MENU_GROUPS = [
       { path: '/personnel-transfer', icon: '🔀', label: '人事異動', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
       { path: '/store-repair', icon: '🔧', label: '門市報修', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
       { path: '/work-orders', icon: '🏢', label: '跨部門工單', color: 'var(--blue)', dim: 'var(--blue-dim)' },
-      { path: '/repair-orders', icon: '🔨', label: '維修單', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
     ],
   },
   {
@@ -81,6 +80,7 @@ export default function HRHub() {
   // 業務工程卡片：裝潢報價(renovation.manage)、收款(collection.manage)— 走 RPC 查權限碼(方案A)
   const [canRenovation, setCanRenovation] = useState(false)
   const [canCollection, setCanCollection] = useState(false)
+  const [canRepair, setCanRepair] = useState(false)
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
     const luid = lineProfile.lineUserId
@@ -88,6 +88,8 @@ export default function HRHub() {
       .then(({ data }) => setCanRenovation(data === true))
     supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'collection.manage' })
       .then(({ data }) => setCanCollection(data === true))
+    supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'repair_order.manage' })
+      .then(({ data }) => setCanRepair(data === true))
   }, [lineProfile?.lineUserId])
   // 門市稽核入口：能「填寫」(can_store_audit) 或能「查看」(can_view_store_audit：店長/督導/營運/稽核室/admin) 都顯示。
   // can_store_audit=填寫權限 liff.store_audit；can_view_store_audit=後端算(view_all/店長/督導/稽核室/admin)。
@@ -124,10 +126,16 @@ export default function HRHub() {
         </>
       )}
 
-      {(canRenovation || canCollection) && (
+      {(canRenovation || canCollection || canRepair) && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--orange)', marginBottom: 10 }}>業務工程</div>
           <div className="menu-grid" style={{ marginBottom: 20 }}>
+            {canRepair && (
+              <Link to="/repair-orders" className="menu-item">
+                <div className="menu-icon" style={{ background: 'rgba(34,211,238,0.15)', border: '1.5px solid rgba(34,211,238,0.25)' }}>🔨</div>
+                <div className="menu-label">維修單</div>
+              </Link>
+            )}
             {canRenovation && (
               <Link to="/renovation-quotes" className="menu-item">
                 <div className="menu-icon" style={{ background: 'rgba(251,146,60,0.15)', border: '1.5px solid rgba(251,146,60,0.25)' }}>🔨</div>
