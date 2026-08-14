@@ -55,6 +55,7 @@ const LEAVE_INFO = {
   '產假': { max: 56, paid: '有薪', law: '勞基法 §50', note: '分娩8週，女性適用', onDemand: true },
   '育嬰假': { max: 730, paid: '津貼80%', law: '性平法 §16', note: '子女滿3歲前，2026可按日申請', onDemand: true },
   '公傷病假': { max: null, paid: '有薪', law: '勞基法 §43', note: '職業災害，工資照給' },
+  '謀職假': { max: null, paid: '有薪', law: '勞基法 §16', note: '資遣預告期間得請謀職假，每星期不超過2日之工作時間，工資照給' },
 }
 const LEAVE_LIMITS = Object.fromEntries(
   Object.entries(LEAVE_INFO).filter(([, v]) => v.max).map(([k, v]) => [k, v.max])
@@ -67,6 +68,7 @@ const LEAVE_CODE_MAP = {
   menstrual: '生理假', marriage: '婚假', bereavement: '喪假',
   family_care: '家庭照顧假',
   occupational: '公傷病假', nursing: '哺乳時間', prenatal: '產檢假',
+  job_seeking: '謀職假',
 }
 
 // 需附證明的假別(對齊主系統 leavePolicy.PROOF_REQUIRED_LEAVE_CODES + DB _leave_requires_proof):
