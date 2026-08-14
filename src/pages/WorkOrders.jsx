@@ -15,6 +15,7 @@ const STATUS = {
   待受理: 'var(--orange)', 處理中: 'var(--blue)', 已完成: 'var(--cyan)', 已結案: 'var(--green)', 已退回: 'var(--red)',
 }
 const emptyForm = () => ({ target_department_id: '', assignee_id: '', title: '', description: '', priority: 'medium', expected_due_date: '', store_id: '' })
+const WO_ATTACH_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt'
 
 export default function WorkOrders() {
   const navigate = useNavigate()
@@ -28,6 +29,7 @@ export default function WorkOrders() {
   const [form, setForm] = useState(emptyForm())
   const [detail, setDetail] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [createFiles, setCreateFiles] = useState([])
 
   const load = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
@@ -82,9 +84,21 @@ export default function WorkOrders() {
     const { data: res, error } = bindingId
       ? await supabase.rpc('liff_create_work_order_for_binding', { ...base, p_binding_id: Number(bindingId) })
       : await supabase.rpc('liff_create_work_order', base)
+    if (error || !res?.ok) { setBusy(false); return alert('開單失敗：' + (error?.message || res?.error || '')) }
+    // 附件:上傳 storage + DEFINER RPC 寫 metadata
+    if (res?.id && createFiles.length) {
+      for (const file of createFiles) {
+        const ext = (file.name.split('.').pop() || 'bin').toLowerCase()
+        const path = `work-orders/emp-${data.me?.id || 'x'}/${res.id}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+        const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { upsert: true })
+        if (!upErr) await supabase.rpc('liff_add_work_order_attachment', {
+          p_line_user_id: lineProfile.lineUserId, p_id: res.id, p_storage_path: path,
+          p_file_name: file.name, p_file_size: file.size, p_mime_type: file.type,
+        })
+      }
+    }
     setBusy(false)
-    if (error || !res?.ok) return alert('開單失敗：' + (error?.message || res?.error || ''))
-    setShowCreate(false); setForm(emptyForm())
+    setShowCreate(false); setForm(emptyForm()); setCreateFiles([])
     if (bindingId) {
       // 綁定填完 → 回到任務
       const taskId = searchParams.get('task_id')
@@ -168,8 +182,8 @@ export default function WorkOrders() {
         </div>
       )}
 
-      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, onClose: () => setShowCreate(false) }} />}
-      {detail && <DetailOverlay {...{ o: detail, me: data.me, employees: data.employees, storeName, busy, act, onClose: () => setDetail(null) }} />}
+      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, createFiles, setCreateFiles, onClose: () => setShowCreate(false) }} />}
+      {detail && <DetailOverlay {...{ o: detail, me: data.me, employees: data.employees, storeName, busy, act, lineProfile, onClose: () => setDetail(null) }} />}
     </div>
   )
 }
@@ -193,7 +207,7 @@ function Overlay({ title, onClose, children }) {
 const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 14, boxSizing: 'border-box' }
 const labelStyle = { fontSize: 12, color: 'var(--t3)', marginBottom: 5, display: 'block' }
 
-function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
+function CreateOverlay({ form, set, data, busy, submitCreate, createFiles, setCreateFiles, onClose }) {
   const deptEmployees = data.employees.filter(e => !form.target_department_id || e.department_id === Number(form.target_department_id))
   return (
     <Overlay title="開跨部門工單" onClose={onClose}>
@@ -225,6 +239,10 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
             <option value="">無</option>
             {data.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select></div>
+        <div><label style={labelStyle}>附件（選填,可拍照/上傳文件）</label>
+          <input type="file" multiple accept={WO_ATTACH_ACCEPT} onChange={e => setCreateFiles(Array.from(e.target.files || []))} style={{ fontSize: 12 }} />
+          {createFiles.map((f, i) => <div key={i} style={{ fontSize: 12, color: 'var(--t2)', marginTop: 3 }}>📎 {f.name}</div>)}
+        </div>
         <button disabled={busy} onClick={submitCreate}
           style={{ padding: '12px', borderRadius: 10, border: 'none', background: 'var(--blue)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>
           {busy ? '送出中…' : '送出工單'}
@@ -234,8 +252,14 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
   )
 }
 
-function DetailOverlay({ o, me, employees, storeName, busy, act, onClose }) {
+function DetailOverlay({ o, me, employees, storeName, busy, act, lineProfile, onClose }) {
   const [accepting, setAccepting] = useState(false)
+  const [atts, setAtts] = useState([])
+  useEffect(() => {
+    supabase.rpc('liff_get_work_order', { p_line_user_id: lineProfile.lineUserId, p_id: o.id })
+      .then(({ data }) => { if (data?.ok) setAtts(data.attachments || []) })
+  }, [o.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const attUrl = (a) => supabase.storage.from(a.storage_bucket || 'attachments').getPublicUrl(a.storage_path).data?.publicUrl
   const [aForm, setAForm] = useState({ assignee_id: o.assignee_id ? String(o.assignee_id) : '', scheduled_due_date: o.scheduled_due_date || o.expected_due_date || '' })
   const myId = me?.id, myDept = me?.department_id
   const isRequester = o.requester_id === myId, isTargetDept = o.target_department_id === myDept, isAssignee = o.assignee_id === myId
@@ -268,6 +292,17 @@ function DetailOverlay({ o, me, employees, storeName, busy, act, onClose }) {
       {o.linked_type && <Row label="執行方式">已轉{o.linked_type === 'project' ? '專案' : '流程'}（完成由裡面任務決定）</Row>}
       <Row label="說明"><span style={{ whiteSpace: 'pre-wrap' }}>{o.description || '—'}</span></Row>
       {o.reject_reason && <Row label="退回原因"><span style={{ color: 'var(--red)' }}>{o.reject_reason}</span></Row>}
+      {atts.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t3)', marginBottom: 6 }}>附件</div>
+          {atts.map(a => (
+            <a key={a.id} href={attUrl(a)} target="_blank" rel="noreferrer"
+              style={{ display: 'block', fontSize: 12.5, padding: '6px 8px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 4, color: 'var(--cyan)', textDecoration: 'none' }}>
+              📎 {a.file_name}
+            </a>
+          ))}
+        </div>
+      )}
 
       <div style={{ marginTop: 16 }}>
         {/* 待受理：目標部門 受理/退回 */}

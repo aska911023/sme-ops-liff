@@ -209,10 +209,12 @@ export default function ExpenseRequest() {
     }
     const acc = form.is_expense ? accounts.find(a => a.code === form.account_code) : null
     const bindingIdParam = searchParams.get('binding_id')
+    const repairOrderParam = searchParams.get('repair_order_id')  // 維修單「去申請費用」帶入 → 自動綁定
     const { data, error } = await supabase.rpc('liff_insert_expense_request', {
       p_line_user_id: lineProfile.lineUserId,
       p_payload: {
         is_expense: form.is_expense,
+        repair_order_id: repairOrderParam ? Number(repairOrderParam) : null,
         account_code: form.is_expense ? form.account_code : null,
         account_name: form.is_expense ? (acc?.name || '') : null,
         title: form.title,

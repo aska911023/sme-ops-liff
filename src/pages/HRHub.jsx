@@ -28,6 +28,7 @@ const MENU_GROUPS = [
       { path: '/personnel-transfer', icon: '🔀', label: '人事異動', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
       { path: '/store-repair', icon: '🔧', label: '門市報修', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
       { path: '/work-orders', icon: '🏢', label: '跨部門工單', color: 'var(--blue)', dim: 'var(--blue-dim)' },
+      { path: '/repair-orders', icon: '🔨', label: '維修單', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
     ],
   },
   {

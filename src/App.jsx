@@ -54,6 +54,7 @@ import Resignation from './pages/Resignation'
 import PersonnelTransfer from './pages/PersonnelTransfer'
 import StoreRepair from './pages/StoreRepair'
 import WorkOrders from './pages/WorkOrders'
+import RepairOrders from './pages/RepairOrders'
 
 // CRM pages
 import NewCustomer from './pages/NewCustomer'
@@ -97,7 +98,7 @@ function TabBar() {
   const { pathname } = useLocation()
 
   const tabs = [
-    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/leave-of-absence', '/overtime', '/approve', '/task-confirmations', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance', '/resignation', '/personnel-transfer', '/store-repair', '/renovation-quotes', '/collections'] },
+    { path: '/', icon: <ClipboardList size={20} />, label: 'HR', match: ['/', '/clock', '/salary', '/leave', '/leave-balance', '/tasks', '/expenses', '/off-request', '/business-trip', '/leave-of-absence', '/overtime', '/approve', '/task-confirmations', '/clock-correction', '/my-schedule', '/approval-status', '/expense-request', '/dashboard', '/todo', '/documents', '/benefits', '/training', '/performance', '/resignation', '/personnel-transfer', '/store-repair', '/repair-orders', '/renovation-quotes', '/collections'] },
     { path: '/crm', icon: <Users size={20} />, label: 'CRM', match: ['/crm', '/customer'] },
     { path: '/wms', icon: <Package size={20} />, label: 'WMS', match: ['/wms', '/inventory'] },
     { path: '/sales', icon: <DollarSign size={20} />, label: 'Sales', match: ['/sales'] },
@@ -243,6 +244,7 @@ export default function App() {
         <Route path="/personnel-transfer" element={<PersonnelTransfer />} />
         <Route path="/store-repair" element={<StoreRepair />} />
         <Route path="/work-orders" element={<WorkOrders />} />
+        <Route path="/repair-orders" element={<RepairOrders />} />
 
         {/* CRM Hub + pages */}
         <Route path="/crm" element={<CRMHub />} />
