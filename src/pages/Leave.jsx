@@ -645,7 +645,7 @@ export default function Leave() {
         <div className="card" style={{ borderColor: 'rgba(34,211,238,0.2)' }}>
           <div className="form-group">
             <label className="form-label">假別</label>
-            <select className="form-input" value={form.type} onChange={e => set('type', e.target.value)}>
+            <select className="form-input" value={form.type} onChange={e => { const v = e.target.value; set('type', v); if (v === '產假') set('unit', 'day') }}>
               {/* 標準假別 + 員工有 DB 餘額的非標準假別(如「特休假2025結算」「舊人資系統補休結算」等結餘) */}
               {[...TYPES.filter(t => !(employee?.gender === '男' && FEMALE_ONLY_TYPES.has(t))), ...dbBalances
                 .filter(b => !TYPES.includes(b.leave_type) && !LEAVE_CODE_MAP[b.leave_type]
@@ -669,6 +669,18 @@ export default function Leave() {
                 <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
                   依《性別平等工作法》，不同情形有不同天數上限；超過會被擋下。
                 </div>
+                {/* 產假薪資:依到職滿6個月與否(§50,同計薪引擎判斷) */}
+                {employee?.join_date && (() => {
+                  const ref = new Date(form.start_date || new Date().toISOString().slice(0, 10))
+                  const sixMo = new Date(employee.join_date); sixMo.setMonth(sixMo.getMonth() + 6)
+                  const half = ref < sixMo
+                  return (
+                    <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: half ? 'var(--orange)' : 'var(--green)' }}>
+                      產假薪資：{half ? '半薪（到職未滿 6 個月，§50 減半）' : '全薪（到職滿 6 個月，工資照給）'}
+                      {!form.start_date && <span style={{ fontWeight: 400, color: 'var(--t3)', marginLeft: 4 }}>（以今日估算）</span>}
+                    </div>
+                  )
+                })()}
               </div>
             )}
             {form.type === '補休' && compBalance && (
@@ -710,7 +722,8 @@ export default function Leave() {
               </div>
             )}
           </div>
-          {/* Day / Hour toggle */}
+          {/* Day / Hour toggle（產假法律以曆日計，只能整天，不出時數切換） */}
+          {form.type !== '產假' && (
           <div className="form-group">
             <label className="form-label">請假單位</label>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -725,6 +738,7 @@ export default function Leave() {
               ))}
             </div>
           </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: form.unit === 'hour' ? '1fr' : '1fr 1fr', gap: 10 }}>
             <div className="form-group">
               <label className="form-label">{form.unit === 'hour' ? '日期' : '開始日期'}</label>
