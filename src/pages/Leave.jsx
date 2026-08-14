@@ -138,6 +138,12 @@ export default function Leave() {
   const [leaveSteps, setLeaveSteps] = useState({}) // 中文假別名稱 → {step, unit}
   const [compBalance, setCompBalance] = useState(null) // { total_remaining, ledgers: [...] }
   const [netPreview, setNetPreview] = useState(null)   // 扣休息後淨時數(時數假即時預覽,對齊送出後 trigger 存的值);null=無資料→顯示毛值
+  const [canJobSeeking, setCanJobSeeking] = useState(false) // 謀職假(§16):資遣預告期才顯示
+  useEffect(() => {
+    if (!lineProfile?.lineUserId) return
+    supabase.rpc('liff_job_seeking_eligible', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => setCanJobSeeking(data === true))
+  }, [lineProfile?.lineUserId])
 
   // 取目前選的假別 step（如 type='特休'，看 leaveSteps 有沒有 'annual' override）
   const currentStep = (() => {
@@ -649,7 +655,7 @@ export default function Leave() {
             <label className="form-label">假別</label>
             <select className="form-input" value={form.type} onChange={e => { const v = e.target.value; set('type', v); if (v === '產假') set('unit', 'day') }}>
               {/* 標準假別 + 員工有 DB 餘額的非標準假別(如「特休假2025結算」「舊人資系統補休結算」等結餘) */}
-              {[...TYPES.filter(t => !(employee?.gender === '男' && FEMALE_ONLY_TYPES.has(t))), ...dbBalances
+              {[...TYPES.filter(t => !(employee?.gender === '男' && FEMALE_ONLY_TYPES.has(t))), ...(canJobSeeking ? ['謀職假'] : []), ...dbBalances
                 .filter(b => !TYPES.includes(b.leave_type) && !LEAVE_CODE_MAP[b.leave_type]
                   && (Number(b.total_days || 0) + Number(b.carry_over_days || 0) - Number(b.used_days || 0)) > 0)
                 .map(b => b.leave_type)
