@@ -20,6 +20,24 @@ export default function RepairOrders() {
   const [form, setForm] = useState(emptyForm())
   const [detail, setDetail] = useState(null)  // { order, expenses, attachments }
   const [busy, setBusy] = useState(false)
+  const [addingVendor, setAddingVendor] = useState(false)
+  const [newVendor, setNewVendor] = useState({ name: '', category_id: '', phone: '' })
+
+  const saveNewVendor = async () => {
+    if (!newVendor.name.trim()) return alert('請填廠商名稱')
+    setBusy(true)
+    const { data: res, error } = await supabase.rpc('liff_add_repair_vendor', {
+      p_line_user_id: lineProfile.lineUserId,
+      p_name: newVendor.name.trim(),
+      p_category_id: newVendor.category_id ? Number(newVendor.category_id) : null,
+      p_phone: newVendor.phone || null,
+    })
+    setBusy(false)
+    if (error || !res?.ok) return alert('新增廠商失敗：' + (error?.message || res?.error || ''))
+    setForm(f => ({ ...f, repair_vendor_id: String(res.id) }))
+    setAddingVendor(false); setNewVendor({ name: '', category_id: '', phone: '' })
+    load()
+  }
 
   const load = useCallback(async () => {
     if (!lineProfile?.lineUserId) return
@@ -174,13 +192,31 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
         {form.handler_type === 'vendor' && (
           <div style={{ display: 'flex', gap: 10 }}>
             <div style={{ flex: 1 }}><label style={labelStyle}>廠商</label>
-              <select style={inputStyle} value={form.repair_vendor_id} onChange={e => set('repair_vendor_id', e.target.value)}>
-                <option value="">選擇廠商</option>
-                {data.vendors.map(v => {
-                  const vc = data.categories.find(c => c.id === v.category_id)?.name
-                  return <option key={v.id} value={v.id}>{v.name}{vc ? `（${vc}）` : ''}</option>
-                })}
-              </select></div>
+              {!addingVendor ? (
+                <select style={inputStyle} value={form.repair_vendor_id}
+                  onChange={e => e.target.value === '__add__' ? setAddingVendor(true) : set('repair_vendor_id', e.target.value)}>
+                  <option value="">選擇廠商</option>
+                  {data.vendors.map(v => {
+                    const vc = data.categories.find(c => c.id === v.category_id)?.name
+                    return <option key={v.id} value={v.id}>{v.name}{vc ? `（${vc}）` : ''}</option>
+                  })}
+                  <option value="__add__">＋ 新增廠商…</option>
+                </select>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <input style={inputStyle} placeholder="廠商名稱 *" value={newVendor.name} onChange={e => setNewVendor(v => ({ ...v, name: e.target.value }))} />
+                  <select style={inputStyle} value={newVendor.category_id} onChange={e => setNewVendor(v => ({ ...v, category_id: e.target.value }))}>
+                    <option value="">類別</option>
+                    {data.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <input style={inputStyle} placeholder="電話" value={newVendor.phone} onChange={e => setNewVendor(v => ({ ...v, phone: e.target.value }))} />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button type="button" disabled={busy} onClick={saveNewVendor} style={{ flex: 1, padding: 8, borderRadius: 8, border: 'none', background: 'var(--cyan)', color: '#fff', fontSize: 13, fontWeight: 700 }}>儲存廠商</button>
+                    <button type="button" onClick={() => setAddingVendor(false)} style={{ padding: 8, borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontSize: 13 }}>取消</button>
+                  </div>
+                </div>
+              )}
+            </div>
             <div style={{ flex: 1 }}><label style={labelStyle}>報價</label><input type="number" style={inputStyle} value={form.quote_amount} onChange={e => set('quote_amount', e.target.value)} /></div>
           </div>
         )}
