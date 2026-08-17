@@ -8,12 +8,12 @@ import { supabase } from '../lib/supabase'
 const STATUS = { 進行中: 'var(--blue)', 待費用核准: 'var(--orange)', 已完工: 'var(--green)', 已取消: 'var(--t3)' }
 const EXP_COLOR = { 申請中: 'var(--orange)', 已核准: 'var(--green)', 待核銷: 'var(--cyan)', 已核銷: 'var(--green)', 已駁回: 'var(--red)', 核銷已退回: 'var(--red)' }
 const ATTACH_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt'
-const emptyForm = () => ({ handler_type: 'self', occur_time: new Date().toISOString().slice(0, 16), location: '', store_id: '', title: '', description: '', need_purchase: false, supplier: '', quote_amount: '', linked_work_order_id: '' })
+const emptyForm = () => ({ handler_type: 'self', occur_time: new Date().toISOString().slice(0, 16), location: '', store_id: '', title: '', description: '', need_purchase: false, supplier: '', quote_amount: '', linked_work_order_id: '', category_id: '', repair_vendor_id: '' })
 
 export default function RepairOrders() {
   const navigate = useNavigate()
   const { lineProfile } = useAuth()
-  const [data, setData] = useState({ me: null, orders: [], stores: [], work_orders: [] })
+  const [data, setData] = useState({ me: null, orders: [], stores: [], work_orders: [], categories: [], vendors: [] })
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('open')
   const [showCreate, setShowCreate] = useState(false)
@@ -26,7 +26,7 @@ export default function RepairOrders() {
     setLoading(true)
     const { data: res, error } = await supabase.rpc('liff_list_repair_orders', { p_line_user_id: lineProfile.lineUserId })
     if (error || !res?.ok) { console.error('load repair orders', error, res); setLoading(false); return }
-    setData({ me: res.me, orders: res.orders || [], stores: res.stores || [], work_orders: res.work_orders || [] })
+    setData({ me: res.me, orders: res.orders || [], stores: res.stores || [], work_orders: res.work_orders || [], categories: res.categories || [], vendors: res.vendors || [] })
     setLoading(false)
   }, [lineProfile?.lineUserId])
   useEffect(() => { load() }, [load])
@@ -59,6 +59,8 @@ export default function RepairOrders() {
       p_supplier: form.handler_type === 'vendor' ? (form.supplier || null) : null,
       p_quote_amount: form.handler_type === 'vendor' && form.quote_amount ? Number(form.quote_amount) : null,
       p_linked_work_order_id: form.linked_work_order_id ? Number(form.linked_work_order_id) : null,
+      p_category_id: form.category_id ? Number(form.category_id) : null,
+      p_repair_vendor_id: form.handler_type === 'vendor' && form.repair_vendor_id ? Number(form.repair_vendor_id) : null,
     })
     setBusy(false)
     if (error || !res?.ok) return alert('開單失敗：' + (error?.message || res?.error || ''))
@@ -113,7 +115,7 @@ export default function RepairOrders() {
       )}
 
       {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, onClose: () => setShowCreate(false) }} />}
-      {detail && <DetailOverlay {...{ detail, me: data.me, stores: data.stores, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
+      {detail && <DetailOverlay {...{ detail, me: data.me, stores: data.stores, categories: data.categories, vendors: data.vendors, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
     </div>
   )
 }
@@ -158,6 +160,11 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
             {data.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select></div>
         <div><label style={labelStyle}>標題（選填）</label><input style={inputStyle} value={form.title} onChange={e => set('title', e.target.value)} /></div>
+        <div><label style={labelStyle}>類別</label>
+          <select style={inputStyle} value={form.category_id} onChange={e => set('category_id', e.target.value)}>
+            <option value="">未分類</option>
+            {data.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select></div>
         <div><label style={labelStyle}>怎麼處理 / 問題描述 *</label><textarea style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }} value={form.description} onChange={e => set('description', e.target.value)} /></div>
         {form.handler_type === 'self' && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--t2)' }}>
@@ -166,7 +173,11 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
         )}
         {form.handler_type === 'vendor' && (
           <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1 }}><label style={labelStyle}>廠商</label><input style={inputStyle} value={form.supplier} onChange={e => set('supplier', e.target.value)} /></div>
+            <div style={{ flex: 1 }}><label style={labelStyle}>廠商</label>
+              <select style={inputStyle} value={form.repair_vendor_id} onChange={e => set('repair_vendor_id', e.target.value)}>
+                <option value="">選擇廠商</option>
+                {data.vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.specialty ? `（${v.specialty}）` : ''}</option>)}
+              </select></div>
             <div style={{ flex: 1 }}><label style={labelStyle}>報價</label><input type="number" style={inputStyle} value={form.quote_amount} onChange={e => set('quote_amount', e.target.value)} /></div>
           </div>
         )}
@@ -188,11 +199,13 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
   )
 }
 
-function DetailOverlay({ detail, me, stores, lineProfile, busy, setBusy, navigate, onClose, reload }) {
+function DetailOverlay({ detail, me, stores, categories, vendors, lineProfile, busy, setBusy, navigate, onClose, reload }) {
   const o = detail.order
   const expenses = detail.expenses || []
   const attachments = detail.attachments || []
   const storeName = (stores || []).find(s => s.id === o.store_id)?.name || null
+  const catName = (categories || []).find(c => c.id === o.category_id)?.name || null
+  const vendor = (vendors || []).find(v => v.id === o.repair_vendor_id) || null
   const [completing, setCompleting] = useState(false)
   const [completedAt, setCompletedAt] = useState(new Date().toISOString().slice(0, 16))
   const [note, setNote] = useState('')
@@ -249,9 +262,10 @@ function DetailOverlay({ detail, me, stores, lineProfile, busy, setBusy, navigat
       {o.title && <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{o.title}</div>}
       <Row label="時間">{o.occur_time ? new Date(o.occur_time).toLocaleString('zh-TW') : '—'}</Row>
       <Row label="門市">{storeName || '—'}</Row>
+      <Row label="類別">{catName || '—'}</Row>
       <Row label="地點">{o.location || '—'}</Row>
       <Row label="怎麼處理">{o.description}</Row>
-      {o.handler_type === 'vendor' && <Row label="廠商/報價">{o.supplier || '—'}{o.quote_amount != null ? ` / $${o.quote_amount}` : ''}</Row>}
+      {o.handler_type === 'vendor' && <Row label="廠商/報價">{vendor?.name || o.supplier || '—'}{vendor?.phone ? `　☎ ${vendor.phone}` : ''}{o.quote_amount != null ? ` / $${o.quote_amount}` : ''}</Row>}
       {o.handler_type === 'self' && <Row label="需要採購">{o.need_purchase ? '是' : '否'}</Row>}
       {o.completed_at && <Row label="完工時間">{new Date(o.completed_at).toLocaleString('zh-TW')}</Row>}
       {o.completion_note && <Row label="完工備註">{o.completion_note}</Row>}
