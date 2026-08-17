@@ -1,4 +1,3 @@
-// rebuild trigger 20260817
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { ChevronLeft, Plus, X, Wrench, User, Building2, CheckCircle2, Paperclip, CreditCard, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -114,7 +113,7 @@ export default function RepairOrders() {
       </div>
 
       {tabbed.length === 0 ? (
-        <div style={{ textAlign: 'center', color: 'var(--t3)', padding: '48px 0', fontSize: 14 }}>沒有維修單</div>
+        <div style={{ textAlign: 'center', color: 'var(--t3)', padding: '48px 0', fontSize: 14 }}>目前沒有維修單</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {tabbed.map(o => (
