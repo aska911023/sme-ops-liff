@@ -37,6 +37,22 @@ function lateEarly(r, sched) {
   return (late > 0 || early > 0) ? { late, early } : null
 }
 
+// 打卡時段與班表時段「完全無交集」= 在錯的時間打卡（非遲到/早退，例:排15:00-02:00卻打11:00-13:01）→ 異常。
+// 只在有完整上下班卡時判斷;對齊跨午夜(打卡窗試 +0 / +1440)。對齊主系統 Attendance.jsx。
+function clockOffSched(r, sched) {
+  if (!r || !sched) return false
+  if (r.overtime_request_id || r.clock_in_mode === 'overtime' || r.status === '加班') return false
+  if (r.clock_in_mode === 'outing' || r.status === '外出') return false
+  const ci = toMin(r.clock_in), co = toMin(r.clock_out)
+  if (ci == null || co == null) return false
+  let start = toMin(sched.start), end = toMin(sched.end)
+  if (start == null || end == null) return false
+  if (end <= start) end += 1440
+  let cs = ci, ce = co; if (ce < cs) ce += 1440
+  const ov = (a1, a2, b1, b2) => a1 < b2 && a2 > b1
+  return !(ov(cs, ce, start, end) || ov(cs + 1440, ce + 1440, start, end))
+}
+
 // 顯示用狀態：過去日子「有上班沒下班」= 缺卡（異常），提醒補卡；跟班表不同（遲到/早退/0工時）= 異常；status 被污染時用打卡狀況推
 function computeDayStatus(r, dateStr, todayStr, sched) {
   const isPast = dateStr < todayStr
@@ -52,6 +68,7 @@ function computeDayStatus(r, dateStr, todayStr, sched) {
   }
   // 跟班表不同 = 異常;外出不算
   if (!isOuting && hasIn && hasOut && r.clock_in === r.clock_out) return '打卡異常'  // 上下班同一時間(0 工時,多半誤點兩下)
+  if (!isOuting && hasIn && hasOut && clockOffSched(r, sched)) return '打卡異常'      // 打卡時段與班表完全不符(在錯的時間打卡)
   if (!isOuting) {
     const le = lateEarly(r, sched)
     if (le?.late > 0) return '遲到'      // 上班晚於班表
