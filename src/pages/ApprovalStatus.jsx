@@ -11,6 +11,18 @@ const PASS_STATUSES = ['已核准', '已核銷', '已通過', 'approved']  // ap
 const RESUBMIT_STATUSES = ['已退回', '已駁回', '已拒絕']
 const FAIL_STATUSES = ['已拒絕', '已駁回', '已退回', 'rejected']
 
+// 幣別符號（與 Approve.jsx 同步）— 之前 expenses/expense_requests 摘要寫死 NT$，
+// USD/JPY 等外幣單也顯示 NT$（例：US$668 伺服器費被印成 NT$668）→ 改讀 currency
+const CURRENCY_SYMBOLS = {
+  TWD: 'NT$', USD: '$', JPY: '¥', CNY: '¥', EUR: '€', GBP: '£',
+  HKD: 'HK$', SGD: 'S$', AUD: 'A$', NZD: 'NZ$', CAD: 'C$', KRW: '₩', THB: '฿',
+}
+const fmtCurrency = (amount, currency) => {
+  const cur = currency || 'TWD'
+  const sym = CURRENCY_SYMBOLS[cur] || cur
+  return `${sym} ${Number(amount || 0).toLocaleString()}`
+}
+
 const TYPE_META = {
   leaves:           { label: '請假',   icon: '🏖️', color: 'cyan',   rpcType: 'leave',           editPath: '/leave' },
   overtimes:        { label: '加班',   icon: '⏰', color: 'orange', rpcType: 'overtime',        editPath: '/overtime' },
@@ -106,9 +118,9 @@ export default function ApprovalStatus() {
     }
     if (r._type === 'overtimes') return `${r.date} · ${r.hours}h`
     if (r._type === 'trips')     return `${r.destination || ''} · ${r.start_date} ~ ${r.end_date}`
-    if (r._type === 'expenses')  return `${r.category || ''} · NT$ ${Number(r.amount || 0).toLocaleString()} · ${r.date}`
+    if (r._type === 'expenses')  return `${r.category || ''} · ${fmtCurrency(r.amount, r.currency)} · ${r.date}`
     if (r._type === 'corrections') return `${({ clock_in: '上班打卡', clock_out: '下班打卡' }[r.type] || r.type || '上班打卡')} · ${r.date} · ${r.correction_time || '未填'}`
-    if (r._type === 'expense_requests') return `${r.title} · NT$ ${Number(r.estimated_amount || 0).toLocaleString()}`
+    if (r._type === 'expense_requests') return `${r.title} · ${fmtCurrency(r.estimated_amount, r.currency)}`
     if (r._type === 'form_submissions') return r.template_name || '自訂表單'
     if (r._type === 'resignations') return `離職 · 預計 ${r.planned_resign_date || '—'}`
     if (r._type === 'loas')        return `${r.reason_type || '留停'} · ${r.start_date || ''}${r.planned_end_date ? ' ~ ' + r.planned_end_date : ''}`
