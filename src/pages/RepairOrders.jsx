@@ -113,7 +113,7 @@ export default function RepairOrders() {
       )}
 
       {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, onClose: () => setShowCreate(false) }} />}
-      {detail && <DetailOverlay {...{ detail, me: data.me, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
+      {detail && <DetailOverlay {...{ detail, me: data.me, stores: data.stores, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
     </div>
   )
 }
@@ -188,10 +188,11 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
   )
 }
 
-function DetailOverlay({ detail, me, lineProfile, busy, setBusy, navigate, onClose, reload }) {
+function DetailOverlay({ detail, me, stores, lineProfile, busy, setBusy, navigate, onClose, reload }) {
   const o = detail.order
   const expenses = detail.expenses || []
   const attachments = detail.attachments || []
+  const storeName = (stores || []).find(s => s.id === o.store_id)?.name || null
   const [completing, setCompleting] = useState(false)
   const [completedAt, setCompletedAt] = useState(new Date().toISOString().slice(0, 16))
   const [note, setNote] = useState('')
@@ -247,6 +248,7 @@ function DetailOverlay({ detail, me, lineProfile, busy, setBusy, navigate, onClo
       </div>
       {o.title && <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 8 }}>{o.title}</div>}
       <Row label="時間">{o.occur_time ? new Date(o.occur_time).toLocaleString('zh-TW') : '—'}</Row>
+      <Row label="門市">{storeName || '—'}</Row>
       <Row label="地點">{o.location || '—'}</Row>
       <Row label="怎麼處理">{o.description}</Row>
       {o.handler_type === 'vendor' && <Row label="廠商/報價">{o.supplier || '—'}{o.quote_amount != null ? ` / $${o.quote_amount}` : ''}</Row>}
