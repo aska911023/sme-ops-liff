@@ -20,6 +20,7 @@ export default function RepairOrders() {
   const [form, setForm] = useState(emptyForm())
   const [detail, setDetail] = useState(null)  // { order, expenses, attachments }
   const [busy, setBusy] = useState(false)
+  const [showManage, setShowManage] = useState(false)
   const [addingVendor, setAddingVendor] = useState(false)
   const [newVendor, setNewVendor] = useState({ name: '', category_id: '', phone: '' })
 
@@ -94,6 +95,12 @@ export default function RepairOrders() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <button onClick={() => navigate(-1)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t2)', display: 'flex' }}><ChevronLeft size={22} /></button>
         <div style={{ fontSize: 18, fontWeight: 700, flex: 1, display: 'flex', alignItems: 'center', gap: 6 }}><Wrench size={18} /> 維修單</div>
+        {data.me?.can_manage && (
+          <button onClick={() => setShowManage(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+            <Building2 size={14} /> 管理
+          </button>
+        )}
         <button onClick={() => { setForm(emptyForm()); setShowCreate(true) }}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', borderRadius: 8, border: 'none', background: 'var(--cyan)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           <Plus size={15} /> 開單
@@ -132,6 +139,7 @@ export default function RepairOrders() {
         </div>
       )}
 
+      {showManage && <ManageOverlay {...{ data, lineProfile, reload: load, onClose: () => setShowManage(false) }} />}
       {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose: () => setShowCreate(false) }} />}
       {detail && <DetailOverlay {...{ detail, me: data.me, stores: data.stores, categories: data.categories, vendors: data.vendors, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
     </div>
@@ -234,6 +242,95 @@ function CreateOverlay({ form, set, data, busy, submitCreate, addingVendor, setA
           {busy ? '送出中…' : '建立維修單'}
         </button>
       </div>
+    </Overlay>
+  )
+}
+
+function ManageOverlay({ data, lineProfile, reload, onClose }) {
+  const [seg, setSeg] = useState('vendor')
+  const [vForm, setVForm] = useState({ name: '', category_id: '', contact_person: '', phone: '', note: '' })
+  const [cName, setCName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const catName = (id) => data.categories.find(c => c.id === id)?.name
+
+  const rpc = async (fn, args) => {
+    const { data: res, error } = await supabase.rpc(fn, { p_line_user_id: lineProfile.lineUserId, ...args })
+    if (error || !res?.ok) { alert('操作失敗：' + (error?.message || res?.error || '')); return false }
+    return true
+  }
+  const addVendor = async () => {
+    if (!vForm.name.trim()) return alert('請填廠商名稱')
+    setBusy(true)
+    const ok = await rpc('liff_add_repair_vendor', { p_name: vForm.name.trim(), p_category_id: vForm.category_id ? Number(vForm.category_id) : null, p_contact_person: vForm.contact_person || null, p_phone: vForm.phone || null, p_note: vForm.note || null })
+    setBusy(false)
+    if (ok) { setVForm({ name: '', category_id: '', contact_person: '', phone: '', note: '' }); reload() }
+  }
+  const toggleVendor = async (v) => { if (await rpc('liff_set_repair_vendor_status', { p_id: v.id, p_status: v.status === '停用' ? '啟用' : '停用' })) reload() }
+  const addCategory = async () => {
+    if (!cName.trim()) return alert('請填類別名稱')
+    setBusy(true)
+    const ok = await rpc('liff_add_repair_category', { p_name: cName.trim() })
+    setBusy(false)
+    if (ok) { setCName(''); reload() }
+  }
+  const delCategory = async (c) => { if (window.confirm(`刪除類別「${c.name}」?（已用此類別的維修單會變未分類）`) && await rpc('liff_delete_repair_category', { p_id: c.id })) reload() }
+
+  const segBtn = (k, l) => (
+    <button onClick={() => setSeg(k)} style={{ flex: 1, padding: 9, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: `1px solid ${seg === k ? 'var(--cyan)' : 'var(--border)'}`, background: seg === k ? 'var(--cyan)' : 'transparent', color: seg === k ? '#fff' : 'var(--t2)' }}>{l}</button>
+  )
+
+  return (
+    <Overlay title="管理廠商 / 類別" onClose={onClose}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        {segBtn('vendor', `維修廠商（${data.vendors.length}）`)}
+        {segBtn('category', `類別（${data.categories.length}）`)}
+      </div>
+
+      {seg === 'vendor' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input style={inputStyle} placeholder="廠商名稱 *" value={vForm.name} onChange={e => setVForm(v => ({ ...v, name: e.target.value }))} />
+          <select style={inputStyle} value={vForm.category_id} onChange={e => setVForm(v => ({ ...v, category_id: e.target.value }))}>
+            <option value="">— 類別 —</option>
+            {data.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input style={inputStyle} placeholder="聯絡人" value={vForm.contact_person} onChange={e => setVForm(v => ({ ...v, contact_person: e.target.value }))} />
+            <input style={inputStyle} placeholder="電話" value={vForm.phone} onChange={e => setVForm(v => ({ ...v, phone: e.target.value }))} />
+          </div>
+          <input style={inputStyle} placeholder="備註" value={vForm.note} onChange={e => setVForm(v => ({ ...v, note: e.target.value }))} />
+          <button disabled={busy} onClick={addVendor} style={{ padding: 11, borderRadius: 9, border: 'none', background: 'var(--cyan)', color: '#fff', fontSize: 14, fontWeight: 700 }}>＋ 新增廠商</button>
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {data.vendors.length === 0 && <div style={{ color: 'var(--t3)', fontSize: 13, textAlign: 'center', padding: 12 }}>還沒有廠商</div>}
+            {data.vendors.map(v => (
+              <div key={v.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', opacity: v.status === '停用' ? 0.5 : 1 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{v.name}{catName(v.category_id) ? <span style={{ color: 'var(--cyan)', fontWeight: 400 }}>　{catName(v.category_id)}</span> : ''}</div>
+                  <div style={{ fontSize: 12, color: 'var(--t3)' }}>{[v.contact_person, v.phone].filter(Boolean).join(' · ') || '—'}</div>
+                </div>
+                <button onClick={() => toggleVendor(v)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontSize: 12, cursor: 'pointer' }}>{v.status === '停用' ? '啟用' : '停用'}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {seg === 'category' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input style={inputStyle} placeholder="新類別名稱" value={cName} onChange={e => setCName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addCategory()} />
+            <button disabled={busy} onClick={addCategory} style={{ padding: '0 16px', borderRadius: 9, border: 'none', background: 'var(--cyan)', color: '#fff', fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap' }}>＋ 新增</button>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {data.categories.length === 0 && <div style={{ color: 'var(--t3)', fontSize: 13 }}>還沒有類別</div>}
+            {data.categories.map(c => (
+              <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 999, background: 'var(--cyan-dim)', color: 'var(--cyan)', fontSize: 13 }}>
+                {c.name}
+                <button onClick={() => delCategory(c)} style={{ display: 'inline-flex', border: 'none', background: 'transparent', color: 'var(--cyan)', cursor: 'pointer', padding: 0 }}><X size={13} /></button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
     </Overlay>
   )
 }
