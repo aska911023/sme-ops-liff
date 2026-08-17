@@ -132,7 +132,7 @@ export default function RepairOrders() {
         </div>
       )}
 
-      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, onClose: () => setShowCreate(false) }} />}
+      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose: () => setShowCreate(false) }} />}
       {detail && <DetailOverlay {...{ detail, me: data.me, stores: data.stores, categories: data.categories, vendors: data.vendors, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
     </div>
   )
@@ -154,7 +154,7 @@ function Overlay({ title, onClose, children }) {
 const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 14, boxSizing: 'border-box' }
 const labelStyle = { fontSize: 12, color: 'var(--t3)', marginBottom: 5, display: 'block' }
 
-function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
+function CreateOverlay({ form, set, data, busy, submitCreate, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose }) {
   return (
     <Overlay title="開維修單" onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
