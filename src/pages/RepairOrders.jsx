@@ -176,7 +176,10 @@ function CreateOverlay({ form, set, data, busy, submitCreate, onClose }) {
             <div style={{ flex: 1 }}><label style={labelStyle}>廠商</label>
               <select style={inputStyle} value={form.repair_vendor_id} onChange={e => set('repair_vendor_id', e.target.value)}>
                 <option value="">選擇廠商</option>
-                {data.vendors.map(v => <option key={v.id} value={v.id}>{v.name}{v.specialty ? `（${v.specialty}）` : ''}</option>)}
+                {data.vendors.map(v => {
+                  const vc = data.categories.find(c => c.id === v.category_id)?.name
+                  return <option key={v.id} value={v.id}>{v.name}{vc ? `（${vc}）` : ''}</option>
+                })}
               </select></div>
             <div style={{ flex: 1 }}><label style={labelStyle}>報價</label><input type="number" style={inputStyle} value={form.quote_amount} onChange={e => set('quote_amount', e.target.value)} /></div>
           </div>
