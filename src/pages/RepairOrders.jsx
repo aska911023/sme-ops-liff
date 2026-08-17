@@ -1,3 +1,4 @@
+// rebuild trigger 20260817
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { ChevronLeft, Plus, X, Wrench, User, Building2, CheckCircle2, Paperclip, CreditCard, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
