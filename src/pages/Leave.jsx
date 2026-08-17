@@ -485,8 +485,9 @@ export default function Leave() {
     const payload = {
       type: form.type,
       start_date: form.start_date,
-      // 時數假是「一個班」→ 不跨天(跨午夜也收在 start_date),避免日曆/天數看起來像兩天
-      end_date: form.unit === 'hour' ? form.start_date : (form.end_date || form.start_date),
+      // 時數假是「一個班」→ 不跨天(跨午夜也收在 start_date);整天假 days<=1 也收回 start_date
+      //   (夜班16:00-01:00請1天,使用者常把 end 選到隔天 → 1天卻橫跨2日期,害隔天的班被誤標請假)
+      end_date: (form.unit === 'hour' || days <= 1) ? form.start_date : (form.end_date || form.start_date),
       days,
       hours,
       start_time: form.unit === 'hour' ? form.start_time : '',
