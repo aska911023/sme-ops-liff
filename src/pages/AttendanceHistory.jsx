@@ -54,7 +54,7 @@ function clockOffSched(r, sched) {
 }
 
 // 顯示用狀態：過去日子「有上班沒下班」= 缺卡（異常），提醒補卡；跟班表不同（遲到/早退/0工時）= 異常；status 被污染時用打卡狀況推
-function computeDayStatus(r, dateStr, todayStr, sched) {
+function computeDayStatus(r, dateStr, todayStr, sched, hasLeave) {
   const isPast = dateStr < todayStr
   // 沒打卡紀錄:有排班上班班(過去日) = 未打卡(異常);沒排班 = 無資料
   if (!r) return (sched && isPast) ? '未打卡' : null
@@ -69,7 +69,8 @@ function computeDayStatus(r, dateStr, todayStr, sched) {
   // 跟班表不同 = 異常;外出不算
   if (!isOuting && hasIn && hasOut && r.clock_in === r.clock_out) return '打卡異常'  // 上下班同一時間(0 工時,多半誤點兩下)
   if (!isOuting && hasIn && hasOut && clockOffSched(r, sched)) return '打卡異常'      // 打卡時段與班表完全不符(在錯的時間打卡)
-  if (!isOuting) {
+  // 當天有已核准請假 → 不判遲到/早退(對齊計薪:請假時段不該再罰;例後 2h 請假、打卡到接近假開始)
+  if (!isOuting && !hasLeave) {
     const le = lateEarly(r, sched)
     if (le?.late > 0) return '遲到'      // 上班晚於班表
     if (le?.early > 0) return '早退'     // 下班早於班表
@@ -107,6 +108,7 @@ export default function AttendanceHistory() {
   const [records, setRecords] = useState([])
   const [schedules, setSchedules] = useState([])   // 當月排班時段（比對遲到/早退）
   const [overtimes, setOvertimes] = useState([])   // 已核准加班單 → 當天加班紀錄
+  const [leaves, setLeaves] = useState([])         // 已核准請假 → 當天有假就不判遲到/早退(對齊計薪)
   const [loading, setLoading] = useState(true)
   const [selectedRecord, setSelectedRecord] = useState(null)
 
@@ -120,11 +122,13 @@ export default function AttendanceHistory() {
       supabase.rpc('liff_get_my_attendance_month', { p_line_user_id: lineUserId, p_year_month: ym }),
       supabase.rpc('liff_list_overtime_requests', { p_line_user_id: lineUserId }),
       supabase.rpc('liff_get_my_schedule_month', { p_line_user_id: lineUserId, p_year_month: ym }),
-    ]).then(([att, ot, sch]) => {
+      supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineUserId }),
+    ]).then(([att, ot, sch, lv]) => {
       setRecords(Array.isArray(att.data) ? att.data : [])
       setOvertimes((Array.isArray(ot.data) ? ot.data : [])
         .filter(o => o.status === '已核准' && String(o.date || '').startsWith(ym)))
       setSchedules(Array.isArray(sch.data) ? sch.data : [])
+      setLeaves((Array.isArray(lv.data) ? lv.data : []).filter(l => l.status === '已核准'))
       setLoading(false)
     })
   }, [lineUserId, ym])
@@ -149,6 +153,22 @@ export default function AttendanceHistory() {
     for (const o of overtimes) { (m[o.date] ||= []).push(o) }
     return m
   }, [overtimes])
+
+  // 有已核准請假的日期集合。對齊計薪引擎守門(當天有核准假 → 不算遲到/早退,避免與請假重複罰):
+  //   例:排 11-20、後 2h(18-20)請特休,打卡打到 18:16 → 不該顯示「早退」。
+  const leaveDateSet = useMemo(() => {
+    const fmt = (dt) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+    const set = new Set()
+    for (const lv of leaves) {
+      const s = String(lv.start_date || '').slice(0, 10)
+      if (!s) continue
+      const e = String(lv.end_date || lv.start_date || '').slice(0, 10)
+      let d = new Date(`${s}T00:00:00`)
+      const end = new Date(`${e}T00:00:00`)
+      while (d <= end) { set.add(fmt(d)); d.setDate(d.getDate() + 1) }
+    }
+    return set
+  }, [leaves])
 
   const stats = useMemo(() => {
     const clockedIn = records.filter(r => r.clock_in).length
@@ -233,7 +253,7 @@ export default function AttendanceHistory() {
             const dayOT = otByDate[cell.dateStr]
             const isToday = cell.dateStr === todayStr
             const isWeekend = i % 7 >= 5
-            const dStatus = computeDayStatus(r, cell.dateStr, todayStr, schedByDate[cell.dateStr])
+            const dStatus = computeDayStatus(r, cell.dateStr, todayStr, schedByDate[cell.dateStr], leaveDateSet.has(cell.dateStr))
             const sty = dStatus ? (STATUS_STYLE[dStatus] || null) : null
             const clickable = !!(r || dayOT || dStatus)   // 未打卡(有排班沒紀錄)也可點看詳情
             return (
@@ -300,7 +320,7 @@ export default function AttendanceHistory() {
             </div>
 
             {(() => {
-              const mStatus = computeDayStatus(selectedRecord, selectedRecord.date, todayStr, schedByDate[selectedRecord.date])
+              const mStatus = computeDayStatus(selectedRecord, selectedRecord.date, todayStr, schedByDate[selectedRecord.date], leaveDateSet.has(selectedRecord.date))
               const isMissing = mStatus === '缺下班卡' || mStatus === '缺上班卡' || mStatus === '缺卡' || mStatus === '未打卡'
               return (
                 <>
