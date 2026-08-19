@@ -122,6 +122,16 @@ export default function RepairOrders() {
     closeCreate(); load()
   }
 
+  // 刪除草稿
+  const deleteDraft = async () => {
+    if (!editDraftId || !window.confirm('確定刪除這張草稿？')) return
+    setBusy(true)
+    const { data: res, error } = await supabase.rpc('liff_delete_repair_order', { p_line_user_id: lineProfile.lineUserId, p_id: editDraftId })
+    setBusy(false)
+    if (error || !res?.ok) return alert('刪除失敗：' + (error?.message || res?.error || ''))
+    closeCreate(); load()
+  }
+
   if (loading) return <div className="page" style={{ textAlign: 'center', paddingTop: 60, color: 'var(--t3)' }}>載入中…</div>
 
   const TABS = [{ key: 'open', label: '進行中' }, { key: 'done', label: '已完工' }, { key: 'all', label: '全部' }, { key: 'draft', label: draftCount ? `草稿 ${draftCount}` : '草稿' }]
@@ -176,7 +186,7 @@ export default function RepairOrders() {
       )}
 
       {showManage && <ManageOverlay {...{ data, lineProfile, reload: load, onClose: () => setShowManage(false) }} />}
-      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, saveDraft, editDraftId, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose: closeCreate }} />}
+      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, saveDraft, deleteDraft, editDraftId, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose: closeCreate }} />}
       {detail && <DetailOverlay {...{ detail, me: data.me, stores: data.stores, categories: data.categories, vendors: data.vendors, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
     </div>
   )
@@ -198,7 +208,7 @@ function Overlay({ title, onClose, children }) {
 const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 14, boxSizing: 'border-box' }
 const labelStyle = { fontSize: 12, color: 'var(--t3)', marginBottom: 5, display: 'block' }
 
-function CreateOverlay({ form, set, data, busy, submitCreate, saveDraft, editDraftId, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose }) {
+function CreateOverlay({ form, set, data, busy, submitCreate, saveDraft, deleteDraft, editDraftId, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose }) {
   return (
     <Overlay title={editDraftId ? '編輯草稿' : '開維修單'} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -282,6 +292,12 @@ function CreateOverlay({ form, set, data, busy, submitCreate, saveDraft, editDra
           style={{ padding: '11px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
           💾 存草稿（先存不送）
         </button>
+        {editDraftId && (
+          <button disabled={busy} onClick={deleteDraft}
+            style={{ padding: '11px', borderRadius: 10, border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+            🗑 刪除草稿
+          </button>
+        )}
       </div>
     </Overlay>
   )
