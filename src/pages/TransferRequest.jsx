@@ -43,7 +43,7 @@ const emptyForm = () => ({
 })
 
 // 直接上傳到 supabase storage（LIFF 簡化版）
-async function uploadAttachments({ stage, formId, empId, files }) {
+async function uploadAttachments({ stage, formId, empId, lineUserId, files }) {
   if (!files?.length) return []
   const dir = stage === 'apply' ? 'goods-transfer-apply' : 'goods-transfer-receipt'
   const urls = []
@@ -54,12 +54,14 @@ async function uploadAttachments({ stage, formId, empId, files }) {
     if (error) { alert(`附件上傳失敗：${file.name} - ${error.message}`); continue }
     const { data } = supabase.storage.from('attachments').getPublicUrl(path)
     urls.push({ url: data.publicUrl, name: file.name, path })
-    // 寫 form_attachments metadata（給主系統可看到）
-    await supabase.from('form_attachments').insert({
-      form_type: stage === 'apply' ? 'goods_transfer_apply' : 'goods_transfer_receipt',
-      form_id: formId, storage_bucket: 'attachments', storage_path: path,
-      file_name: file.name, file_size: file.size, mime_type: file.type, uploaded_by_id: empId,
+    // 寫 form_attachments metadata：LIFF(anon)不能直插,走 DEFINER RPC(不然靜默失敗、附件看不到)
+    const { data: meta, error: metaErr } = await supabase.rpc('liff_add_form_attachment', {
+      p_line_user_id: lineUserId,
+      p_form_type: stage === 'apply' ? 'goods_transfer_apply' : 'goods_transfer_receipt',
+      p_form_id: formId, p_storage_bucket: 'attachments', p_storage_path: path,
+      p_file_name: file.name, p_file_size: file.size, p_mime_type: file.type,
     })
+    if (metaErr || !meta?.ok) alert(`附件記錄失敗：${file.name} - ${metaErr?.message || meta?.error || ''}`)
   }
   return urls
 }
@@ -132,7 +134,7 @@ export default function TransferRequest() {
     if (error) { setSubmitting(false); alert('送出失敗：' + error.message); return }
     // 上傳附件
     if (form.attachFiles.length > 0 && data?.id) {
-      await uploadAttachments({ stage: 'apply', formId: data.id, empId: employee?.id, files: form.attachFiles })
+      await uploadAttachments({ stage: 'apply', formId: data.id, empId: employee?.id, lineUserId: lineProfile?.lineUserId, files: form.attachFiles })
     }
     setSubmitting(false)
     alert(`已送出 ${data?.document_no || ''}`)
@@ -144,7 +146,7 @@ export default function TransferRequest() {
   const handleSubmitReceipt = async (row, items, receiptFiles) => {
     setSubmitting(true)
     if (receiptFiles?.length > 0) {
-      await uploadAttachments({ stage: 'receipt', formId: row.id, empId: employee?.id, files: receiptFiles })
+      await uploadAttachments({ stage: 'receipt', formId: row.id, empId: employee?.id, lineUserId: lineProfile?.lineUserId, files: receiptFiles })
     }
     const { data, error } = await supabase.rpc('liff_submit_transfer_receipt', {
       p_line_user_id: lineProfile.lineUserId,
