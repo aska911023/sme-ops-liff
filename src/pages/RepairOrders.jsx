@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 
 // 維修單 — LIFF 端(工務現場開單 + 完工拍照)
-const STATUS = { 進行中: 'var(--blue)', 待費用核准: 'var(--orange)', 已完工: 'var(--green)', 已取消: 'var(--t3)' }
+const STATUS = { 草稿: 'var(--t3)', 進行中: 'var(--blue)', 待費用核准: 'var(--orange)', 已完工: 'var(--green)', 已取消: 'var(--t3)' }
 const EXP_COLOR = { 申請中: 'var(--orange)', 已核准: 'var(--green)', 待核銷: 'var(--cyan)', 已核銷: 'var(--green)', 已駁回: 'var(--red)', 核銷已退回: 'var(--red)' }
 const ATTACH_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt'
 const emptyForm = () => ({ handler_type: 'self', occur_time: new Date().toISOString().slice(0, 16), location: '', store_id: '', title: '', description: '', need_purchase: false, supplier: '', quote_amount: '', linked_work_order_id: '', category_id: '', repair_vendor_id: '' })
@@ -18,6 +18,7 @@ export default function RepairOrders() {
   const [tab, setTab] = useState('open')
   const [showCreate, setShowCreate] = useState(false)
   const [form, setForm] = useState(emptyForm())
+  const [editDraftId, setEditDraftId] = useState(null)   // 編輯中的草稿 id
   const [detail, setDetail] = useState(null)  // { order, expenses, attachments }
   const [busy, setBusy] = useState(false)
   const [showManage, setShowManage] = useState(false)
@@ -55,7 +56,10 @@ export default function RepairOrders() {
     if (res?.ok) setDetail(res)
   }
 
+  const draftCount = useMemo(() => data.orders.filter(o => o.status === '草稿').length, [data.orders])
   const tabbed = useMemo(() => data.orders.filter(o => {
+    if (o.status === '草稿' && tab !== 'draft') return false   // 草稿只在「草稿」分頁
+    if (tab === 'draft') return o.status === '草稿'
     if (tab === 'open') return ['進行中', '待費用核准'].includes(o.status)
     if (tab === 'done') return o.status === '已完工'
     return true
@@ -63,32 +67,64 @@ export default function RepairOrders() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const roPayload = () => ({
+    p_line_user_id: lineProfile.lineUserId,
+    p_handler_type: form.handler_type,
+    p_occur_time: form.occur_time ? new Date(form.occur_time).toISOString() : null,
+    p_location: form.location || null,
+    p_store_id: form.store_id ? Number(form.store_id) : null,
+    p_title: form.title || null,
+    p_description: form.description.trim(),
+    p_need_purchase: form.handler_type === 'self' ? !!form.need_purchase : true,
+    p_supplier: form.handler_type === 'vendor' ? (form.supplier || null) : null,
+    p_quote_amount: form.handler_type === 'vendor' && form.quote_amount ? Number(form.quote_amount) : null,
+    p_linked_work_order_id: form.linked_work_order_id ? Number(form.linked_work_order_id) : null,
+    p_category_id: form.category_id ? Number(form.category_id) : null,
+    p_repair_vendor_id: form.handler_type === 'vendor' && form.repair_vendor_id ? Number(form.repair_vendor_id) : null,
+  })
+
+  const closeCreate = () => { setShowCreate(false); setEditDraftId(null); setForm(emptyForm()) }
+
+  // 開啟草稿編輯
+  const openDraftEdit = (o) => {
+    setForm({
+      handler_type: o.handler_type || 'self',
+      occur_time: o.occur_time ? new Date(o.occur_time).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
+      location: o.location || '', store_id: o.store_id ? String(o.store_id) : '', title: o.title || '',
+      description: o.description || '', need_purchase: !!o.need_purchase, supplier: o.supplier || '',
+      quote_amount: o.quote_amount != null ? String(o.quote_amount) : '',
+      linked_work_order_id: o.linked_work_order_id ? String(o.linked_work_order_id) : '',
+      category_id: o.category_id ? String(o.category_id) : '', repair_vendor_id: o.repair_vendor_id ? String(o.repair_vendor_id) : '',
+    })
+    setEditDraftId(o.id); setShowCreate(true)
+  }
+
+  // 正式送出 / 建立(描述必填)
   const submitCreate = async () => {
     if (!form.description.trim()) return alert('請填「怎麼處理 / 問題描述」')
     setBusy(true)
-    const { data: res, error } = await supabase.rpc('liff_create_repair_order', {
-      p_line_user_id: lineProfile.lineUserId,
-      p_handler_type: form.handler_type,
-      p_occur_time: form.occur_time ? new Date(form.occur_time).toISOString() : null,
-      p_location: form.location || null,
-      p_store_id: form.store_id ? Number(form.store_id) : null,
-      p_title: form.title || null,
-      p_description: form.description.trim(),
-      p_need_purchase: form.handler_type === 'self' ? !!form.need_purchase : true,
-      p_supplier: form.handler_type === 'vendor' ? (form.supplier || null) : null,
-      p_quote_amount: form.handler_type === 'vendor' && form.quote_amount ? Number(form.quote_amount) : null,
-      p_linked_work_order_id: form.linked_work_order_id ? Number(form.linked_work_order_id) : null,
-      p_category_id: form.category_id ? Number(form.category_id) : null,
-      p_repair_vendor_id: form.handler_type === 'vendor' && form.repair_vendor_id ? Number(form.repair_vendor_id) : null,
-    })
+    const { data: res, error } = editDraftId
+      ? await supabase.rpc('liff_update_repair_order_draft', { ...roPayload(), p_id: editDraftId, p_submit: true })
+      : await supabase.rpc('liff_create_repair_order', { ...roPayload(), p_is_draft: false })
     setBusy(false)
-    if (error || !res?.ok) return alert('開單失敗：' + (error?.message || res?.error || ''))
-    setShowCreate(false); setForm(emptyForm()); load()
+    if (error || !res?.ok) return alert((editDraftId ? '送出' : '開單') + '失敗：' + (error?.message || res?.error || ''))
+    closeCreate(); load()
+  }
+
+  // 存草稿(描述可留白,純暫存,只有自己看得到)
+  const saveDraft = async () => {
+    setBusy(true)
+    const { data: res, error } = editDraftId
+      ? await supabase.rpc('liff_update_repair_order_draft', { ...roPayload(), p_id: editDraftId, p_submit: false })
+      : await supabase.rpc('liff_create_repair_order', { ...roPayload(), p_is_draft: true })
+    setBusy(false)
+    if (error || !res?.ok) return alert('存草稿失敗：' + (error?.message || res?.error || ''))
+    closeCreate(); load()
   }
 
   if (loading) return <div className="page" style={{ textAlign: 'center', paddingTop: 60, color: 'var(--t3)' }}>載入中…</div>
 
-  const TABS = [{ key: 'open', label: '進行中' }, { key: 'done', label: '已完工' }, { key: 'all', label: '全部' }]
+  const TABS = [{ key: 'open', label: '進行中' }, { key: 'done', label: '已完工' }, { key: 'all', label: '全部' }, { key: 'draft', label: draftCount ? `草稿 ${draftCount}` : '草稿' }]
 
   return (
     <div className="page">
@@ -101,7 +137,7 @@ export default function RepairOrders() {
             <Building2 size={14} /> 管理
           </button>
         )}
-        <button onClick={() => { setForm(emptyForm()); setShowCreate(true) }}
+        <button onClick={() => { setForm(emptyForm()); setEditDraftId(null); setShowCreate(true) }}
           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '7px 12px', borderRadius: 8, border: 'none', background: 'var(--cyan)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
           <Plus size={15} /> 開單
         </button>
@@ -124,7 +160,7 @@ export default function RepairOrders() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {tabbed.map(o => (
-            <div key={o.id} onClick={() => openDetail(o.id)} style={{ padding: 14, borderRadius: 12, background: 'var(--card)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+            <div key={o.id} onClick={() => o.status === '草稿' ? openDraftEdit(o) : openDetail(o.id)} style={{ padding: 14, borderRadius: 12, background: 'var(--card)', border: '1px solid var(--border)', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, color: '#fff', background: STATUS[o.status] || 'var(--t3)' }}>{o.status}</span>
                 <span style={{ fontSize: 11, color: 'var(--t3)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -140,7 +176,7 @@ export default function RepairOrders() {
       )}
 
       {showManage && <ManageOverlay {...{ data, lineProfile, reload: load, onClose: () => setShowManage(false) }} />}
-      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose: () => setShowCreate(false) }} />}
+      {showCreate && <CreateOverlay {...{ form, set, data, busy, submitCreate, saveDraft, editDraftId, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose: closeCreate }} />}
       {detail && <DetailOverlay {...{ detail, me: data.me, stores: data.stores, categories: data.categories, vendors: data.vendors, lineProfile, busy, setBusy, navigate, onClose: () => setDetail(null), reload: () => { load(); openDetail(detail.order.id) } }} />}
     </div>
   )
@@ -162,9 +198,9 @@ function Overlay({ title, onClose, children }) {
 const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 14, boxSizing: 'border-box' }
 const labelStyle = { fontSize: 12, color: 'var(--t3)', marginBottom: 5, display: 'block' }
 
-function CreateOverlay({ form, set, data, busy, submitCreate, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose }) {
+function CreateOverlay({ form, set, data, busy, submitCreate, saveDraft, editDraftId, addingVendor, setAddingVendor, newVendor, setNewVendor, saveNewVendor, onClose }) {
   return (
-    <Overlay title="開維修單" onClose={onClose}>
+    <Overlay title={editDraftId ? '編輯草稿' : '開維修單'} onClose={onClose}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
           <label style={labelStyle}>處理方式 *</label>
@@ -239,7 +275,12 @@ function CreateOverlay({ form, set, data, busy, submitCreate, addingVendor, setA
         )}
         <button disabled={busy} onClick={submitCreate}
           style={{ padding: '12px', borderRadius: 10, border: 'none', background: 'var(--cyan)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>
-          {busy ? '送出中…' : '建立維修單'}
+          {busy ? '送出中…' : (editDraftId ? '送出' : '建立維修單')}
+        </button>
+        {/* 存草稿:先存不送,描述可留白,只有你自己看得到 */}
+        <button disabled={busy} onClick={saveDraft}
+          style={{ padding: '11px', borderRadius: 10, border: '1px solid var(--border)', background: 'transparent', color: 'var(--t2)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+          💾 存草稿（先存不送）
         </button>
       </div>
     </Overlay>
