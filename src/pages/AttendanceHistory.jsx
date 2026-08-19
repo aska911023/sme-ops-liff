@@ -24,16 +24,33 @@ const KNOWN_STATUS = new Set(['正常', '遲到', '外出', '未打卡', '補登
 // 遲到/早退：跟當天班表時段比。上班晚於班表=遲到、下班早於班表=早退（分鐘）；跨午夜班(end<=start)自動 +1440。
 // 對齊主系統 Attendance.jsx 的 lateEarly()。加班單的打卡是加班時段，不拿去比班表。
 const toMin = (t) => { if (!t) return null; const [h, m] = String(t).split(':'); return Number(h) * 60 + Number(m) }
-function lateEarly(r, sched) {
-  if (!r || !sched) return null
+function lateEarly(r, sched, rule) {
+  if (!r) return null
   if (r.overtime_request_id || r.clock_in_mode === 'overtime' || r.status === '加班') return null
-  let start = toMin(sched.start), end = toMin(sched.end)
-  if (start == null || end == null) return null
-  if (end <= start) end += 1440
   const ci = toMin(r.clock_in), coRaw = toMin(r.clock_out)
+  const isAdmin = rule?.category === 'admin'
+  let start, end, grace = 0
+  if (sched && sched.start && sched.end) {
+    // 有排班時段 → 照班表(行政也吃遲到寬限)
+    start = toMin(sched.start); end = toMin(sched.end)
+    if (start == null || end == null) return null
+    if (end <= start) end += 1440
+    grace = isAdmin ? (Number(rule.grace_minutes) || 0) : 0
+  } else if (isAdmin && rule.work_start && rule.work_end) {
+    // 行政沒排班 → 固定辦公時間 + 浮動制(對齊主系統/計薪);週末沒正常班不判
+    const dow = r.date ? new Date(`${r.date}T00:00:00`).getDay() : -1
+    if (dow === 0 || dow === 6) return null
+    const ws = toMin(String(rule.work_start).slice(0, 5)), we = toMin(String(rule.work_end).slice(0, 5))
+    grace = Number(rule.grace_minutes) || 0
+    const span = we - ws
+    start = ws
+    end = ci != null ? Math.min(Math.max(ci + span, we - grace), we + grace) : we
+  } else {
+    return null
+  }
   let late = 0, early = 0
-  if (ci != null && ci > start) late = ci - start
-  if (coRaw != null) { let co = coRaw; if (co < start) co += 1440; if (co < end) early = end - co }
+  if (ci != null && start != null) late = Math.max(0, ci - start - grace)
+  if (coRaw != null && end != null) { let co = coRaw; if (co < start) co += 1440; if (co < end) early = end - co }
   return (late > 0 || early > 0) ? { late, early } : null
 }
 
@@ -54,7 +71,7 @@ function clockOffSched(r, sched) {
 }
 
 // 顯示用狀態：過去日子「有上班沒下班」= 缺卡（異常），提醒補卡；跟班表不同（遲到/早退/0工時）= 異常；status 被污染時用打卡狀況推
-function computeDayStatus(r, dateStr, todayStr, sched, hasLeave) {
+function computeDayStatus(r, dateStr, todayStr, sched, hasLeave, rule) {
   const isPast = dateStr < todayStr
   // 沒打卡紀錄:有排班上班班(過去日) = 未打卡(異常);沒排班 = 無資料
   if (!r) return (sched && isPast) ? '未打卡' : null
@@ -71,10 +88,10 @@ function computeDayStatus(r, dateStr, todayStr, sched, hasLeave) {
   if (!isOuting && hasIn && hasOut && clockOffSched(r, sched)) return '打卡異常'      // 打卡時段與班表完全不符(在錯的時間打卡)
   // 當天有已核准請假 → 不判遲到/早退(對齊計薪:請假時段不該再罰;例後 2h 請假、打卡到接近假開始)
   if (!isOuting && !hasLeave) {
-    const le = lateEarly(r, sched)
-    if (le?.late > 0) return '遲到'      // 上班晚於班表
-    if (le?.early > 0) return '早退'     // 下班早於班表
-    if (!sched && r.is_late) return '遲到'  // 沒抓到班表時退回 server 端 is_late
+    const le = lateEarly(r, sched, rule)
+    if (le?.late > 0) return '遲到'      // 上班晚於班表(或行政固定辦公時間)
+    if (le?.early > 0) return '早退'     // 下班早於班表(或行政應下班)
+    if (!sched && rule?.category !== 'admin' && r.is_late) return '遲到'  // 非行政又沒班表 → 退回 server is_late
   }
   if (r.status && !KNOWN_STATUS.has(r.status)) {
     // status 是被污染的髒值（如 GPS 座標）→ 依打卡狀況重推
@@ -109,6 +126,7 @@ export default function AttendanceHistory() {
   const [schedules, setSchedules] = useState([])   // 當月排班時段（比對遲到/早退）
   const [overtimes, setOvertimes] = useState([])   // 已核准加班單 → 當天加班紀錄
   const [leaves, setLeaves] = useState([])         // 已核准請假 → 當天有假就不判遲到/早退(對齊計薪)
+  const [workRule, setWorkRule] = useState(null)   // 員工身分工時規則(行政固定辦公時間判遲到/早退)
   const [loading, setLoading] = useState(true)
   const [selectedRecord, setSelectedRecord] = useState(null)
 
@@ -123,12 +141,14 @@ export default function AttendanceHistory() {
       supabase.rpc('liff_list_overtime_requests', { p_line_user_id: lineUserId }),
       supabase.rpc('liff_get_my_schedule_month', { p_line_user_id: lineUserId, p_year_month: ym }),
       supabase.rpc('liff_list_leave_requests', { p_line_user_id: lineUserId }),
-    ]).then(([att, ot, sch, lv]) => {
+      supabase.rpc('liff_my_work_rule', { p_line_user_id: lineUserId }),
+    ]).then(([att, ot, sch, lv, wr]) => {
       setRecords(Array.isArray(att.data) ? att.data : [])
       setOvertimes((Array.isArray(ot.data) ? ot.data : [])
         .filter(o => o.status === '已核准' && String(o.date || '').startsWith(ym)))
       setSchedules(Array.isArray(sch.data) ? sch.data : [])
       setLeaves((Array.isArray(lv.data) ? lv.data : []).filter(l => l.status === '已核准'))
+      setWorkRule(wr.data || null)
       setLoading(false)
     })
   }, [lineUserId, ym])
@@ -253,7 +273,7 @@ export default function AttendanceHistory() {
             const dayOT = otByDate[cell.dateStr]
             const isToday = cell.dateStr === todayStr
             const isWeekend = i % 7 >= 5
-            const dStatus = computeDayStatus(r, cell.dateStr, todayStr, schedByDate[cell.dateStr], leaveDateSet.has(cell.dateStr))
+            const dStatus = computeDayStatus(r, cell.dateStr, todayStr, schedByDate[cell.dateStr], leaveDateSet.has(cell.dateStr), workRule)
             const sty = dStatus ? (STATUS_STYLE[dStatus] || null) : null
             const clickable = !!(r || dayOT || dStatus)   // 未打卡(有排班沒紀錄)也可點看詳情
             return (
@@ -320,7 +340,7 @@ export default function AttendanceHistory() {
             </div>
 
             {(() => {
-              const mStatus = computeDayStatus(selectedRecord, selectedRecord.date, todayStr, schedByDate[selectedRecord.date], leaveDateSet.has(selectedRecord.date))
+              const mStatus = computeDayStatus(selectedRecord, selectedRecord.date, todayStr, schedByDate[selectedRecord.date], leaveDateSet.has(selectedRecord.date), workRule)
               const isMissing = mStatus === '缺下班卡' || mStatus === '缺上班卡' || mStatus === '缺卡' || mStatus === '未打卡'
               return (
                 <>
@@ -356,9 +376,15 @@ export default function AttendanceHistory() {
               {selectedRecord.clock_in_mode === 'outing' && (
                 <div style={{ fontSize: 11, color: 'var(--green)', marginBottom: 4 }}>✈️ 外出打卡</div>
               )}
-              {selectedRecord.is_late && selectedRecord.late_minutes > 0 && (
-                <div style={{ fontSize: 11, color: 'var(--orange)' }}>⏰ 遲到 {selectedRecord.late_minutes} 分鐘</div>
-              )}
+              {(() => {
+                // 遲到/早退分鐘:用 lateEarly(行政固定辦公時間+浮動制、店員照班表);有核准請假不判
+                const le = leaveDateSet.has(selectedRecord.date) ? null
+                  : lateEarly(selectedRecord, schedByDate[selectedRecord.date], workRule)
+                return (<>
+                  {le?.late > 0 && <div style={{ fontSize: 11, color: 'var(--orange)' }}>⏰ 遲到 {le.late} 分鐘</div>}
+                  {le?.early > 0 && <div style={{ fontSize: 11, color: 'var(--orange)' }}>🏃 早退 {le.early} 分鐘</div>}
+                </>)
+              })()}
             </div>
 
             {/* 加班（另計，來自加班單起訖時間）— 跟當天正常班分開顯示 */}
