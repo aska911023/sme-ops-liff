@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { liff } from '../lib/liff'
 import TaskConfirmationList from '../components/TaskConfirmationList'
 import ChainTimeline from '../components/ChainTimeline'
+import ExtraSignerReplyCards from '../components/ExtraSignerReplyCards'
 // notifyApprovalEvent 已拔除 — leave/overtime/trip/expense/expense_request/correction 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508110000 expense_request + 20260508130000 hr_a_chain)
 // notifyShiftSwapEvent/notifyOffRequestEvent 暫時保留（off_request / shift_swap 還沒做 trigger）
@@ -1368,6 +1369,8 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
       {/* 展開內容 — 左右 2 TAB */}
       {expanded && (
         <div style={{ marginTop: 10 }}>
+          {/* 加簽回覆卡（左右滑）：發起加簽的人看得到加簽人的核准/退回備註 */}
+          <ExtraSignerReplyCards sourceTable="expense_requests" sourceId={er.id} />
           {/* TabBar（左右各占一半）*/}
           <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderBottom: '1px solid var(--border2)' }}>
             <button
@@ -1716,6 +1719,7 @@ function ExpenseSettleRow({ er, processing, handle, statusBadge }) {
       {/* 展開內容 */}
       {expanded && (
         <div style={{ marginTop: 10 }}>
+          <ExtraSignerReplyCards sourceTable="expense_settles" sourceId={er.id} />
           <div style={{ display: 'flex', gap: 0, marginBottom: 10, borderBottom: '1px solid var(--border2)' }}>
             <button onClick={() => setTab('basic')} style={{
               flex: 1, padding: '8px 12px', fontSize: 13, fontWeight: 700,
@@ -1915,6 +1919,7 @@ function SwapRow({ swap, role, processing, statusBadge, onApprove, onReject }) {
           marginTop: 10, padding: '10px 12px', borderRadius: 8,
           background: 'var(--card)', border: '1px solid var(--border2)',
         }}>
+          <ExtraSignerReplyCards sourceTable={sourceTable} sourceId={item.id} />
           {detailFields.map(([k, v]) => (
             <div key={k} style={{ display: 'flex', gap: 8, fontSize: 12, padding: '3px 0', borderBottom: '1px dashed var(--border2)' }}>
               <span style={{ color: 'var(--t3)', minWidth: 70, flexShrink: 0 }}>{k}</span>
