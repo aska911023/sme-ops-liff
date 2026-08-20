@@ -1184,6 +1184,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
   const [extraAssignee, setExtraAssignee] = useState('')
   const [extraReason, setExtraReason] = useState('')
   const [extraBusy, setExtraBusy] = useState(false)
+  const [extraNote, setExtraNote] = useState('')   // 核准加簽的選填備註（畫面可見輸入框）
 
   // 從 LINE 卡「🪶 加簽」按鈕跳過來：URL ?id=X&openAddSigner=1 → 自動展開 row + 開加簽表單
   const [urlParams] = useSearchParams()
@@ -1285,8 +1286,8 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
       reason = prompt('退回加簽原因（必填）：')
       if (!reason || !reason.trim()) { alert('必須填寫退回原因'); return }
     } else {
-      // 核准加簽：選填備註，發起加簽的下一關簽核人會看到（取消/留空都照樣核准）
-      note = prompt('核准備註（選填，發起加簽的人會看到）：')
+      // 核准加簽：吃畫面上可見的選填備註框（發起加簽的下一關會看到；留空照樣核准）
+      note = extraNote
     }
     setExtraBusy(true)
     const { error } = await supabase.rpc('process_extra_signer', {
@@ -1523,6 +1524,18 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
                 🪶 加簽待你處理
                 {pendingExtra?.reason && <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, color: 'var(--t1)' }}>原因：{pendingExtra.reason}</div>}
               </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--t2)', marginBottom: 4 }}>核准備註（選填）</div>
+              <textarea
+                value={extraNote}
+                onChange={e => setExtraNote(e.target.value)}
+                placeholder="例：金額合理，符合成本。發起加簽的人會看到"
+                rows={2}
+                style={{
+                  width: '100%', boxSizing: 'border-box', marginBottom: 8, padding: '8px 10px',
+                  borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)',
+                  color: 'var(--t1)', fontSize: 13, resize: 'vertical',
+                }}
+              />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button disabled={extraBusy} onClick={() => processExtra('approve')} style={{
                   flex: 3, padding: '10px', borderRadius: 10, border: 'none',
@@ -2159,6 +2172,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   const [extraAssignee, setExtraAssignee] = useState('')
   const [extraReason, setExtraReason] = useState('')
   const [extraBusy, setExtraBusy] = useState(false)
+  const [extraNote, setExtraNote] = useState('')   // 核准加簽的選填備註（畫面可見輸入框）
   const [extraErr, setExtraErr] = useState(null)
 
   // ⚠️ 不綁 expanded：加簽表單在 isPending 就會出現、不需展開卡片（見 ExpenseRequestRow 註解）
@@ -2246,8 +2260,8 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
       reason = prompt('退回加簽原因（必填）：')
       if (!reason || !reason.trim()) { alert('必須填寫退回原因'); return }
     } else {
-      // 核准加簽：選填備註，發起加簽的下一關簽核人會看到（取消/留空都照樣核准）
-      note = prompt('核准備註（選填，發起加簽的人會看到）：')
+      // 核准加簽：吃畫面上可見的選填備註框（發起加簽的下一關會看到；留空照樣核准）
+      note = extraNote
     }
     setExtraBusy(true)
     const { error } = await supabase.rpc('process_extra_signer', {
@@ -2376,6 +2390,18 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
                 🪶 加簽待你處理
                 {pendingExtra?.reason && <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, color: 'var(--t1)' }}>原因：{pendingExtra.reason}</div>}
               </div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--t2)', marginBottom: 4 }}>核准備註（選填）</div>
+              <textarea
+                value={extraNote}
+                onChange={e => setExtraNote(e.target.value)}
+                placeholder="例：金額合理，符合成本。發起加簽的人會看到"
+                rows={2}
+                style={{
+                  width: '100%', boxSizing: 'border-box', marginBottom: 8, padding: '8px 10px',
+                  borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)',
+                  color: 'var(--t1)', fontSize: 13, resize: 'vertical',
+                }}
+              />
               <div style={{ display: 'flex', gap: 8 }}>
                 <button disabled={extraBusy} onClick={() => processExtra('approve')} style={{
                   flex: 3, padding: '10px', borderRadius: 10, border: 'none',
