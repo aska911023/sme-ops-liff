@@ -1279,9 +1279,13 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
   const processExtra = async (action) => {
     if (!pendingExtra) return
     let reason = null
+    let note = null
     if (action === 'reject') {
       reason = prompt('退回加簽原因（必填）：')
       if (!reason || !reason.trim()) { alert('必須填寫退回原因'); return }
+    } else {
+      // 核准加簽：選填備註，發起加簽的下一關簽核人會看到（取消/留空都照樣核准）
+      note = prompt('核准備註（選填，發起加簽的人會看到）：')
     }
     setExtraBusy(true)
     const { error } = await supabase.rpc('process_extra_signer', {
@@ -1289,6 +1293,7 @@ function ExpenseRequestRow({ er, processing, handle, statusBadge }) {
       p_processor_id: me?.id,
       p_action: action,
       p_reject_reason: reason?.trim() || null,
+      p_note: note?.trim() || null,
     })
     setExtraBusy(false)
     if (error) { alert(`${action === 'approve' ? '核准' : '退回'}失敗：${error.message}`); return }
@@ -2231,9 +2236,13 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
   const processExtra = async (action) => {
     if (!pendingExtra) return
     let reason = null
+    let note = null
     if (action === 'reject') {
       reason = prompt('退回加簽原因（必填）：')
       if (!reason || !reason.trim()) { alert('必須填寫退回原因'); return }
+    } else {
+      // 核准加簽：選填備註，發起加簽的下一關簽核人會看到（取消/留空都照樣核准）
+      note = prompt('核准備註（選填，發起加簽的人會看到）：')
     }
     setExtraBusy(true)
     const { error } = await supabase.rpc('process_extra_signer', {
@@ -2241,6 +2250,7 @@ function Row({ item, type, processing, handle, statusBadge, body, approveLabel =
       p_processor_id: me?.id,
       p_action: action,
       p_reject_reason: reason?.trim() || null,
+      p_note: note?.trim() || null,
     })
     setExtraBusy(false)
     if (error) { alert(`${action === 'approve' ? '核准' : '退回'}失敗：${error.message}`); return }
