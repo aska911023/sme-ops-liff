@@ -20,7 +20,8 @@ const MENU_GROUPS = [
       { path: '/expense-request', icon: '📝', label: '非經常性費用申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
       { path: '/expenses', icon: '🧾', label: '經常性費用報銷', color: 'var(--yellow)', dim: 'rgba(251,191,36,0.15)' },
       { path: '/overtime', icon: '🕐', label: '加班申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },
-      { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)' },
+      // 出差申請入口已關閉(對齊 web 已移除;功能/頁面/審核都保留,要開回來取消下一行註解即可)
+      // { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)' },
       { path: '/off-request', icon: '🗓️', label: '排休申請', color: 'var(--cyan)', dim: 'var(--cyan-dim)' },
       { path: '/leave-of-absence', icon: '⏸️', label: '留職停薪', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)' },
       { path: '/transfer-request', icon: '📦', label: '商品調撥', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)' },

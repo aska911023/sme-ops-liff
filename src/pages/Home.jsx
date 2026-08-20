@@ -19,7 +19,8 @@ const MENUS = [
   { path: '/overtime', icon: '🕐', label: '加班申請', color: 'var(--orange)', dim: 'rgba(251,146,60,0.15)', desc: '加班申報' },
   { path: '/clock-correction', icon: '🔧', label: '補打卡', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)', desc: '補正打卡' },
   { path: '/approval-status', icon: '🛡️', label: '簽核狀態', color: 'var(--purple)', dim: 'rgba(167,139,250,0.15)', desc: '簽核進度' },
-  { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)', desc: '差旅申報' },
+  // 出差申請入口已關閉(對齊 web 已移除;功能/頁面/審核都保留,要開回來取消下一行註解即可)
+  // { path: '/business-trip', icon: '✈️', label: '出差申請', color: 'var(--blue)', dim: 'var(--blue-dim)', desc: '差旅申報' },
 ]
 
 // 主管專屬功能
