@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronDown, Lock } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import { jsPDF } from 'jspdf'
+import html2canvas from 'html2canvas'
 
 const SS_KEY = 'salary_unlocked'   // 本次 LIFF 開啟期間記住已解鎖
 
@@ -32,6 +34,7 @@ export default function Salary() {
   const [bagLoading, setBagLoading] = useState(false)
   const [expandAdd, setExpandAdd] = useState(true)  // 加項預設展開
   const [expandDed, setExpandDed] = useState(true)  // 減項預設展開
+  const [pdfBusy, setPdfBusy] = useState(false)     // 下載 PDF 中
 
   // 選定月份 → 抓引擎完整明細(跟 web 同源;實領以發布版為準)
   useEffect(() => {
@@ -242,8 +245,34 @@ export default function Salary() {
       pD('勞退自提', d.pension, { color: 'var(--orange)' })
       const absR = N(d.absenceDeduction) - N(d.unpaidDeduction) - N(d.halfPayDeduction) - N(d.awolDeduction)
       if (absR > 0) pD('其他缺勤', absR)
-      pD('無薪假', d.unpaidDeduction)
-      pD('半薪假', d.halfPayDeduction)
+      // 無薪/半薪 → 逐假別+日期(取代籠統的「無薪假」「半薪假」;員工看不懂哪筆)
+      //   金額用引擎總額(d.unpaidDeduction/d.halfPayDeduction)按各假別時數分攤,末筆吸收餘數 → 加總不變。
+      const _md = s => { const p = String(s).slice(0, 10).split('-'); return p.length === 3 ? `${+p[1]}/${+p[2]}` : String(s) }
+      const _fmtSpans = (spans) => {
+        const parts = spans.slice().sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([s, e]) => (e && e !== s) ? `${_md(s)}~${_md(e)}` : _md(s))
+        return parts.length <= 3 ? parts.join('、') : `${parts.slice(0, 2).join('、')}…`
+      }
+      const _leaveBreakdown = (total, typeSet, tag, fb) => {
+        if (N(total) <= 0) return
+        const grp = {}
+        ;(Array.isArray(d._leave_rows) ? d._leave_rows : []).filter(r => typeSet.has(r.type)).forEach(r => {
+          const g = grp[r.type] || (grp[r.type] = { days: 0, hours: 0, spans: [] })
+          g.days += N(r.days); g.hours += N(r.hours)
+          g.spans.push([String(r.date).slice(0, 10), String(r.end_date || r.date).slice(0, 10)])
+        })
+        const types = Object.keys(grp)
+        const th = types.reduce((s, t) => s + grp[t].hours, 0)
+        if (!types.length || th <= 0) { pD(fb, total); return }   // 對不到明細 → 退回籠統
+        let alloc = 0
+        types.forEach((t, i) => {
+          const g = grp[t]
+          const amt = (i === types.length - 1) ? Math.round(N(total)) - alloc : Math.round(N(total) * g.hours / th)
+          alloc += amt
+          if (amt > 0) pD(t, amt, { note: `${tag} · ${_fmtSpans(g.spans)}${g.days ? ` · ${g.days}天` : ''}` })
+        })
+      }
+      _leaveBreakdown(d.unpaidDeduction, new Set(['事假', 'personal', '無薪假', 'unpaid', '天災假', '天災', 'disaster']), '無薪', '無薪假')
+      _leaveBreakdown(d.halfPayDeduction, new Set(['病假', 'sick', '生理假', 'menstrual']), '半薪', '半薪假')
       if (N(d.awolDeduction) > 0) pD('曠職', d.awolDeduction, { note: (Array.isArray(d._awol_rows) && d._awol_rows.length) ? `${N(d.awolDays)} 天（${d._awol_rows.join('、')}）` : (N(d.awolDays) ? `${N(d.awolDays)} 天` : undefined) })
       if (N(d.lateDeduction) > 0) pD('遲到', d.lateDeduction, { note: N(d.lateMins) ? `${N(d.lateMins)} 分鐘` : undefined })
       if (N(d.earlyLeaveDeduction) > 0) pD('早退', d.earlyLeaveDeduction, { note: N(d.earlyLeaveMinutes) ? `${N(d.earlyLeaveMinutes)} 分鐘` : undefined })
@@ -291,6 +320,43 @@ export default function Salary() {
     if (dSum > 0) pD('微調減項', dSum, { note: dAdj.map(a => a.label).filter(Boolean).join('、') || undefined })
     return finalize(base, add, ded)
   })()
+
+  // ── 下載 PDF 薪資單:用 bagItems 在畫面外組一張「白底」單據 → html2canvas 截圖 → jsPDF(中文用圖片,不需嵌字型) ──
+  const downloadPdf = async () => {
+    if (!bagItems || pdfBusy) return
+    setPdfBusy(true)
+    try {
+      const m2 = v => 'NT$ ' + Math.round(Number(v) || 0).toLocaleString()
+      const rowHtml = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 2px;border-bottom:1px solid #eef2f6;font-size:14px"><span style="color:#33414f">${l}${note ? `<span style="color:#93a1b1;font-size:11px;margin-left:6px">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap">${v}</span></div>`
+      const el = document.createElement('div')
+      el.style.cssText = 'position:fixed;left:-9999px;top:0;width:520px;box-sizing:border-box;background:#ffffff;color:#1b2735;padding:28px 26px;font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;line-height:1.5'
+      el.innerHTML = `
+        <div style="text-align:center;font-size:13px;color:#8a99a8;letter-spacing:1px">威士威 · 薪資單</div>
+        <div style="text-align:center;font-size:21px;font-weight:800;margin-top:2px">${current?.employee || ''}</div>
+        <div style="text-align:center;font-size:13px;color:#8a99a8;margin-bottom:16px">${selectedMonth || ''}</div>
+        <div style="background:#eafbf6;border:1px solid #c9ecd9;border-radius:12px;padding:14px;text-align:center;margin-bottom:16px">
+          <div style="font-size:12px;color:#0f8a5f;letter-spacing:3px;font-weight:700">實 發 薪 資</div>
+          <div style="font-size:30px;font-weight:900;color:#075985;margin-top:2px">${m2(bagItems.net)}</div>
+        </div>
+        <div style="font-size:12px;font-weight:800;color:#5b6b7d;margin:6px 2px 2px">＋ 加項</div>
+        ${rowHtml('本薪', '+' + m2(bagItems.base), '#059669')}
+        ${bagItems.add.map(it => rowHtml(it.label, '+' + m2(it.value), '#059669', it.note)).join('')}
+        <div style="font-size:12px;font-weight:800;color:#5b6b7d;margin:12px 2px 2px">－ 減項</div>
+        ${bagItems.ded.map(it => rowHtml(it.label, '−' + m2(it.value), '#dc2626', it.note)).join('') || '<div style="font-size:13px;color:#93a1b1;padding:6px 2px">無</div>'}
+        <div style="display:flex;justify-content:space-between;margin-top:14px;padding-top:12px;border-top:2px solid #1b2735;font-size:16px;font-weight:800"><span>＝ 實領薪資</span><span style="color:#075985">${m2(bagItems.net)}</span></div>
+        <div style="text-align:center;margin-top:20px;font-size:10px;color:#aab4c0">本薪資單由系統產生 · ${new Date().toLocaleDateString('zh-TW')}</div>`
+      document.body.appendChild(el)
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true })
+      document.body.removeChild(el)
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+      const iw = 186, ih = canvas.height * iw / canvas.width
+      doc.addImage(canvas.toDataURL('image/png'), 'PNG', 12, 12, iw, Math.min(ih, 273))
+      doc.save(`薪資單-${current?.employee || ''}-${selectedMonth || ''}.pdf`)
+    } catch (e) {
+      alert('PDF 產生失敗：' + (e?.message || e))
+    }
+    setPdfBusy(false)
+  }
 
   return (
     <div className="page">
@@ -376,6 +442,14 @@ export default function Salary() {
                     <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--green)' }}>{money(bagItems.net)}</span>
                   </div>
                 </div>
+              )}
+              {bagItems && !bagLoading && (
+                <button onClick={downloadPdf} disabled={pdfBusy} style={{
+                  width: '100%', marginTop: 4, marginBottom: 4, padding: 13, borderRadius: 13, border: 'none',
+                  background: 'linear-gradient(135deg, #0891b2, #06b6d4)', color: '#fff',
+                  fontSize: 15, fontWeight: 800, cursor: 'pointer', opacity: pdfBusy ? 0.6 : 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}>📄 {pdfBusy ? '產生中…' : '下載 PDF 薪資單'}</button>
               )}
               {!bagLoading && !bagItems && (
                 <div className="card" style={{ textAlign: 'center', padding: 18, fontSize: 12, color: 'var(--t3)' }}>此月正式薪資明細尚未發布</div>
