@@ -350,8 +350,20 @@ export default function Salary() {
       document.body.removeChild(el)
       const doc = new jsPDF({ unit: 'mm', format: 'a4' })
       const iw = 186, ih = canvas.height * iw / canvas.width
-      doc.addImage(canvas.toDataURL('image/png'), 'PNG', 12, 12, iw, Math.min(ih, 273))
-      doc.save(`薪資單-${current?.employee || ''}-${selectedMonth || ''}.pdf`)
+      doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 12, 12, iw, Math.min(ih, 273))
+      const fname = `薪資單-${current?.employee || ''}-${selectedMonth || ''}.pdf`
+      const blob = doc.output('blob')
+      const file = new File([blob], fname, { type: 'application/pdf' })
+      // ★ LINE webview(尤其 iOS)擋 blob 下載 → 改用原生分享面板(可存檔案/轉傳);桌機才退回下載
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: fname }); setPdfBusy(false); return }
+        catch (e) { if (e?.name === 'AbortError') { setPdfBusy(false); return } /* 其他錯 → 往下退回下載 */ }
+      }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = fname; a.target = '_blank'; a.rel = 'noopener'
+      document.body.appendChild(a); a.click(); a.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
     } catch (e) {
       alert('PDF 產生失敗：' + (e?.message || e))
     }
