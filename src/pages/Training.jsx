@@ -164,8 +164,8 @@ export default function Training() {
           enrollments.map(e => {
             const st = STATUS_STYLE[e.status] || STATUS_STYLE['已報名']
             return (
-              <div key={e.id} style={{
-                padding: '14px 16px', marginBottom: 8, borderRadius: 14,
+              <div key={e.id} onClick={() => navigate(`/training/course/${e.course_id}`)} style={{
+                padding: '14px 16px', marginBottom: 8, borderRadius: 14, cursor: 'pointer',
                 background: 'var(--card)', border: '1px solid var(--border)',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'flex-start' }}>
@@ -193,7 +193,7 @@ export default function Training() {
                 )}
                 {e.status === '已報名' && (
                   <button
-                    onClick={() => cancel(e.id)}
+                    onClick={(ev) => { ev.stopPropagation(); cancel(e.id) }}
                     disabled={busy === e.id}
                     style={{
                       marginTop: 10, padding: '6px 12px', borderRadius: 8,
@@ -221,8 +221,8 @@ export default function Training() {
           browseList.map(c => {
             const full = c.max_enrollment != null && c.enrolled_count >= c.max_enrollment
             return (
-              <div key={c.id} style={{
-                padding: '14px 16px', marginBottom: 8, borderRadius: 14,
+              <div key={c.id} onClick={() => navigate(`/training/course/${c.id}`)} style={{
+                padding: '14px 16px', marginBottom: 8, borderRadius: 14, cursor: 'pointer',
                 background: 'var(--card)', border: '1px solid var(--border)',
                 opacity: c.i_enrolled ? 0.7 : 1,
               }}>
@@ -251,7 +251,7 @@ export default function Training() {
                     }}>✅ 已報名（{c.my_status}）</span>
                   ) : (
                     <button
-                      onClick={() => enroll(c.id)}
+                      onClick={(ev) => { ev.stopPropagation(); enroll(c.id) }}
                       disabled={full || busy === c.id}
                       style={{
                         padding: '8px 16px', borderRadius: 8, border: 'none',

@@ -45,6 +45,7 @@ import LeaveBalance from './pages/LeaveBalance'
 import Documents from './pages/Documents'
 import Benefits from './pages/Benefits'
 import Training from './pages/Training'
+import TrainingCourse from './pages/TrainingCourse'
 import Performance from './pages/Performance'
 import RejectReasonPopup from './pages/RejectReasonPopup'
 import StoreAudit from './pages/StoreAudit'
@@ -235,6 +236,7 @@ export default function App() {
         <Route path="/documents" element={<Documents />} />
         <Route path="/benefits" element={<Benefits />} />
         <Route path="/training" element={<Training />} />
+        <Route path="/training/course/:id" element={<TrainingCourse />} />
         <Route path="/performance" element={<Performance />} />
         <Route path="/reject-reason" element={<RejectReasonPopup />} />
         <Route path="/store-audit/:id" element={<StoreAudit />} />
