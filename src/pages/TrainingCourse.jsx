@@ -332,7 +332,8 @@ function Video({ url }) {
   const vm = url.match(/vimeo\.com\/(\d+)/)?.[1]
   // aspect-ratio 直接放 iframe(不用 paddingBottom+絕對定位+overflow,避免被裁成一角)
   const frame = { width: '100%', aspectRatio: '16 / 9', border: 'none', borderRadius: 12, display: 'block', background: '#000' }
-  if (yt) return <iframe style={frame} src={`https://www.youtube.com/embed/${yt}`} allowFullScreen title="video" />
+  // playsinline=1 讓 iOS(LINE webview)乖乖在框內播放不放大裁切;rel=0 播完不亂推薦
+  if (yt) return <iframe style={frame} src={`https://www.youtube.com/embed/${yt}?playsinline=1&rel=0`} allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="video" />
   if (vm) return <iframe style={frame} src={`https://player.vimeo.com/video/${vm}`} allowFullScreen title="video" />
-  return <video controls style={{ ...frame }} src={url} />
+  return <video controls playsInline style={{ ...frame }} src={url} />
 }
