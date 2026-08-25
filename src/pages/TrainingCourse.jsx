@@ -330,10 +330,11 @@ export default function TrainingCourse() {
 function Video({ url }) {
   const yt = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1]
   const vm = url.match(/vimeo\.com\/(\d+)/)?.[1]
-  // aspect-ratio 直接放 iframe(不用 paddingBottom+絕對定位+overflow,避免被裁成一角)
-  const frame = { width: '100%', aspectRatio: '16 / 9', border: 'none', borderRadius: 12, display: 'block', background: '#000' }
-  // playsinline=1 讓 iOS(LINE webview)乖乖在框內播放不放大裁切;rel=0 播完不亂推薦
-  if (yt) return <iframe style={frame} src={`https://www.youtube.com/embed/${yt}?playsinline=1&rel=0`} allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="video" />
-  if (vm) return <iframe style={frame} src={`https://player.vimeo.com/video/${vm}`} allowFullScreen title="video" />
-  return <video controls playsInline style={{ ...frame }} src={url} />
+  // 保證 16:9 的盒;iframe 給明確 1280x720 屬性,iOS 才會照 16:9 排版(不然用預設300x150→拉伸放大、播放鍵跑掉)
+  const wrap = { position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 12, background: '#000' }
+  const abs = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }
+  // playsinline=1 讓 iOS(LINE webview)在框內播放不放大裁切;rel=0 播完不亂推薦
+  if (yt) return <div style={wrap}><iframe src={`https://www.youtube.com/embed/${yt}?playsinline=1&rel=0`} width="1280" height="720" style={abs} allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="video" /></div>
+  if (vm) return <div style={wrap}><iframe src={`https://player.vimeo.com/video/${vm}`} width="1280" height="720" style={abs} allowFullScreen title="video" /></div>
+  return <video controls playsInline style={{ width: '100%', borderRadius: 12, background: '#000', display: 'block' }} src={url} />
 }
