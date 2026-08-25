@@ -27,6 +27,7 @@ export default function ClockCorrection() {
   const [form, setForm] = useState({ date: '', type: 'clock_in', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
   const [stores, setStores] = useState([])
   const [submitting, setSubmitting] = useState(false)
+  const [attachFiles, setAttachFiles] = useState([]) // 選填照片：{ file, preview }
 
   const reload = () => {
     if (!lineProfile?.lineUserId) return
@@ -44,8 +45,37 @@ export default function ClockCorrection() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files || [])
+    const added = files.map(f => ({ file: f, preview: URL.createObjectURL(f) }))
+    setAttachFiles(prev => [...prev, ...added].slice(0, 5))
+    e.target.value = ''
+  }
+  const removeAttach = (idx) => {
+    setAttachFiles(prev => {
+      try { URL.revokeObjectURL(prev[idx].preview) } catch {}
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
+  // 上傳到 attachments bucket → 走 DEFINER RPC 寫 form_attachments(form_type='correction'),HR 審核時看得到
+  const uploadAttachments = async (correctionId) => {
+    for (const { file } of attachFiles) {
+      const safeName = (file.name || 'photo.jpg').replace(/[\/\\?#%]+/g, '_').replace(/\s+/g, '_')
+      const path = `correction/${correctionId}-${Date.now()}-${safeName}`
+      const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { cacheControl: '3600', upsert: true })
+      if (upErr) { console.warn('附件上傳失敗:', upErr); continue }
+      const { error: rpcErr } = await supabase.rpc('liff_add_clock_correction_attachment', {
+        p_line_user_id: lineProfile.lineUserId, p_id: correctionId, p_storage_path: path,
+        p_file_name: safeName, p_file_size: file.size || null, p_mime_type: file.type || null,
+      })
+      if (rpcErr) console.warn('附件關聯失敗:', rpcErr)
+    }
+  }
+
   const resetForm = () => {
     setForm({ date: '', type: 'clock_in', correction_time: '', reason: '', store: '', clock_mode: 'normal' })
+    attachFiles.forEach(a => { try { URL.revokeObjectURL(a.preview) } catch {} })
+    setAttachFiles([])
     setEditingId(null)
     setShowForm(false)
   }
@@ -86,7 +116,7 @@ export default function ClockCorrection() {
     if (!form.store) { alert('請選擇補打卡門市'); return }
     setSubmitting(true)
 
-    const { error } = editingId
+    const { data, error } = editingId
       ? await supabase.rpc('liff_update_clock_correction', {
           p_line_user_id: lineProfile.lineUserId,
           p_id: editingId,
@@ -104,6 +134,12 @@ export default function ClockCorrection() {
           },
         })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
+
+    // 選填照片:送出成功後上傳並關聯到這張單(新單取回傳 id、編輯用 editingId)
+    const correctionId = editingId || data?.id
+    if (correctionId && attachFiles.length > 0) {
+      try { await uploadAttachments(correctionId) } catch (e) { console.warn('附件流程異常:', e) }
+    }
 
     // ★ 2026-05-08：client-side notifyNewSubmission 已拔除，由主系統 DB trigger 推送
 
@@ -192,6 +228,26 @@ export default function ClockCorrection() {
             <label className="form-label">補打卡原因 *</label>
             <textarea className="form-input" placeholder="例：忘記打卡、手機沒電..." value={form.reason} onChange={e => set('reason', e.target.value)} />
           </div>
+
+          <div className="form-group">
+            <label className="form-label">照片（選填）</label>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 10, background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--t2)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>
+              📷 上傳照片
+              <input type="file" accept="image/*" multiple hidden onChange={handleFileSelect} />
+            </label>
+            {attachFiles.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                {attachFiles.map((a, i) => (
+                  <div key={i} style={{ position: 'relative' }}>
+                    <img src={a.preview} alt="" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border2)' }} />
+                    <button type="button" onClick={() => removeAttach(i)} style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%', background: 'var(--red, #ef4444)', color: '#fff', border: 'none', fontSize: 13, lineHeight: '20px', cursor: 'pointer' }}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>💡 可附現場照片/證明,HR 審核時看得到(最多 5 張)</div>
+          </div>
+
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-success" style={{ flex: 3 }} onClick={handleSubmit} disabled={submitting}>
               {submitting ? '送出中...' : editingId ? '更新申請' : '送出申請'}
