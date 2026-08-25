@@ -328,13 +328,29 @@ export default function TrainingCourse() {
 }
 
 function Video({ url }) {
+  const [play, setPlay] = useState(false)
   const yt = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1]
   const vm = url.match(/vimeo\.com\/(\d+)/)?.[1]
-  // 保證 16:9 的盒;iframe 給明確 1280x720 屬性,iOS 才會照 16:9 排版(不然用預設300x150→拉伸放大、播放鍵跑掉)
-  const wrap = { position: 'relative', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 12, background: '#000' }
+  const wrap = { position: 'relative', width: '100%', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 12, background: '#000' }
   const abs = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }
-  // playsinline=1 讓 iOS(LINE webview)在框內播放不放大裁切;rel=0 播完不亂推薦
-  if (yt) return <div style={wrap}><iframe src={`https://www.youtube.com/embed/${yt}?playsinline=1&rel=0`} width="1280" height="720" style={abs} allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="video" /></div>
-  if (vm) return <div style={wrap}><iframe src={`https://player.vimeo.com/video/${vm}`} width="1280" height="720" style={abs} allowFullScreen title="video" /></div>
+  // lite-embed:預設放縮圖+自繪播放鍵(保證正中央),點擊才載入播放器並自動播放(iOS 最穩)
+  const PlayBtn = () => (
+    <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 64, height: 64, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.4)' }}>
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+    </span>
+  )
+  if (yt) {
+    if (play) return <div style={wrap}><iframe src={`https://www.youtube.com/embed/${yt}?autoplay=1&playsinline=1&rel=0`} width="1280" height="720" style={abs} allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowFullScreen title="video" /></div>
+    return (
+      <div style={{ ...wrap, cursor: 'pointer' }} onClick={() => setPlay(true)}>
+        <img src={`https://img.youtube.com/vi/${yt}/hqdefault.jpg`} alt="" style={{ ...abs, objectFit: 'cover' }} />
+        <PlayBtn />
+      </div>
+    )
+  }
+  if (vm) {
+    if (play) return <div style={wrap}><iframe src={`https://player.vimeo.com/video/${vm}?autoplay=1`} width="1280" height="720" style={abs} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="video" /></div>
+    return <div style={{ ...wrap, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPlay(true)}><PlayBtn /></div>
+  }
   return <video controls playsInline style={{ width: '100%', borderRadius: 12, background: '#000', display: 'block' }} src={url} />
 }
