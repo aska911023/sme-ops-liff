@@ -73,6 +73,26 @@ export default function TrainingCourse() {
     await load(); setView('list')
   }
 
+  const uploadAssignment = async (file) => {
+    if (!file || busy) return
+    if (file.size > 50 * 1024 * 1024) { alert('檔案過大(上限約 50MB)'); return }
+    setBusy(true)
+    try {
+      const safe = file.name.replace(/[^\w.\-]+/g, '_')
+      const path = `liff/${lesson.id}/${Date.now()}_${safe}`
+      const { error: upErr } = await supabase.storage.from('lms-uploads').upload(path, file, { upsert: true })
+      if (upErr) throw upErr
+      const { data: pub } = supabase.storage.from('lms-uploads').getPublicUrl(path)
+      const { data: r } = await supabase.rpc('liff_lms_submit_assignment', {
+        p_line_user_id: lid, p_lesson_id: lesson.id, p_file_url: pub.publicUrl, p_file_name: file.name,
+      })
+      if (!r?.ok) throw new Error(r?.error || '')
+      setResult({ pending: true }); setView('result')
+    } catch (e) {
+      alert('上傳失敗:' + (e.message || ''))
+    } finally { setBusy(false) }
+  }
+
   const questions = Array.isArray(lesson?.quiz_data) ? lesson.quiz_data : []
   const hasEssay = questions.some(q => qType(q) === 'essay')
   const passing = course.passing_score || 80
@@ -206,7 +226,23 @@ export default function TrainingCourse() {
         {lesson.type === 'video' && lesson.content ? (
           <Video url={lesson.content} />
         ) : lesson.type === 'assignment' ? (
-          <div style={S.card}>此為<b>作業上傳</b>單元,請用電腦(網頁版)上傳完成。</div>
+          <div>
+            <div style={{ ...S.card, whiteSpace: 'pre-wrap', lineHeight: 1.8, fontSize: 15, color: 'var(--t2)', marginBottom: 12 }}>
+              {lesson.content || '（此作業尚無說明）'}
+            </div>
+            {progress[lesson.id]?.completed ? (
+              <div style={{ ...S.card, color: 'var(--green)', fontWeight: 700 }}>✓ 作業已通過</div>
+            ) : data.submissions?.[lesson.id]?.status === 'submitted' ? (
+              <div style={{ ...S.card, color: 'var(--orange)', fontWeight: 700 }}>📤 已上傳,批閱中——管理者確認後才算完成。</div>
+            ) : (
+              <label style={{ ...S.btn, display: 'block', textAlign: 'center', cursor: busy ? 'default' : 'pointer' }}>
+                {busy ? '上傳中…' : '📤 上傳作業(拍照 / 選檔)'}
+                <input type="file" hidden accept="image/*,video/*,application/pdf" disabled={busy}
+                  onChange={e => uploadAssignment(e.target.files?.[0])} />
+              </label>
+            )}
+            <p style={{ fontSize: 12, color: 'var(--t3)', marginTop: 8 }}>支援照片 / 影片 / PDF,上限約 50MB。</p>
+          </div>
         ) : (
           <div style={{ ...S.card, whiteSpace: 'pre-wrap', lineHeight: 1.8, fontSize: 15, color: 'var(--t2)' }}>
             {lesson.content || '（此單元尚無內容）'}
