@@ -82,14 +82,30 @@ export default function TrainingCourse() {
       setAnswers(p => { const s = new Set(Array.isArray(p[i]) ? p[i] : []); s.has(oi) ? s.delete(oi) : s.add(oi); return { ...p, [i]: [...s].sort((a, b) => a - b) } })
     } else setAnswers(p => ({ ...p, [i]: oi }))
   }
+  const setEssay = (i, t) => setAnswers(p => ({ ...p, [i]: t }))
+  const isAnsweredQ = (q, i) => qType(q) === 'essay'
+    ? (typeof answers[i] === 'string' && answers[i].trim().length > 0)
+    : qType(q) === 'multiple' ? (Array.isArray(answers[i]) && answers[i].length > 0) : answers[i] !== undefined
+
   const submitQuiz = async () => {
-    const answered = questions.every((q, i) => qType(q) === 'multiple' ? (Array.isArray(answers[i]) && answers[i].length) : answers[i] !== undefined)
-    if (!answered) { alert('請回答所有題目'); return }
+    if (!questions.every(isAnsweredQ)) { alert('請回答所有題目'); return }
     const totalP = questions.reduce((s, q) => s + (q.points || 1), 0)
-    const earned = questions.reduce((s, q, i) => s + (isCorrect(q, answers[i]) ? (q.points || 1) : 0), 0)
-    const score = totalP ? Math.round((earned / totalP) * 100) : 0
-    const passed = score >= passing
+    // 客觀題自動得分(申論不計入,由後台批閱)
+    const autoP = questions.reduce((s, q, i) => s + (qType(q) !== 'essay' && isCorrect(q, answers[i]) ? (q.points || 1) : 0), 0)
     setBusy(true)
+    if (hasEssay) {
+      // 含申論 → 送後台批閱,不立即算完成
+      const answerArr = questions.map((q, i) => answers[i] ?? null)
+      const { data: r } = await supabase.rpc('liff_lms_submit_quiz_review', {
+        p_line_user_id: lid, p_lesson_id: lesson.id, p_answers: answerArr, p_auto_points: autoP, p_total_points: totalP,
+      })
+      setBusy(false)
+      if (!r?.ok) { alert('提交失敗'); return }
+      setResult({ pending: true }); setView('result')
+      return
+    }
+    const score = totalP ? Math.round((autoP / totalP) * 100) : 0
+    const passed = score >= passing
     const { data: r } = await supabase.rpc('liff_lms_submit_quiz', { p_line_user_id: lid, p_lesson_id: lesson.id, p_score: score, p_passed: passed })
     setBusy(false)
     if (!r?.ok) { alert('提交失敗'); return }
@@ -104,6 +120,16 @@ export default function TrainingCourse() {
 
   // ── 結果頁 ──
   if (view === 'result') {
+    if (result?.pending) {
+      return (
+        <div className="page" style={{ textAlign: 'center', paddingTop: 50 }}>
+          <div style={{ fontSize: 60 }}>📝</div>
+          <h2 style={{ margin: '12px 0 6px', color: 'var(--t1)' }}>已提交,等待批閱</h2>
+          <p style={{ color: 'var(--t2)', lineHeight: 1.7 }}>此測驗含申論題,需管理者人工批閱。<br />批閱完成後才會計算成績。</p>
+          <button style={{ ...S.btn, marginTop: 24 }} onClick={async () => { await load(); setView('list') }}>返回課程</button>
+        </div>
+      )
+    }
     const tierIcon = { 金: '🥇', 銀: '🥈', 銅: '🥉' }[result?.tier] || '🎓'
     return (
       <div className="page" style={{ textAlign: 'center', paddingTop: 50 }}>
@@ -130,18 +156,23 @@ export default function TrainingCourse() {
         <button className="back-btn" onClick={() => setView('list')}><ChevronLeft size={16} /> 返回課程</button>
         <h2 style={{ color: 'var(--t1)', fontSize: 18 }}>{lesson.title}</h2>
         <p style={{ color: 'var(--t3)', fontSize: 12, marginBottom: 14 }}>共 {questions.length} 題・及格 {passing} 分</p>
-        {hasEssay ? (
-          <div style={S.card}>此測驗含<b>申論題</b>,請用電腦(網頁版)作答完成。</div>
+        {data.submissions?.[lesson.id]?.status === 'submitted' && !progress[lesson.id]?.completed ? (
+          <div style={S.card}>📝 已提交,批閱中——管理者評分後才會計算成績。</div>
         ) : questions.length === 0 ? (
           <div style={S.card}>此測驗尚未設定題目</div>
         ) : (<>
           {questions.map((q, i) => {
+            const essay = qType(q) === 'essay'
             const multi = qType(q) === 'multiple'
             return (
               <div key={i} style={{ ...S.card }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)', marginBottom: 4 }}>{i + 1}. {q.question}</div>
-                <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 10 }}>{multi ? '複選・可多選' : qType(q) === 'truefalse' ? '是非題' : '單選題'}</div>
-                {(q.options || []).map((opt, oi) => {
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 10 }}>{essay ? '申論題・人工批閱' : multi ? '複選・可多選' : qType(q) === 'truefalse' ? '是非題' : '單選題'}</div>
+                {essay ? (
+                  <textarea value={typeof answers[i] === 'string' ? answers[i] : ''} onChange={e => setEssay(i, e.target.value)}
+                    placeholder="請輸入你的作答…" rows={5}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--card)', color: 'var(--t1)', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', resize: 'vertical' }} />
+                ) : (q.options || []).map((opt, oi) => {
                   const sel = multi ? (Array.isArray(answers[i]) && answers[i].includes(oi)) : answers[i] === oi
                   return (
                     <div key={oi} onClick={() => selectAns(i, oi)} style={{
@@ -157,6 +188,7 @@ export default function TrainingCourse() {
               </div>
             )
           })}
+          {hasEssay && <div style={{ fontSize: 12, color: 'var(--t3)', margin: '0 4px 8px' }}>※ 含申論題,提交後需管理者批閱才計成績。</div>}
           <button style={{ ...S.btn, marginTop: 8 }} disabled={busy} onClick={submitQuiz}>{busy ? '提交中…' : '提交測驗'}</button>
         </>)}
       </div>
@@ -230,6 +262,7 @@ export default function TrainingCourse() {
             <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--t2)', margin: '4px 4px 6px' }}>{sec.title}</div>
             {(sec.lessons || []).map(l => {
               const d = progress[l.id]?.completed
+              const pending = !d && data.submissions?.[l.id]?.status === 'submitted'
               const icon = l.type === 'video' ? '▶' : l.type === 'quiz' ? '📝' : l.type === 'assignment' ? '📤' : '📄'
               return (
                 <div key={l.id} onClick={() => enrollment && openLesson(l)} style={{
@@ -238,7 +271,9 @@ export default function TrainingCourse() {
                 }}>
                   <span style={{ fontSize: 16 }}>{icon}</span>
                   <div style={{ flex: 1, fontSize: 14, color: d ? 'var(--green)' : 'var(--t1)', fontWeight: 600 }}>{l.title}</div>
-                  {d ? <span style={{ color: 'var(--green)' }}>✓</span> : <span style={{ color: 'var(--t3)', fontSize: 12 }}>{l.duration_minutes}分</span>}
+                  {d ? <span style={{ color: 'var(--green)' }}>✓</span>
+                    : pending ? <span style={{ color: 'var(--orange)', fontSize: 12, fontWeight: 700 }}>批閱中</span>
+                    : <span style={{ color: 'var(--t3)', fontSize: 12 }}>{l.duration_minutes}分</span>}
                 </div>
               )
             })}
