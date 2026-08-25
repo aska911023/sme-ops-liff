@@ -57,7 +57,19 @@ export default function ClockCorrection() {
       return prev.filter((_, i) => i !== idx)
     })
   }
-  // 上傳到 attachments bucket → 走 DEFINER RPC 寫 form_attachments(form_type='correction'),HR 審核時看得到
+  // 新單:先把照片上傳到 storage 拿 path,回傳 meta 陣列(連同表單一起送出→同交易寫 form_attachments,送審卡片撈得到)
+  const uploadPhotosGetMeta = async () => {
+    const metas = []
+    for (const { file } of attachFiles) {
+      const safeName = (file.name || 'photo.jpg').replace(/[\/\\?#%]+/g, '_').replace(/\s+/g, '_')
+      const path = `correction/${lineProfile.lineUserId || 'anon'}-${Date.now()}-${metas.length}-${safeName}`
+      const { error: upErr } = await supabase.storage.from('attachments').upload(path, file, { cacheControl: '3600', upsert: true })
+      if (upErr) { console.warn('附件上傳失敗:', upErr); continue }
+      metas.push({ storage_path: path, file_name: safeName, file_size: file.size || null, mime_type: file.type || null })
+    }
+    return metas
+  }
+  // 編輯:單子已有 id,新增照片走既有 DEFINER RPC 逐張關聯
   const uploadAttachments = async (correctionId) => {
     for (const { file } of attachFiles) {
       const safeName = (file.name || 'photo.jpg').replace(/[\/\\?#%]+/g, '_').replace(/\s+/g, '_')
@@ -116,6 +128,12 @@ export default function ClockCorrection() {
     if (!form.store) { alert('請選擇補打卡門市'); return }
     setSubmitting(true)
 
+    // 新單:先上傳照片拿 path,連同表單一起送(同交易寫附件→送審 LINE 卡片撈得到照片)
+    let attachMeta = []
+    if (!editingId && attachFiles.length > 0) {
+      try { attachMeta = await uploadPhotosGetMeta() } catch (e) { console.warn('照片上傳異常:', e) }
+    }
+
     const { data, error } = editingId
       ? await supabase.rpc('liff_update_clock_correction', {
           p_line_user_id: lineProfile.lineUserId,
@@ -131,14 +149,14 @@ export default function ClockCorrection() {
             reason: form.reason,
             store: form.store,
             clock_mode: form.clock_mode,
+            attachments: attachMeta,
           },
         })
     if (error) { alert('送出失敗: ' + error.message); setSubmitting(false); return }
 
-    // 選填照片:送出成功後上傳並關聯到這張單(新單取回傳 id、編輯用 editingId)
-    const correctionId = editingId || data?.id
-    if (correctionId && attachFiles.length > 0) {
-      try { await uploadAttachments(correctionId) } catch (e) { console.warn('附件流程異常:', e) }
+    // 編輯:新增照片走既有單獨 RPC(已有 id)
+    if (editingId && attachFiles.length > 0) {
+      try { await uploadAttachments(editingId) } catch (e) { console.warn('附件流程異常:', e) }
     }
 
     // ★ 2026-05-08：client-side notifyNewSubmission 已拔除，由主系統 DB trigger 推送
