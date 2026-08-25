@@ -225,6 +225,13 @@ export default function TrainingCourse() {
         <p style={{ color: 'var(--t3)', fontSize: 12, marginBottom: 14 }}>🕐 {lesson.duration_minutes} 分鐘</p>
         {lesson.type === 'video' && lesson.content ? (
           <Video url={lesson.content} />
+        ) : lesson.type === 'pdf' ? (
+          lesson.content ? (
+            <div>
+              <iframe src={lesson.content} title="PDF" style={{ width: '100%', height: '56vh', border: '1px solid var(--border)', borderRadius: 12 }} />
+              <a href={lesson.content} target="_blank" rel="noreferrer" style={{ display: 'block', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, background: 'var(--cyan-dim)', color: 'var(--cyan)', fontWeight: 700, textDecoration: 'none' }}>在瀏覽器開啟 PDF ↗</a>
+            </div>
+          ) : <div style={S.card}>此單元尚無 PDF</div>
         ) : lesson.type === 'assignment' ? (
           <div>
             <div style={{ ...S.card, whiteSpace: 'pre-wrap', lineHeight: 1.8, fontSize: 15, color: 'var(--t2)', marginBottom: 12 }}>

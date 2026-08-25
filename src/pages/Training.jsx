@@ -29,19 +29,22 @@ export default function Training() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(null) // course id being processed
+  const [certs, setCerts] = useState([])
 
   const reload = async () => {
     if (!lineProfile?.lineUserId) return
     setLoading(true)
-    const [c, e] = await Promise.all([
+    const [c, e, cert] = await Promise.all([
       supabase.rpc('liff_list_training_courses', { p_line_user_id: lineProfile.lineUserId }),
       supabase.rpc('liff_list_my_enrollments', { p_line_user_id: lineProfile.lineUserId }),
+      supabase.rpc('liff_lms_my_certificates', { p_line_user_id: lineProfile.lineUserId }),
     ])
     if (c.data?.ok) setCourses(c.data.courses || [])
     if (e.data?.ok) {
       setEnrollments(e.data.enrollments || [])
       setSummary(e.data.summary || summary)
     }
+    if (cert.data?.ok) setCerts(cert.data.certificates || [])
     if (c.error || e.error) setError(c.error?.message || e.error?.message)
     setLoading(false)
   }
@@ -116,6 +119,10 @@ export default function Training() {
           <div className="stat-num" style={{ color: 'var(--purple)' }}>{summary.total_hours || 0}h</div>
           <div className="stat-label">已修時數</div>
         </div>
+        <div className="stat-box">
+          <div className="stat-num" style={{ color: 'var(--orange)' }}>{certs.length}</div>
+          <div className="stat-label">證照</div>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -126,6 +133,7 @@ export default function Training() {
         {[
           { key: 'mine', label: '我的課程', count: enrollments.length },
           { key: 'browse', label: '可報名', count: browseList.filter(c => !c.i_enrolled).length },
+          { key: 'certs', label: '證照', count: certs.length },
         ].map(t => (
           <button
             key={t.key}
@@ -264,6 +272,36 @@ export default function Training() {
                       {busy === c.id ? '報名中...' : full ? '已額滿' : '我要報名'}
                     </button>
                   )}
+                </div>
+              </div>
+            )
+          })
+        )
+      )}
+
+      {/* 我的證照 */}
+      {tab === 'certs' && (
+        certs.length === 0 ? (
+          <div className="empty">
+            <div style={{ fontSize: 48 }}>🎓</div>
+            <div style={{ fontSize: 13, color: 'var(--t3)', marginTop: 8 }}>尚未取得任何結業證照</div>
+          </div>
+        ) : (
+          certs.map(ct => {
+            const meta = { '金': '🥇', '銀': '🥈', '銅': '🥉' }[ct.tier] || '🎓'
+            return (
+              <div key={ct.id} style={{
+                padding: '14px 16px', marginBottom: 8, borderRadius: 14,
+                background: 'var(--card)', border: '1px solid var(--border)',
+                display: 'flex', alignItems: 'center', gap: 12,
+              }}>
+                <span style={{ fontSize: 28 }}>{meta}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--t1)' }}>{ct.course_title || '課程'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 4 }}>
+                    {ct.tier ? `${ct.tier}級` : ''}{ct.score != null ? ` · ${ct.score} 分` : ''}{ct.issued_at ? ` · ${String(ct.issued_at).slice(0, 10)}` : ''}
+                  </div>
+                  {ct.certificate_number && <div style={{ fontSize: 10, color: 'var(--t3)', marginTop: 2 }}>{ct.certificate_number}</div>}
                 </div>
               </div>
             )
