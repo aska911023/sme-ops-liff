@@ -330,9 +330,9 @@ export default function TrainingCourse() {
 function Video({ url }) {
   const yt = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1]
   const vm = url.match(/vimeo\.com\/(\d+)/)?.[1]
-  const wrap = { position: 'relative', paddingBottom: '56.25%', height: 0, borderRadius: 12, overflow: 'hidden', background: '#000' }
-  const frame = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }
-  if (yt) return <div style={wrap}><iframe style={frame} src={`https://www.youtube.com/embed/${yt}`} allowFullScreen title="video" /></div>
-  if (vm) return <div style={wrap}><iframe style={frame} src={`https://player.vimeo.com/video/${vm}`} allowFullScreen title="video" /></div>
-  return <video controls style={{ width: '100%', borderRadius: 12, background: '#000' }} src={url} />
+  // aspect-ratio 直接放 iframe(不用 paddingBottom+絕對定位+overflow,避免被裁成一角)
+  const frame = { width: '100%', aspectRatio: '16 / 9', border: 'none', borderRadius: 12, display: 'block', background: '#000' }
+  if (yt) return <iframe style={frame} src={`https://www.youtube.com/embed/${yt}`} allowFullScreen title="video" />
+  if (vm) return <iframe style={frame} src={`https://player.vimeo.com/video/${vm}`} allowFullScreen title="video" />
+  return <video controls style={{ ...frame }} src={url} />
 }
