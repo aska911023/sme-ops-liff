@@ -251,6 +251,21 @@ function PendingApprovalsView() {
       leavesEnriched = leavesEnriched.map(l => (lhMap[l.id] != null ? { ...l, disp_hours: lhMap[l.id] } : l))
     }
 
+    // 補打卡:pending RPC 沒回 form_attachments(選填照片)→ 加法小 RPC 補,主管審核看得到
+    let correctionsEnriched = rpc?.corrections || []
+    const correctionIds = correctionsEnriched.map(x => x.id).filter(Boolean)
+    if (correctionIds.length) {
+      const { data: ca } = await supabase.rpc('liff_correction_attachments_for_ids', {
+        p_line_user_id: lineProfile.lineUserId, p_ids: correctionIds,
+      })
+      const caMap = {}
+      for (const row of (ca || [])) {
+        const url = supabase.storage.from(row.storage_bucket || 'attachments').getPublicUrl(row.storage_path).data?.publicUrl
+        if (url) (caMap[row.form_id] = caMap[row.form_id] || []).push(url)
+      }
+      correctionsEnriched = correctionsEnriched.map(c => (caMap[c.id] ? { ...c, attachments: caMap[c.id] } : c))
+    }
+
     // 自訂表單:pending RPC 的 read-snapshot 改寫把 data_resolved 洗掉了(picker id 沒換成名字)
     //   → 前端補呼叫既有 anon 解析器 _resolve_form_submission_data(store/emp/dept picker id→name)
     const rawForms = rpc?.form_submissions || []
@@ -277,7 +292,7 @@ function PendingApprovalsView() {
       overtimes:               rpc?.overtimes               || [],
       trips:                   rpc?.trips                   || [],
       expenses:                rpc?.expenses                || [],
-      corrections:             rpc?.corrections             || [],
+      corrections:             correctionsEnriched,
       expense_requests:        erExpense,
       expense_settles:         settleExpense,
       order_requests:          erOrder,
@@ -898,6 +913,30 @@ function renderTab(tab, data, processing, handle, statusBadge, handleSwapPeer, h
             {({ clock_in: '上班打卡', clock_out: '下班打卡' }[c.type] || c.type || '上班打卡')}：{c.correction_time || '未填'}
           </div>
           {c.reason && <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 4 }}>{c.reason}</div>}
+          {Array.isArray(c.attachments) && c.attachments.length > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>📎 照片（{c.attachments.length}）</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {c.attachments.map((url, i) => {
+                  const isImg = /\.(jpe?g|png|gif|webp|heic|heif)(\?|$)/i.test(String(url))
+                  let fname = ''
+                  try { fname = decodeURIComponent(new URL(url).pathname.split('/').pop() || '').replace(/^\d+-\d+-/, '') } catch { fname = '' }
+                  fname = fname || `附件 ${i + 1}`
+                  return isImg ? (
+                    <a key={i} href={url} target="_blank" rel="noreferrer" title={fname}
+                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, maxWidth: 66, textDecoration: 'none' }}>
+                      <img src={url} alt={fname} loading="lazy"
+                        style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border2)' }} />
+                      <span style={{ fontSize: 9, color: 'var(--t3)', maxWidth: 66, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fname}</span>
+                    </a>
+                  ) : (
+                    <a key={i} href={url} target="_blank" rel="noreferrer"
+                      style={{ fontSize: 12, color: 'var(--cyan)', textDecoration: 'underline' }}>📄 {fname}</a>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </>}
       />
     ))
