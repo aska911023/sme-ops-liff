@@ -328,29 +328,26 @@ export default function TrainingCourse() {
 }
 
 function Video({ url }) {
-  const [play, setPlay] = useState(false)
   const yt = url.match(/(?:v=|youtu\.be\/)([^&?/]+)/)?.[1]
   const vm = url.match(/vimeo\.com\/(\d+)/)?.[1]
-  const wrap = { position: 'relative', width: '100%', paddingBottom: '56.25%', height: 0, overflow: 'hidden', borderRadius: 12, background: '#000' }
-  const abs = { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', border: 'none' }
-  // lite-embed:預設放縮圖+自繪播放鍵(保證正中央),點擊才載入播放器並自動播放(iOS 最穩)
+  // 縮圖用自然流 img(寬100%高自動,一定完整不裁);點擊用原生全螢幕播放(可放大、看完整)
   const PlayBtn = () => (
-    <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 64, height: 64, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.4)' }}>
+    <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: 64, height: 64, borderRadius: '50%', background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(0,0,0,0.4)' }}>
       <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
     </span>
   )
-  if (yt) {
-    if (play) return <div style={wrap}><iframe src={`https://www.youtube.com/embed/${yt}?autoplay=1&playsinline=1&rel=0`} width="1280" height="720" style={abs} allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowFullScreen title="video" /></div>
-    return (
-      <div style={{ ...wrap, cursor: 'pointer' }} onClick={() => setPlay(true)}>
-        <img src={`https://img.youtube.com/vi/${yt}/hqdefault.jpg`} alt="" style={{ ...abs, objectFit: 'cover' }} />
-        <PlayBtn />
-      </div>
-    )
-  }
-  if (vm) {
-    if (play) return <div style={wrap}><iframe src={`https://player.vimeo.com/video/${vm}?autoplay=1`} width="1280" height="720" style={abs} allow="autoplay; fullscreen; picture-in-picture" allowFullScreen title="video" /></div>
-    return <div style={{ ...wrap, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setPlay(true)}><PlayBtn /></div>
-  }
+  const hint = { position: 'absolute', left: 0, right: 0, bottom: 0, padding: '10px 12px', background: 'linear-gradient(transparent, rgba(0,0,0,0.75))', color: '#fff', fontSize: 12, fontWeight: 700 }
+  if (yt) return (
+    <a href={`https://www.youtube.com/watch?v=${yt}`} target="_blank" rel="noreferrer" style={{ display: 'block', position: 'relative', borderRadius: 12, overflow: 'hidden', textDecoration: 'none' }}>
+      <img src={`https://img.youtube.com/vi/${yt}/hqdefault.jpg`} alt="" style={{ width: '100%', height: 'auto', display: 'block' }} />
+      <PlayBtn />
+      <span style={hint}>點擊播放(全螢幕)↗</span>
+    </a>
+  )
+  if (vm) return (
+    <a href={`https://vimeo.com/${vm}`} target="_blank" rel="noreferrer" style={{ display: 'flex', position: 'relative', alignItems: 'center', justifyContent: 'center', height: 200, borderRadius: 12, background: '#000', textDecoration: 'none' }}>
+      <PlayBtn /><span style={hint}>點擊播放(全螢幕)↗</span>
+    </a>
+  )
   return <video controls playsInline style={{ width: '100%', borderRadius: 12, background: '#000', display: 'block' }} src={url} />
 }
