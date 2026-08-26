@@ -24,8 +24,33 @@ export default function Preorders() {
   const [form, setForm] = useState(emptyForm())
   const [editingId, setEditingId] = useState(null)
   const [submitting, setSubmitting] = useState(false)
+  const [search, setSearch] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const pad = n => String(n).padStart(2, '0')
+  const fmtDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  const applyPreset = (key) => {
+    const today = new Date()
+    if (key === 'today') { const t = fmtDate(today); setDateFrom(t); setDateTo(t) }
+    else if (key === '7d') { const s = new Date(today); s.setDate(s.getDate() - 6); setDateFrom(fmtDate(s)); setDateTo(fmtDate(today)) }
+    else if (key === 'month') { setDateFrom(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`); setDateTo(fmtDate(today)) }
+    else { setDateFrom(''); setDateTo('') }
+  }
+  const matchSearch = (r) => {
+    if (!search.trim()) return true
+    const q = search.trim().toLowerCase()
+    const inItems = (r.items || []).some(it => (it.name || '').toLowerCase().includes(q))
+    return [r.customer_name, r.phone, r.address].some(f => (f || '').toLowerCase().includes(q)) || inItems
+  }
+  const inDateRange = (r) => {
+    if (dateFrom && (r.order_date || '') < dateFrom) return false
+    if (dateTo && (r.order_date || '') > dateTo) return false
+    return true
+  }
   const setItem = (i, k, v) => setForm(f => ({ ...f, items: f.items.map((it, idx) => idx === i ? { ...it, [k]: v } : it) }))
   const addItem = () => setForm(f => ({ ...f, items: [...f.items, emptyItem()] }))
   const removeItem = (i) => setForm(f => ({ ...f, items: f.items.length > 1 ? f.items.filter((_, idx) => idx !== i) : f.items }))
@@ -136,9 +161,47 @@ export default function Preorders() {
         </div>
       )}
 
+      {!showForm && (() => {
+        const scoped = rows.filter(r => inDateRange(r) && matchSearch(r))
+        const counts = { all: scoped.length, 未出貨: scoped.filter(r => r.status === '未出貨').length, 已出貨: scoped.filter(r => r.status === '已出貨').length }
+        const pill = (key, label, n, cls) => {
+          const active = filterStatus === key
+          return (
+            <button onClick={() => setFilterStatus(active ? '' : key)} className={active ? cls : ''}
+              style={{ flex: 1, padding: '6px 4px', borderRadius: 10, cursor: 'pointer', textAlign: 'center',
+                border: `1.5px solid ${active ? 'transparent' : 'var(--border2)'}`, background: active ? undefined : 'var(--card)' }}>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>{n}</div>
+              <div style={{ fontSize: 11, color: active ? undefined : 'var(--t3)' }}>{label}</div>
+            </button>
+          )
+        }
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              {pill('', '全部', counts.all, 'badge-cyan')}
+              {pill('未出貨', '未出貨', counts.未出貨, 'badge-orange')}
+              {pill('已出貨', '已出貨', counts.已出貨, 'badge-green')}
+            </div>
+            <input className="form-input" style={{ marginBottom: 8 }} placeholder="🔍 搜尋姓名 / 電話 / 地址 / 品項" value={search} onChange={e => setSearch(e.target.value)} />
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+              <input className="form-input" type="date" style={{ flex: 1 }} value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+              <span style={{ color: 'var(--t3)' }}>~</span>
+              <input className="form-input" type="date" style={{ flex: 1 }} value={dateTo} onChange={e => setDateTo(e.target.value)} />
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[['today', '今天'], ['7d', '近7天'], ['month', '本月'], ['', '全部']].map(([k, l]) => (
+                <button key={l} onClick={() => applyPreset(k)} style={{ padding: '5px 12px', borderRadius: 99, fontSize: 12, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--t2)' }}>{l}</button>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
       {loading ? <div style={{ textAlign: 'center', color: 'var(--t3)', padding: 20 }}>載入中…</div>
-        : rows.length === 0 ? <div style={{ textAlign: 'center', color: 'var(--t3)', padding: 20 }}>沒有預購單</div>
-          : rows.map(r => (
+        : (() => {
+          const filtered = rows.filter(r => inDateRange(r) && matchSearch(r) && (!filterStatus || r.status === filterStatus))
+          return filtered.length === 0 ? <div style={{ textAlign: 'center', color: 'var(--t3)', padding: 20 }}>沒有預購單</div>
+            : filtered.map(r => (
             <div key={r.id} className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                 <div>
@@ -162,7 +225,8 @@ export default function Preorders() {
                 <button className="btn btn-sm" style={{ background: 'none', border: '1px solid var(--red, #ef4444)', color: 'var(--red, #ef4444)' }} onClick={() => handleDelete(r)}><Trash2 size={13} /></button>
               </div>
             </div>
-          ))}
+          ))
+        })()}
     </div>
   )
 }
