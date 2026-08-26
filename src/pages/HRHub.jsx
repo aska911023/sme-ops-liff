@@ -92,7 +92,7 @@ export default function HRHub() {
       .then(({ data }) => setCanCollection(data === true))
     supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'repair_order.manage' })
       .then(({ data }) => setCanRepair(data === true))
-    supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'nav.entry.process.preorders' })
+    supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'preorder.manage' })
       .then(({ data }) => setCanPreorder(data === true))
   }, [lineProfile?.lineUserId])
   // 門市稽核入口：能「填寫」(can_store_audit) 或能「查看」(can_view_store_audit：店長/督導/營運/稽核室/admin) 都顯示。
