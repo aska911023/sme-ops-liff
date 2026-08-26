@@ -82,6 +82,7 @@ export default function HRHub() {
   const [canRenovation, setCanRenovation] = useState(false)
   const [canCollection, setCanCollection] = useState(false)
   const [canRepair, setCanRepair] = useState(false)
+  const [canPreorder, setCanPreorder] = useState(false)
   useEffect(() => {
     if (!lineProfile?.lineUserId) return
     const luid = lineProfile.lineUserId
@@ -91,6 +92,8 @@ export default function HRHub() {
       .then(({ data }) => setCanCollection(data === true))
     supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'repair_order.manage' })
       .then(({ data }) => setCanRepair(data === true))
+    supabase.rpc('liff_has_permission', { p_line_user_id: luid, p_perm_code: 'nav.entry.process.preorders' })
+      .then(({ data }) => setCanPreorder(data === true))
   }, [lineProfile?.lineUserId])
   // 門市稽核入口：能「填寫」(can_store_audit) 或能「查看」(can_view_store_audit：店長/督導/營運/稽核室/admin) 都顯示。
   // can_store_audit=填寫權限 liff.store_audit；can_view_store_audit=後端算(view_all/店長/督導/稽核室/admin)。
@@ -127,10 +130,16 @@ export default function HRHub() {
         </>
       )}
 
-      {(canRenovation || canCollection || canRepair) && (
+      {(canRenovation || canCollection || canRepair || canPreorder) && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--orange)', marginBottom: 10 }}>業務工程</div>
           <div className="menu-grid" style={{ marginBottom: 20 }}>
+            {canPreorder && (
+              <Link to="/preorders" className="menu-item">
+                <div className="menu-icon" style={{ background: 'rgba(34,211,238,0.15)', border: '1.5px solid rgba(34,211,238,0.25)' }}>📦</div>
+                <div className="menu-label">線上預購</div>
+              </Link>
+            )}
             {canRepair && (
               <Link to="/repair-orders" className="menu-item">
                 <div className="menu-icon" style={{ background: 'rgba(34,211,238,0.15)', border: '1.5px solid rgba(34,211,238,0.25)' }}>🔨</div>

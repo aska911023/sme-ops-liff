@@ -56,6 +56,7 @@ import PersonnelTransfer from './pages/PersonnelTransfer'
 import StoreRepair from './pages/StoreRepair'
 import WorkOrders from './pages/WorkOrders'
 import RepairOrders from './pages/RepairOrders'
+import Preorders from './pages/Preorders'
 
 // CRM pages
 import NewCustomer from './pages/NewCustomer'
@@ -219,6 +220,7 @@ export default function App() {
         <Route path="/approve/:tabSlug" element={<Approve />} />
         <Route path="/task-confirmations" element={<TaskConfirmations />} />
         <Route path="/clock-correction" element={<ClockCorrection />} />
+        <Route path="/preorders" element={<Preorders />} />
         <Route path="/early-leave" element={<EarlyLeave />} />
         <Route path="/attendance-history" element={<AttendanceHistory />} />
         <Route path="/attendance-issues" element={<AttendanceIssues />} />
