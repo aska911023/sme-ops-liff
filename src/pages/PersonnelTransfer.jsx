@@ -6,12 +6,20 @@ import { supabase } from '../lib/supabase'
 
 const TRANSFER_TYPES = ['晉升', '降職', '平調', '部門調動', '門市調動', '職稱變更', '薪資調整', '其他']
 
+// 職位依 category 分組(福董在後台「職位管理」維護,走 liff_list_positions RPC)
+function groupPositions(list) {
+  const order = [], map = {}
+  for (const p of list) { const g = p.category || '其他'; if (!map[g]) { map[g] = []; order.push(g) } map[g].push(p) }
+  return order.map(g => ({ group: g, opts: map[g] }))
+}
+
 export default function PersonnelTransfer() {
   const { lineProfile } = useAuth()
   const navigate = useNavigate()
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [stores, setStores] = useState([])
+  const [positions, setPositions] = useState([])
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState(null)
   const [form, setForm] = useState({
@@ -31,6 +39,8 @@ export default function PersonnelTransfer() {
     if (!lineProfile?.lineUserId) return
     supabase.rpc('liff_list_stores', { p_line_user_id: lineProfile.lineUserId })
       .then(({ data }) => { if (Array.isArray(data)) setStores(data) })
+    supabase.rpc('liff_list_positions', { p_line_user_id: lineProfile.lineUserId })
+      .then(({ data }) => { if (Array.isArray(data)) setPositions(data) })
   }, [lineProfile])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -116,15 +126,19 @@ export default function PersonnelTransfer() {
             <label className="form-label">生效日期</label>
             <input className="form-input" type="date" value={form.effective_date} onChange={e => set('effective_date', e.target.value)} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div className="form-group">
-              <label className="form-label">新職稱</label>
-              <input className="form-input" type="text" placeholder="例：資深門市員" value={form.new_position} onChange={e => set('new_position', e.target.value)} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">新角色</label>
-              <input className="form-input" type="text" placeholder="例：store_staff" value={form.new_role} onChange={e => set('new_role', e.target.value)} />
-            </div>
+          <div className="form-group">
+            <label className="form-label">新職稱</label>
+            <select className="form-input" value={form.new_position} onChange={e => set('new_position', e.target.value)}>
+              <option value="">— 不異動 —</option>
+              {form.new_position && !positions.some(p => p.label === form.new_position) && (
+                <option value={form.new_position}>{form.new_position}(舊值)</option>
+              )}
+              {groupPositions(positions).map(g => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.opts.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
           </div>
           <div className="form-group">
             <label className="form-label">調往門市</label>
