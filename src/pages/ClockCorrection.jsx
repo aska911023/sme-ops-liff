@@ -3,6 +3,7 @@ import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import TimeSelect from '../components/TimeSelect'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
 // 補打卡只修「正常班」的打卡；加班走加班單（有起訖時間=打卡）、請假走請假單、換班走換班流程。
@@ -204,7 +205,7 @@ export default function ClockCorrection() {
             </div>
             <div className="form-group">
               <label className="form-label">補正時間</label>
-              <input className="form-input" type="time" value={form.correction_time} onChange={e => set('correction_time', e.target.value)} />
+              <TimeSelect value={form.correction_time} onChange={v => set('correction_time', v)} />
             </div>
           </div>
           <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 8 }}>

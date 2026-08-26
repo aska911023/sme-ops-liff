@@ -3,6 +3,7 @@ import { ChevronLeft } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import TimeSelect from '../components/TimeSelect'
 
 // 全部走 SECURITY DEFINER RPC 繞過 anon RLS（參考 feedback_liff_anon_rls）
 
@@ -112,12 +113,10 @@ export default function StoreAuditNew() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <Field label="到店時間">
-            <input type="time" value={arrive} onChange={e => setArrive(e.target.value)}
-              style={{ width: '100%', padding: 10, borderRadius: 8, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)' }} />
+            <TimeSelect value={arrive} onChange={setArrive} />
           </Field>
           <Field label="離店時間">
-            <input type="time" value={depart} onChange={e => setDepart(e.target.value)}
-              style={{ width: '100%', padding: 10, borderRadius: 8, background: 'var(--glass)', border: '1px solid var(--border)', color: 'var(--t1)' }} />
+            <TimeSelect value={depart} onChange={setDepart} />
           </Field>
         </div>
 

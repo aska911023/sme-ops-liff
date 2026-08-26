@@ -3,6 +3,7 @@ import { ChevronLeft, Plus, Pencil, Trash2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import TimeSelect from '../components/TimeSelect'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 
 // 加班應扣休息分鐘（沿用全系統階梯 = clock-in / scheduleUtils.getRestMinutes）：
@@ -245,21 +246,13 @@ export default function Overtime() {
           <div className="form-group" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
               <label className="form-label">加班起時</label>
-              <input className="form-input" type="time"
-                value={form.start_time}
-                onChange={e => {
-                  const v = e.target.value
-                  setForm(f => ({ ...f, start_time: v, hours: computeOvertimeHours(v, f.end_time, step) }))
-                }} />
+              <TimeSelect value={form.start_time}
+                onChange={v => setForm(f => ({ ...f, start_time: v, hours: computeOvertimeHours(v, f.end_time, step) }))} />
             </div>
             <div>
               <label className="form-label">加班訖時</label>
-              <input className="form-input" type="time"
-                value={form.end_time}
-                onChange={e => {
-                  const v = e.target.value
-                  setForm(f => ({ ...f, end_time: v, hours: computeOvertimeHours(f.start_time, v, step) }))
-                }} />
+              <TimeSelect value={form.end_time}
+                onChange={v => setForm(f => ({ ...f, end_time: v, hours: computeOvertimeHours(f.start_time, v, step) }))} />
             </div>
           </div>
           <div className="form-group">

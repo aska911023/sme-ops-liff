@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
+import TimeSelect from '../components/TimeSelect'
 // notifyNewSubmission 已拔除 — 簽核 LINE 統一走主系統 DB trigger
 // (sme-ops-system: 20260508130000_hr_a_chain_db_trigger.sql)
 
@@ -764,11 +765,11 @@ export default function Leave() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div className="form-group">
                 <label className="form-label">開始時間</label>
-                <input className="form-input" type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} />
+                <TimeSelect value={form.start_time} onChange={v => set('start_time', v)} />
               </div>
               <div className="form-group">
                 <label className="form-label">結束時間</label>
-                <input className="form-input" type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)} />
+                <TimeSelect value={form.end_time} onChange={v => set('end_time', v)} />
               </div>
             </div>
           )}
