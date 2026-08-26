@@ -8,6 +8,25 @@ import { supabase } from '../lib/supabase'
 // (sme-ops-system: 20260508130000_hr_a_chain_db_trigger.sql)
 
 const TYPES = ['特休', '事假', '病假', '補休', '公假', '天災', '婚假', '喪假', '產假', '陪產假', '育嬰假', '生理假', '產檢假', '家庭照顧假', '公傷病假']
+
+// 24 小時制時間下拉(每 30 分):取代原生 <input type="time">。
+// 原生時間輸入格式由 OS 控制,Android 常固定 12 小時制且看不出上/下午 → 想請下午6點卻存成早上6點。
+// 自訂下拉「06:00 / 18:00」一目瞭然、所有裝置一致。
+const TIME_OPTS = (() => {
+  const o = []
+  for (let h = 0; h < 24; h++) for (const m of ['00', '30']) o.push(`${String(h).padStart(2, '0')}:${m}`)
+  return o
+})()
+function TimeSelect({ value, onChange }) {
+  // 若現值非整/半點(如舊資料 09:15),保留它當第一個選項不遺失
+  const opts = (!value || TIME_OPTS.includes(value)) ? TIME_OPTS : [value, ...TIME_OPTS]
+  return (
+    <select className="form-input" value={value || ''} onChange={e => onChange(e.target.value)}>
+      {!value && <option value="" disabled>選擇時間</option>}
+      {opts.map(t => <option key={t} value={t}>{t}</option>)}
+    </select>
+  )
+}
 // 女性專屬假別(leave_types.gender='female'):男性員工下拉不顯示(後端 liff_insert_leave_request 亦有守門)
 const FEMALE_ONLY_TYPES = new Set(['生理假', '產假', '產檢假'])
 // 產假情形(對齊後端 maternity_max_days:56/28/7/5,依性平法)
@@ -764,11 +783,11 @@ export default function Leave() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
               <div className="form-group">
                 <label className="form-label">開始時間</label>
-                <input className="form-input" type="time" value={form.start_time} onChange={e => set('start_time', e.target.value)} />
+                <TimeSelect value={form.start_time} onChange={v => set('start_time', v)} />
               </div>
               <div className="form-group">
                 <label className="form-label">結束時間</label>
-                <input className="form-input" type="time" value={form.end_time} onChange={e => set('end_time', e.target.value)} />
+                <TimeSelect value={form.end_time} onChange={v => set('end_time', v)} />
               </div>
             </div>
           )}
