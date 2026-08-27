@@ -20,6 +20,16 @@ function stageTargets(amount) {
 const inp = { width: '100%', padding: '9px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--t1)', fontSize: 14, boxSizing: 'border-box' }
 const lbl = { fontSize: 12, fontWeight: 600, color: 'var(--t2)', marginBottom: 4, display: 'block' }
 
+// 匯款證明:上傳到 attachments bucket(anon 政策允許),回傳 path/name
+async function uploadProof(file) {
+  const safe = (file.name || 'proof').replace(/[\/\\?#%]+/g, '_').replace(/\s+/g, '_')
+  const path = 'collection/' + Date.now() + '-' + safe
+  const { error } = await supabase.storage.from('attachments').upload(path, file, { cacheControl: '3600', upsert: true })
+  if (error) { alert('上傳失敗:' + error.message); return null }
+  return { attachment_path: path, attachment_name: safe }
+}
+const proofUrl = (p) => p?.attachment_path ? supabase.storage.from('attachments').getPublicUrl(p.attachment_path).data?.publicUrl : null
+
 const TABS = [
   { key: 'deposit', label: '訂金', icon: '💰' },
   { key: 'franchise', label: '加盟金', icon: '🤝' },
@@ -90,6 +100,7 @@ function PaymentEditor({ rows, onAdd, onDelete, max }) {
   const [date, setDate] = useState(todayStr())
   const [amount, setAmount] = useState('')
   const [note, setNote] = useState('')
+  const [file, setFile] = useState(null)
   const [busy, setBusy] = useState(false)
   const remaining = Math.max(0, n(max))
   const full = remaining <= 0.5
@@ -97,26 +108,32 @@ function PaymentEditor({ rows, onAdd, onDelete, max }) {
     if (n(amount) <= 0) { alert('金額要 > 0'); return }
     if (n(amount) > remaining + 0.5) { alert(`超過剩餘上限，最多再記 ${fmt(remaining)}`); return }
     setBusy(true)
-    const ok = await onAdd({ paid_date: date, amount: n(amount), note })
+    let att = {}
+    if (file) { const up = await uploadProof(file); if (!up) { setBusy(false); return } att = up }
+    const ok = await onAdd({ paid_date: date, amount: n(amount), note, ...att })
     setBusy(false)
-    if (ok) { setAmount(''); setNote('') }
+    if (ok) { setAmount(''); setNote(''); setFile(null) }
   }
   return (
     <div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
         {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--t3)' }}>尚無收款</div>}
-        {rows.map(p => (
-          <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 9px', borderRadius: 6, background: 'var(--bg)', fontSize: 12 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ color: 'var(--t2)' }}>{p.paid_date}</span>
-              {p.note && <span style={{ color: 'var(--t3)' }}>{p.note}</span>}
+        {rows.map(p => {
+          const url = proofUrl(p)
+          return (
+            <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 9px', borderRadius: 6, background: 'var(--bg)', fontSize: 12 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ color: 'var(--t2)' }}>{p.paid_date}</span>
+                {p.note && <span style={{ color: 'var(--t3)' }}>{p.note}</span>}
+                {url && <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--cyan)', textDecoration: 'none' }}>📎 匯款證明</a>}
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ color: 'var(--green)', fontWeight: 700 }}>{fmt(p.amount)}</span>
+                <button onClick={() => onDelete(p)} style={{ background: 'none', border: 'none', color: 'var(--red)', padding: 0 }}><Trash2 size={13} /></button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ color: 'var(--green)', fontWeight: 700 }}>{fmt(p.amount)}</span>
-              <button onClick={() => onDelete(p)} style={{ background: 'none', border: 'none', color: 'var(--red)', padding: 0 }}><Trash2 size={13} /></button>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       {full ? (
         <div style={{ fontSize: 12, color: 'var(--green)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}><Check size={13} /> 已收滿</div>
@@ -130,6 +147,11 @@ function PaymentEditor({ rows, onAdd, onDelete, max }) {
             <input style={{ ...inp, flex: 1 }} placeholder="備註（選填）" value={note} onChange={e => setNote(e.target.value)} />
             <button onClick={submit} disabled={busy} style={{ padding: '0 16px', borderRadius: 8, border: 'none', background: 'var(--green)', color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' }}>{busy ? '…' : '記一筆'}</button>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: file ? 'var(--green)' : 'var(--t3)', cursor: 'pointer' }}>
+            📎 {file ? file.name : '匯款證明（選填）'}
+            <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }} onChange={e => setFile(e.target.files?.[0] || null)} />
+            {file && <button type="button" onClick={(e) => { e.preventDefault(); setFile(null) }} style={{ background: 'none', border: 'none', color: 'var(--red)', padding: 0 }}><X size={13} /></button>}
+          </label>
         </div>
       )}
     </div>
@@ -265,8 +287,8 @@ function DepositTab({ d, luid, addInvestor, reload }) {
             {isExp && (
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                 <PaymentEditor rows={paysByDep[dep.id] || []} max={n(dep.target_amount) - n(dep.paid_total)}
-                  onAdd={async ({ paid_date, amount, note }) => {
-                    const { data } = await supabase.rpc('liff_add_deposit_payment', { p_line_user_id: luid, p_deposit_id: dep.id, p_paid_date: paid_date, p_amount: amount, p_note: note || '' })
+                  onAdd={async ({ paid_date, amount, note, attachment_path, attachment_name }) => {
+                    const { data } = await supabase.rpc('liff_add_deposit_payment', { p_line_user_id: luid, p_deposit_id: dep.id, p_paid_date: paid_date, p_amount: amount, p_note: note || '', p_attachment_path: attachment_path || null, p_attachment_name: attachment_name || null })
                     if (!data?.ok) { alert('新增失敗：' + (data?.error || '')); return false }
                     reload(); return true
                   }}
@@ -408,8 +430,8 @@ function FranchiseTab({ d, luid, addInvestor, reload }) {
                               <div style={{ fontWeight: 600, fontSize: 12, marginBottom: 6 }}>第 {stage} 期 <span style={{ color: 'var(--t3)', fontWeight: 400 }}>（{pct}%）</span></div>
                               <div style={{ marginBottom: 6 }}><Progress paid={paidStages[si]} target={targets[si]} /></div>
                               <PaymentEditor rows={stagePays} max={targets[si] - paidStages[si]}
-                                onAdd={async ({ paid_date, amount, note }) => {
-                                  const { data } = await supabase.rpc('liff_add_franchise_payment', { p_line_user_id: luid, p_ff_id: f.id, p_investor_id: ffi.investor_id, p_stage: stage, p_paid_date: paid_date, p_amount: amount, p_note: note || '' })
+                                onAdd={async ({ paid_date, amount, note, attachment_path, attachment_name }) => {
+                                  const { data } = await supabase.rpc('liff_add_franchise_payment', { p_line_user_id: luid, p_ff_id: f.id, p_investor_id: ffi.investor_id, p_stage: stage, p_paid_date: paid_date, p_amount: amount, p_note: note || '', p_attachment_path: attachment_path || null, p_attachment_name: attachment_name || null })
                                   if (!data?.ok) { alert('新增失敗：' + (data?.error || '')); return false }
                                   reload(); return true
                                 }}
