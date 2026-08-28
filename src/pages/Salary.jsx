@@ -37,6 +37,8 @@ export default function Salary() {
   const [expandDed, setExpandDed] = useState(true)  // 減項預設展開
   const [pdfBusy, setPdfBusy] = useState(false)     // 下載 PDF 中
   const [pdfLink, setPdfLink] = useState(null)      // 保險:簽名網址,自動跳瀏覽器沒成功時給使用者手動點
+  const [org, setOrg] = useState(null)              // 公司信頭:logo/名稱/地址/統編
+  const [logoData, setLogoData] = useState(null)    // logo 轉 dataURL(避免 html2canvas CORS 汙染)
 
   // 選定月份 → 抓引擎完整明細(跟 web 同源;實領以發布版為準)
   useEffect(() => {
@@ -48,6 +50,24 @@ export default function Salary() {
       .finally(() => { if (!cancelled) setBagLoading(false) })
     return () => { cancelled = true }
   }, [lineProfile, unlocked, selectedMonth])
+
+  // 公司信頭資訊(薪資單 PDF 用)+ logo 先轉 dataURL,產 PDF 時 html2canvas 才不會因跨域汙染 canvas
+  useEffect(() => {
+    if (!lineProfile?.lineUserId) return
+    let cancelled = false
+    supabase.rpc('liff_get_org_info', { p_line_user_id: lineProfile.lineUserId }).then(({ data }) => {
+      if (cancelled || !data?.ok) return
+      setOrg(data)
+      if (data.logo_url) {
+        fetch(data.logo_url).then(r => r.blob()).then(b => {
+          const fr = new FileReader()
+          fr.onload = () => { if (!cancelled) setLogoData(fr.result) }
+          fr.readAsDataURL(b)
+        }).catch(() => {})
+      }
+    })
+    return () => { cancelled = true }
+  }, [lineProfile])
 
   // 閘門：查 has_pin（未解鎖時）
   useEffect(() => {
@@ -330,24 +350,44 @@ export default function Salary() {
     const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent || '')
     try {
       const m2 = v => 'NT$ ' + Math.round(Number(v) || 0).toLocaleString()
-      const rowHtml = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 2px;border-bottom:1px solid #eef2f6;font-size:14px"><span style="color:#33414f">${l}${note ? `<span style="color:#93a1b1;font-size:11px;margin-left:6px">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap">${v}</span></div>`
+      const addTotal = (Number(bagItems.base) || 0) + (bagItems.add || []).reduce((s, it) => s + (Number(it.value) || 0), 0)
+      const dedTotal = (bagItems.ded || []).reduce((s, it) => s + (Number(it.value) || 0), 0)
+      const row = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 4px;border-bottom:1px solid #eef2f6;font-size:13.5px"><span style="color:#3a4a5a">${l}${note ? `<span style="color:#9aa7b5;font-size:11px;margin-left:6px;font-weight:400">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap;font-variant-numeric:tabular-nums">${v}</span></div>`
+      const secHead = (t, sub, sc) => `<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 4px 4px"><span style="font-size:12px;font-weight:800;color:#14283c;letter-spacing:2px">${t}</span><span style="font-size:12.5px;font-weight:800;color:${sc || '#9aa7b5'};font-variant-numeric:tabular-nums">${sub}</span></div>`
+      const orgName = org?.name || '威耀時代股份有限公司'
+      const orgMeta = [org?.address, org?.tax_id ? `統一編號 ${org.tax_id}` : '', org?.phone ? `TEL ${org.phone}` : ''].filter(Boolean).join('　·　')
       const el = document.createElement('div')
-      el.style.cssText = 'position:fixed;left:-9999px;top:0;width:520px;box-sizing:border-box;background:#ffffff;color:#1b2735;padding:28px 26px;font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;line-height:1.5'
+      el.style.cssText = 'position:fixed;left:-9999px;top:0;width:540px;box-sizing:border-box;background:#ffffff;color:#14283c;padding:32px 30px;font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;line-height:1.5'
       el.innerHTML = `
-        <div style="text-align:center;font-size:13px;color:#8a99a8;letter-spacing:1px">威士威 · 薪資單</div>
-        <div style="text-align:center;font-size:21px;font-weight:800;margin-top:2px">${current?.employee || ''}</div>
-        <div style="text-align:center;font-size:13px;color:#8a99a8;margin-bottom:16px">${selectedMonth || ''}</div>
-        <div style="background:#eafbf6;border:1px solid #c9ecd9;border-radius:12px;padding:14px;text-align:center;margin-bottom:16px">
-          <div style="font-size:12px;color:#0f8a5f;letter-spacing:3px;font-weight:700">實 發 薪 資</div>
-          <div style="font-size:30px;font-weight:900;color:#075985;margin-top:2px">${m2(bagItems.net)}</div>
+        <div style="display:flex;align-items:center;gap:13px;padding-bottom:14px;border-bottom:2.5px solid #14283c">
+          ${logoData ? `<img src="${logoData}" style="width:46px;height:46px;object-fit:contain;flex-shrink:0"/>` : ''}
+          <div style="min-width:0">
+            <div style="font-size:17px;font-weight:900;color:#14283c;letter-spacing:0.5px">${orgName}</div>
+            ${orgMeta ? `<div style="font-size:10.5px;color:#8a99a8;margin-top:3px;line-height:1.5">${orgMeta}</div>` : ''}
+          </div>
         </div>
-        <div style="font-size:12px;font-weight:800;color:#5b6b7d;margin:6px 2px 2px">＋ 加項</div>
-        ${rowHtml('本薪', '+' + m2(bagItems.base), '#059669')}
-        ${bagItems.add.map(it => rowHtml(it.label, '+' + m2(it.value), '#059669', it.note)).join('')}
-        <div style="font-size:12px;font-weight:800;color:#5b6b7d;margin:12px 2px 2px">－ 減項</div>
-        ${bagItems.ded.map(it => rowHtml(it.label, '−' + m2(it.value), '#dc2626', it.note)).join('') || '<div style="font-size:13px;color:#93a1b1;padding:6px 2px">無</div>'}
-        <div style="display:flex;justify-content:space-between;margin-top:14px;padding-top:12px;border-top:2px solid #1b2735;font-size:16px;font-weight:800"><span>＝ 實領薪資</span><span style="color:#075985">${m2(bagItems.net)}</span></div>
-        <div style="text-align:center;margin-top:20px;font-size:10px;color:#aab4c0">本薪資單由系統產生 · ${new Date().toLocaleDateString('zh-TW')}</div>`
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px">
+          <div>
+            <div style="font-size:10px;color:#9aa7b5;letter-spacing:3px;font-weight:700">SALARY STATEMENT</div>
+            <div style="font-size:19px;font-weight:900;color:#14283c;margin-top:2px">薪資明細表</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:18px;font-weight:800;color:#14283c">${current?.employee || ''}</div>
+            <div style="font-size:12px;color:#8a99a8;margin-top:2px">${selectedMonth || ''}</div>
+          </div>
+        </div>
+        <div style="background:linear-gradient(135deg,#0e7490,#0891b2);border-radius:14px;padding:16px 20px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;color:#ffffff">
+          <span style="font-size:13px;letter-spacing:5px;font-weight:700;opacity:0.94">實 發 薪 資</span>
+          <span style="font-size:28px;font-weight:900;font-variant-numeric:tabular-nums">${m2(bagItems.net)}</span>
+        </div>
+        ${secHead('加項', '+' + m2(addTotal), '#059669')}
+        ${row('本薪', '+' + m2(bagItems.base), '#059669')}
+        ${bagItems.add.map(it => row(it.label, '+' + m2(it.value), '#059669', it.note)).join('')}
+        ${secHead('減項', dedTotal > 0 ? '−' + m2(dedTotal) : '無', dedTotal > 0 ? '#dc2626' : '#9aa7b5')}
+        ${bagItems.ded.map(it => row(it.label, '−' + m2(it.value), '#dc2626', it.note)).join('') || '<div style="font-size:13px;color:#9aa7b5;padding:8px 4px">無減項</div>'}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding:14px 4px;border-top:2px solid #14283c;font-size:16px;font-weight:900;color:#14283c"><span>實領薪資</span><span style="color:#0e7490;font-variant-numeric:tabular-nums">${m2(bagItems.net)}</span></div>
+        <div style="margin-top:22px;padding-top:12px;border-top:1px solid #edf1f5;display:flex;justify-content:space-between;font-size:10px;color:#aab4c0"><span>本薪資單由系統自動產生</span><span>製表日 ${new Date().toLocaleDateString('zh-TW')}</span></div>
+        <div style="text-align:center;font-size:9.5px;color:#c2cbd4;margin-top:6px">※ 本薪資單屬個人機密文件，請妥善保管</div>`
       document.body.appendChild(el)
       const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true })
       document.body.removeChild(el)
