@@ -355,7 +355,7 @@ export default function Salary() {
       const row = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 4px;border-bottom:1px solid #eef2f6;font-size:13.5px"><span style="color:#3a4a5a">${l}${note ? `<span style="color:#9aa7b5;font-size:11px;margin-left:6px;font-weight:400">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap;font-variant-numeric:tabular-nums">${v}</span></div>`
       const secHead = (t, sub, sc) => `<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 4px 4px"><span style="font-size:12px;font-weight:800;color:#14283c;letter-spacing:2px">${t}</span><span style="font-size:12.5px;font-weight:800;color:${sc || '#9aa7b5'};font-variant-numeric:tabular-nums">${sub}</span></div>`
       const orgName = org?.name || '威耀時代股份有限公司'
-      const orgMeta = [org?.address, org?.tax_id ? `統一編號 ${org.tax_id}` : '', org?.phone ? `TEL ${org.phone}` : ''].filter(Boolean).join('　·　')
+      const orgLine2 = [org?.tax_id ? `統一編號 ${org.tax_id}` : '', org?.phone ? `TEL ${org.phone}` : ''].filter(Boolean).join('　·　')
       const el = document.createElement('div')
       el.style.cssText = 'position:fixed;left:-9999px;top:0;width:540px;box-sizing:border-box;background:#ffffff;color:#14283c;padding:32px 30px;font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;line-height:1.5'
       el.innerHTML = `
@@ -363,7 +363,8 @@ export default function Salary() {
           ${logoData ? `<img src="${logoData}" style="width:68px;height:68px;object-fit:contain;flex-shrink:0"/>` : ''}
           <div style="min-width:0">
             <div style="font-size:17px;font-weight:900;color:#14283c;letter-spacing:0.5px">${orgName}</div>
-            ${orgMeta ? `<div style="font-size:10.5px;color:#8a99a8;margin-top:3px;line-height:1.5">${orgMeta}</div>` : ''}
+            ${org?.address ? `<div style="font-size:10.5px;color:#8a99a8;margin-top:3px;line-height:1.6">${org.address}</div>` : ''}
+            ${orgLine2 ? `<div style="font-size:10.5px;color:#8a99a8;line-height:1.6">${orgLine2}</div>` : ''}
           </div>
         </div>
         <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px">
