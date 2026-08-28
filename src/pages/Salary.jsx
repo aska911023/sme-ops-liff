@@ -352,8 +352,8 @@ export default function Salary() {
       const m2 = v => 'NT$ ' + Math.round(Number(v) || 0).toLocaleString()
       const addTotal = (Number(bagItems.base) || 0) + (bagItems.add || []).reduce((s, it) => s + (Number(it.value) || 0), 0)
       const dedTotal = (bagItems.ded || []).reduce((s, it) => s + (Number(it.value) || 0), 0)
-      const row = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 4px;border-bottom:1px solid #eef2f6;font-size:13.5px"><span style="color:#3a4a5a">${l}${note ? `<span style="color:#9aa7b5;font-size:11px;margin-left:6px;font-weight:400">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap;font-variant-numeric:tabular-nums">${v}</span></div>`
-      const secHead = (t, sub, sc) => `<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 4px 4px"><span style="font-size:12px;font-weight:800;color:#14283c;letter-spacing:2px">${t}</span><span style="font-size:12.5px;font-weight:800;color:${sc || '#9aa7b5'};font-variant-numeric:tabular-nums">${sub}</span></div>`
+      const row = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 4px;border-bottom:1px solid #eef2f6;font-size:13.5px"><span style="color:#3a4a5a">${l}${note ? `<span style="color:#9aa7b5;font-size:11px;margin-left:6px;font-weight:400">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap">${v}</span></div>`
+      const secHead = (t, sub, sc) => `<div style="display:flex;justify-content:space-between;align-items:center;margin:16px 4px 4px"><span style="font-size:12px;font-weight:800;color:#14283c">${t}</span><span style="font-size:12.5px;font-weight:800;color:${sc || '#9aa7b5'}">${sub}</span></div>`
       const orgName = org?.name || '威耀時代股份有限公司'
       const orgLine2 = [org?.tax_id ? `統一編號 ${org.tax_id}` : '', org?.phone ? `TEL ${org.phone}` : ''].filter(Boolean).join('　·　')
       const el = document.createElement('div')
@@ -362,7 +362,7 @@ export default function Salary() {
         <div style="display:flex;align-items:center;gap:13px;padding-bottom:14px;border-bottom:2.5px solid #14283c">
           ${logoData ? `<img src="${logoData}" style="width:68px;height:68px;object-fit:contain;flex-shrink:0"/>` : ''}
           <div style="min-width:0">
-            <div style="font-size:17px;font-weight:900;color:#14283c;letter-spacing:0.5px">${orgName}</div>
+            <div style="font-size:17px;font-weight:900;color:#14283c">${orgName}</div>
             ${org?.address ? `<div style="font-size:10.5px;color:#8a99a8;margin-top:3px;line-height:1.6">${org.address}</div>` : ''}
             ${orgLine2 ? `<div style="font-size:10.5px;color:#8a99a8;line-height:1.6">${orgLine2}</div>` : ''}
           </div>
@@ -379,14 +379,14 @@ export default function Salary() {
         </div>
         <div style="background:linear-gradient(135deg,#0e7490,#0891b2);border-radius:14px;padding:16px 20px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;color:#ffffff">
           <span style="font-size:13px;letter-spacing:5px;font-weight:700;opacity:0.94">實 發 薪 資</span>
-          <span style="font-size:28px;font-weight:900;font-variant-numeric:tabular-nums">${m2(bagItems.net)}</span>
+          <span style="font-size:28px;font-weight:900">${m2(bagItems.net)}</span>
         </div>
         ${secHead('加項', '+' + m2(addTotal), '#059669')}
         ${row('本薪', '+' + m2(bagItems.base), '#059669')}
         ${bagItems.add.map(it => row(it.label, '+' + m2(it.value), '#059669', it.note)).join('')}
         ${secHead('減項', dedTotal > 0 ? '−' + m2(dedTotal) : '無', dedTotal > 0 ? '#dc2626' : '#9aa7b5')}
         ${bagItems.ded.map(it => row(it.label, '−' + m2(it.value), '#dc2626', it.note)).join('') || '<div style="font-size:13px;color:#9aa7b5;padding:8px 4px">無減項</div>'}
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding:14px 4px;border-top:2px solid #14283c;font-size:16px;font-weight:900;color:#14283c"><span>實領薪資</span><span style="color:#0e7490;font-variant-numeric:tabular-nums">${m2(bagItems.net)}</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding:14px 4px;border-top:2px solid #14283c;font-size:16px;font-weight:900;color:#14283c"><span>實領薪資</span><span style="color:#0e7490">${m2(bagItems.net)}</span></div>
         <div style="margin-top:22px;padding-top:12px;border-top:1px solid #edf1f5;display:flex;justify-content:space-between;font-size:10px;color:#aab4c0"><span>本薪資單由系統自動產生</span><span>製表日 ${new Date().toLocaleDateString('zh-TW')}</span></div>
         <div style="text-align:center;font-size:9.5px;color:#c2cbd4;margin-top:6px">※ 本薪資單屬個人機密文件，請妥善保管</div>`
       document.body.appendChild(el)
