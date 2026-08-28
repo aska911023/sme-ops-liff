@@ -325,6 +325,10 @@ export default function Salary() {
   const downloadPdf = async () => {
     if (!bagItems || pdfBusy) return
     setPdfBusy(true)
+    // Android LINE WebView 擋 blob 下載:點擊當下先「同步」開新分頁保住 user gesture,PDF 好了再導進去(iOS 走原生分享不需要)
+    const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent || '')
+    let preWin = null
+    if (!isIOS) { try { preWin = window.open('', '_blank') } catch { preWin = null } }
     try {
       const m2 = v => 'NT$ ' + Math.round(Number(v) || 0).toLocaleString()
       const rowHtml = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 2px;border-bottom:1px solid #eef2f6;font-size:14px"><span style="color:#33414f">${l}${note ? `<span style="color:#93a1b1;font-size:11px;margin-left:6px">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap">${v}</span></div>`
@@ -354,17 +358,23 @@ export default function Salary() {
       const fname = `薪資單-${current?.employee || ''}-${selectedMonth || ''}.pdf`
       const blob = doc.output('blob')
       const file = new File([blob], fname, { type: 'application/pdf' })
-      // ★ LINE webview(尤其 iOS)擋 blob 下載 → 改用原生分享面板(可存檔案/轉傳);桌機才退回下載
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: fname }); setPdfBusy(false); return }
-        catch (e) { if (e?.name === 'AbortError') { setPdfBusy(false); return } /* 其他錯 → 往下退回下載 */ }
-      }
       const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url; a.download = fname; a.target = '_blank'; a.rel = 'noopener'
-      document.body.appendChild(a); a.click(); a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 5000)
+      // iOS LINE:原生分享面板(可存檔案/轉傳)——iPhone 一直都能用
+      if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: fname }); setPdfBusy(false); URL.revokeObjectURL(url); return }
+        catch (e) { if (e?.name === 'AbortError') { setPdfBusy(false); URL.revokeObjectURL(url); return } /* 失敗→往下退回 */ }
+      }
+      // Android LINE:用先開好的分頁載入 PDF(內建檢視器可存/分享);桌機或 popup 被擋→退回下載
+      if (preWin && !preWin.closed) {
+        preWin.location.href = url
+      } else {
+        const a = document.createElement('a')
+        a.href = url; a.download = fname; a.target = '_blank'; a.rel = 'noopener'
+        document.body.appendChild(a); a.click(); a.remove()
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (e) {
+      if (preWin) { try { preWin.close() } catch { /* noop */ } }
       alert('PDF 產生失敗：' + (e?.message || e))
     }
     setPdfBusy(false)
