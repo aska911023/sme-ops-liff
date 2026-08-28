@@ -364,7 +364,7 @@ export default function Salary() {
       // Android/其他:Android LINE 擋 blob,必須用真實 https 網址 →
       //   上傳私有桶 payslips(隨機路徑)→ sign-payslip 簽 120 秒短效網址 → 用系統瀏覽器開下載
       const path = `${(typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))}.pdf`
-      const up = await supabase.storage.from('payslips').upload(path, blob, { contentType: 'application/pdf', upsert: true })
+      const up = await supabase.storage.from('payslips').upload(path, blob, { contentType: 'application/pdf' })
       if (up.error) throw new Error('上傳失敗：' + up.error.message)
       const { data: sig, error: sigErr } = await supabase.functions.invoke('sign-payslip', { body: { path } })
       if (sigErr || !sig?.url) throw new Error('產生下載連結失敗')
