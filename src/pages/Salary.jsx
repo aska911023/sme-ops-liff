@@ -360,7 +360,7 @@ export default function Salary() {
       el.style.cssText = 'position:fixed;left:-9999px;top:0;width:540px;box-sizing:border-box;background:#ffffff;color:#14283c;padding:32px 30px;font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;line-height:1.5'
       el.innerHTML = `
         <div style="display:flex;align-items:center;gap:13px;padding-bottom:14px;border-bottom:2.5px solid #14283c">
-          ${logoData ? `<img src="${logoData}" style="width:46px;height:46px;object-fit:contain;flex-shrink:0"/>` : ''}
+          ${logoData ? `<img src="${logoData}" style="width:68px;height:68px;object-fit:contain;flex-shrink:0"/>` : ''}
           <div style="min-width:0">
             <div style="font-size:17px;font-weight:900;color:#14283c;letter-spacing:0.5px">${orgName}</div>
             ${orgMeta ? `<div style="font-size:10.5px;color:#8a99a8;margin-top:3px;line-height:1.5">${orgMeta}</div>` : ''}
