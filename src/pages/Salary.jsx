@@ -36,6 +36,7 @@ export default function Salary() {
   const [expandAdd, setExpandAdd] = useState(true)  // 加項預設展開
   const [expandDed, setExpandDed] = useState(true)  // 減項預設展開
   const [pdfBusy, setPdfBusy] = useState(false)     // 下載 PDF 中
+  const [pdfLink, setPdfLink] = useState(null)      // 保險:簽名網址,自動跳瀏覽器沒成功時給使用者手動點
 
   // 選定月份 → 抓引擎完整明細(跟 web 同源;實領以發布版為準)
   useEffect(() => {
@@ -368,6 +369,7 @@ export default function Salary() {
       if (up.error) throw new Error('上傳失敗：' + up.error.message)
       const { data: sig, error: sigErr } = await supabase.functions.invoke('sign-payslip', { body: { path } })
       if (sigErr || !sig?.url) throw new Error('產生下載連結失敗')
+      setPdfLink(sig.url)   // 保險:畫面上也放可點連結,自動跳瀏覽器沒成功也能手動點
       try { liff.openWindow({ url: sig.url, external: true }) }
       catch { window.open(sig.url, '_blank', 'noopener') }
     } catch (e) {
@@ -473,6 +475,13 @@ export default function Salary() {
                 <div style={{ fontSize: 11, color: 'var(--t3)', textAlign: 'center', marginTop: 2, lineHeight: 1.5 }}>
                   Android 會用瀏覽器開啟 PDF，即可下載／分享
                 </div>
+              )}
+              {pdfLink && (
+                <a href={pdfLink} target="_blank" rel="noreferrer" style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  marginTop: 8, padding: 11, borderRadius: 11, textDecoration: 'none',
+                  border: '1.5px solid var(--cyan)', color: 'var(--cyan)', fontWeight: 800, fontSize: 14,
+                }}>📥 沒自動開啟？點我開啟 PDF</a>
               )}
               {!bagLoading && !bagItems && (
                 <div className="card" style={{ textAlign: 'center', padding: 18, fontSize: 12, color: 'var(--t3)' }}>此月正式薪資明細尚未發布</div>
