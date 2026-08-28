@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
+import liff from '@line/liff'
 
 const SS_KEY = 'salary_unlocked'   // 本次 LIFF 開啟期間記住已解鎖
 
@@ -325,10 +326,7 @@ export default function Salary() {
   const downloadPdf = async () => {
     if (!bagItems || pdfBusy) return
     setPdfBusy(true)
-    // Android LINE WebView 擋 blob 下載:點擊當下先「同步」開新分頁保住 user gesture,PDF 好了再導進去(iOS 走原生分享不需要)
     const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent || '')
-    let preWin = null
-    if (!isIOS) { try { preWin = window.open('', '_blank') } catch { preWin = null } }
     try {
       const m2 = v => 'NT$ ' + Math.round(Number(v) || 0).toLocaleString()
       const rowHtml = (l, v, c, note) => `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 2px;border-bottom:1px solid #eef2f6;font-size:14px"><span style="color:#33414f">${l}${note ? `<span style="color:#93a1b1;font-size:11px;margin-left:6px">${note}</span>` : ''}</span><span style="font-weight:700;color:${c};white-space:nowrap">${v}</span></div>`
@@ -358,24 +356,22 @@ export default function Salary() {
       const fname = `薪資單-${current?.employee || ''}-${selectedMonth || ''}.pdf`
       const blob = doc.output('blob')
       const file = new File([blob], fname, { type: 'application/pdf' })
-      const url = URL.createObjectURL(blob)
       // iOS LINE:原生分享面板(可存檔案/轉傳)——iPhone 一直都能用
       if (isIOS && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: fname }); setPdfBusy(false); URL.revokeObjectURL(url); return }
-        catch (e) { if (e?.name === 'AbortError') { setPdfBusy(false); URL.revokeObjectURL(url); return } /* 失敗→往下退回 */ }
+        try { await navigator.share({ files: [file], title: fname }); setPdfBusy(false); return }
+        catch (e) { if (e?.name === 'AbortError') { setPdfBusy(false); return } /* 失敗→往下退回 */ }
       }
-      // Android LINE:用先開好的分頁載入 PDF(內建檢視器可存/分享);桌機或 popup 被擋→退回下載
-      if (preWin && !preWin.closed) {
-        preWin.location.href = url
-      } else {
-        const a = document.createElement('a')
-        a.href = url; a.download = fname; a.target = '_blank'; a.rel = 'noopener'
-        document.body.appendChild(a); a.click(); a.remove()
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      // Android/其他:Android LINE 擋 blob,必須用真實 https 網址 →
+      //   上傳私有桶 payslips(隨機路徑)→ sign-payslip 簽 120 秒短效網址 → 用系統瀏覽器開下載
+      const path = `${(typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now() + '-' + Math.random().toString(36).slice(2))}.pdf`
+      const up = await supabase.storage.from('payslips').upload(path, blob, { contentType: 'application/pdf', upsert: true })
+      if (up.error) throw new Error('上傳失敗：' + up.error.message)
+      const { data: sig, error: sigErr } = await supabase.functions.invoke('sign-payslip', { body: { path } })
+      if (sigErr || !sig?.url) throw new Error('產生下載連結失敗')
+      try { liff.openWindow({ url: sig.url, external: true }) }
+      catch { window.open(sig.url, '_blank', 'noopener') }
     } catch (e) {
-      if (preWin) { try { preWin.close() } catch { /* noop */ } }
-      alert('PDF 產生失敗：' + (e?.message || e))
+      alert('PDF 下載失敗：' + (e?.message || e))
     }
     setPdfBusy(false)
   }
@@ -475,7 +471,7 @@ export default function Salary() {
               )}
               {!bagLoading && bagItems && !/iP(hone|ad|od)/.test(navigator.userAgent || '') && (
                 <div style={{ fontSize: 11, color: 'var(--t3)', textAlign: 'center', marginTop: 2, lineHeight: 1.5 }}>
-                  Android 會在新分頁開啟 PDF，點右上「⋮」即可存檔／分享
+                  Android 會用瀏覽器開啟 PDF，即可下載／分享
                 </div>
               )}
               {!bagLoading && !bagItems && (
