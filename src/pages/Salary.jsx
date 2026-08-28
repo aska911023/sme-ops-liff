@@ -473,6 +473,11 @@ export default function Salary() {
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 }}>📄 {pdfBusy ? '產生中…' : '下載 PDF 薪資單'}</button>
               )}
+              {!bagLoading && bagItems && !/iP(hone|ad|od)/.test(navigator.userAgent || '') && (
+                <div style={{ fontSize: 11, color: 'var(--t3)', textAlign: 'center', marginTop: 2, lineHeight: 1.5 }}>
+                  Android 會在新分頁開啟 PDF，點右上「⋮」即可存檔／分享
+                </div>
+              )}
               {!bagLoading && !bagItems && (
                 <div className="card" style={{ textAlign: 'center', padding: 18, fontSize: 12, color: 'var(--t3)' }}>此月正式薪資明細尚未發布</div>
               )}
