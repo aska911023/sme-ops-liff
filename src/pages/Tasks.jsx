@@ -307,7 +307,8 @@ export default function Tasks() {
                   <div>
                     <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{t.title}</div>
                     <div style={{ fontSize: 12, color: 'var(--t3)' }}>
-                      {t.workflow && <span>{t.workflow} · </span>}
+                      {t.project_name && <span>📁 {t.project_name} · </span>}
+                      {t.workflow_name && <span>🔀 {t.workflow_name} · </span>}
                       {t.store && <span>{t.store} · </span>}
                       {t.due_date && <span>截止 {t.due_date}</span>}
                     </div>

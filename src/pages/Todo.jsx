@@ -113,7 +113,8 @@ export default function Todo() {
                 {t.priority && <span className={`badge ${priColor(t.priority)}`}>{t.priority}</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--t3)' }}>
-                {t.workflow && <span>{t.workflow} · </span>}
+                {t.project_name && <span>📁 {t.project_name} · </span>}
+                {t.workflow_name && <span>🔀 {t.workflow_name} · </span>}
                 {t.store && <span>{t.store} · </span>}
                 {t.due_date ? `截止 ${t.due_date}` : '無截止日'}
               </div>
