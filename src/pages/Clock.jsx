@@ -324,7 +324,13 @@ export default function ClockPage() {
     if (d > 150 && d <= 1800 && !retriedRef.current && navigator.geolocation) {
       retriedRef.current = true
       setGpsRetrying(true)
+      let safety
       const timer = setTimeout(() => {
+        let settled = false
+        const done = () => { if (!settled) { settled = true; clearTimeout(safety); setGpsRetrying(false) } }
+        // 兜底:LIFF/iOS webview 有時 getCurrentPosition 不回 callback(連 timeout 都不觸發)→
+        //   轉圈永遠停不掉「一直重新整理中」。硬限 12s 一定收掉,讓距離結果(如 165m 超範圍)顯示出來。
+        safety = setTimeout(done, 12000)
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const { latitude, longitude, accuracy } = pos.coords
@@ -335,13 +341,13 @@ export default function ClockPage() {
             setDistance(newDist)
             setGpsWeak(weak)
             setGpsError(weak ? `GPS 精確度不足（${Math.round(accuracy)}m），定位結果僅供參考` : '')
-            setGpsRetrying(false)
+            done()
           },
-          () => setGpsRetrying(false),
-          { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }
+          () => done(),
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         )
       }, 1500)
-      return () => clearTimeout(timer)
+      return () => { clearTimeout(timer); clearTimeout(safety) }
     }
   }, [location, store, clockMode, logClockFailure])
 
@@ -546,8 +552,8 @@ export default function ClockPage() {
             {gpsWeak ? <AlertTriangle size={16} /> : <XCircle size={16} />}
             <span>{gpsError}</span>
           </div>
-        ) : !location || gpsRetrying ? (
-          <div style={{ fontSize: 13, color: 'var(--t3)' }}>{gpsRetrying ? '重新定位中...' : '定位中...'}</div>
+        ) : !location ? (
+          <div style={{ fontSize: 13, color: 'var(--t3)' }}>定位中...</div>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--t3)', marginBottom: 8 }}>
@@ -573,7 +579,8 @@ export default function ClockPage() {
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--t3)', marginTop: 2 }}>
                     距離門市 {distance >= 1000 ? `${(distance / 1000).toFixed(1)}km` : `${distance}m`}
-                    {!isInRange && ` (需在 ${radius}m 以內)`}
+                    {!isInRange && ` (需在 ${radius}m 以內，超出 ${distance - radius}m)`}
+                    {gpsRetrying && '　· 定位更新中…'}
                   </div>
                 </div>
               </div>
